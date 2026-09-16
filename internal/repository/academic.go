@@ -16,7 +16,7 @@ func (r *Repository) ListClasses(ctx context.Context) ([]domain.Class, error) {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []domain.Class
+	items := make([]domain.Class, 0)
 	for rows.Next() {
 		var item domain.Class
 		if err := rows.Scan(&item.ID, &item.Name); err != nil {
@@ -69,7 +69,7 @@ func (r *Repository) ListStudents(ctx context.Context) ([]domain.Student, error)
 		return nil, err
 	}
 	defer rows.Close()
-	var items []domain.Student
+	items := make([]domain.Student, 0)
 	for rows.Next() {
 		var item domain.Student
 		var active int
@@ -159,7 +159,7 @@ func (r *Repository) ListCourses(ctx context.Context) ([]domain.Course, error) {
 		return nil, err
 	}
 	defer rows.Close()
-	var items []domain.Course
+	items := make([]domain.Course, 0)
 	for rows.Next() {
 		var item domain.Course
 		if err := rows.Scan(&item.ID, &item.Name, &item.TeacherID, &item.TeacherName); err != nil {
@@ -219,7 +219,7 @@ func (r *Repository) CourseStudents(ctx context.Context, courseID int64) ([]doma
 		return nil, err
 	}
 	defer rows.Close()
-	var items []domain.Student
+	items := make([]domain.Student, 0)
 	for rows.Next() {
 		var item domain.Student
 		var active int
@@ -238,7 +238,7 @@ func (r *Repository) ListSchedules(ctx context.Context) ([]domain.Schedule, erro
 		return nil, err
 	}
 	defer rows.Close()
-	var items []domain.Schedule
+	items := make([]domain.Schedule, 0)
 	for rows.Next() {
 		var item domain.Schedule
 		var enabled int

@@ -10,6 +10,10 @@ const adminSectionLabels = {
   schedules: '课表管理'
 };
 
+function asArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
 function renderShell() {
   if (state.eventSource) state.eventSource.close();
   if (state.dashboardTimer) clearInterval(state.dashboardTimer);
@@ -81,15 +85,20 @@ async function loadAdmin() {
   main.innerHTML = '<div class="panel loading">正在读取系统管理资料…</div>';
 
   try {
-    const [users, classes, students, courses, schedules] = await Promise.all([
+    const raw = await Promise.all([
       api('/api/users'), api('/api/classes'), api('/api/students'), api('/api/courses'), api('/api/schedules')
     ]);
+    const users = asArray(raw[0]);
+    const classes = asArray(raw[1]);
+    const students = asArray(raw[2]);
+    const courses = asArray(raw[3]);
+    const schedules = asArray(raw[4]);
 
     let enrolled = [];
     if (state.adminSection === 'enrollment' && courses.length > 0) {
       const validCourse = courses.some(course => course.id === Number(state.adminCourseID));
       if (!validCourse) state.adminCourseID = courses[0].id;
-      enrolled = await api(`/api/courses/${Number(state.adminCourseID)}/students`);
+      enrolled = asArray(await api(`/api/courses/${Number(state.adminCourseID)}/students`));
     }
 
     const content = adminSectionContent({ users, classes, students, courses, schedules, enrolled });
@@ -129,6 +138,11 @@ function adminSectionContent(data) {
 }
 
 function adminEnrollmentManager(courses, classes, students, enrolled) {
+  courses = asArray(courses);
+  classes = asArray(classes);
+  students = asArray(students);
+  enrolled = asArray(enrolled);
+
   if (courses.length === 0) {
     return '<section class="panel"><h3>课程学生名单</h3><div class="notice">请先到“课程管理”建立课程。</div></section>';
   }
