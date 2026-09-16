@@ -50,6 +50,12 @@ func (s *Service) Recognize(ctx context.Context, classroom string, image []byte,
 	if classroom == "" {
 		return RecognitionResult{}, fmt.Errorf("classroom is required")
 	}
+	localNow := now.In(s.location)
+	schedule, err := s.repo.FindActiveSchedule(ctx, classroom, weekdayNumber(localNow), localNow.Hour()*60+localNow.Minute())
+	if err != nil {
+		return RecognitionResult{}, err
+	}
+
 	match, err := s.faces.Recognize(ctx, image)
 	if err != nil {
 		return RecognitionResult{}, err
@@ -60,12 +66,6 @@ func (s *Service) Recognize(ctx context.Context, classroom string, image []byte,
 	}
 	if !student.Active {
 		return RecognitionResult{}, fmt.Errorf("recognized student is inactive")
-	}
-
-	localNow := now.In(s.location)
-	schedule, err := s.repo.FindActiveSchedule(ctx, classroom, weekdayNumber(localNow), localNow.Hour()*60+localNow.Minute())
-	if err != nil {
-		return RecognitionResult{}, err
 	}
 
 	enrolled, err := s.repo.StudentEnrolled(ctx, schedule.CourseID, student.ID)

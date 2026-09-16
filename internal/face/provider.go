@@ -7,6 +7,7 @@ import (
 
 var ErrUnavailable = errors.New("face recognition service is unavailable")
 var ErrNoMatch = errors.New("no matching face found")
+var ErrMultipleFaces = errors.New("multiple faces detected")
 
 type Match struct {
 	Subject    string

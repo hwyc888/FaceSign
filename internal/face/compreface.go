@@ -78,6 +78,9 @@ func (c *CompreFace) Recognize(ctx context.Context, image []byte) (Match, error)
 	if err := c.postImage(ctx, endpoint.String(), image, &response); err != nil {
 		return Match{}, err
 	}
+	if len(response.Result) > 1 {
+		return Match{}, ErrMultipleFaces
+	}
 
 	best := Match{}
 	for _, result := range response.Result {

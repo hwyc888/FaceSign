@@ -29,6 +29,8 @@ func (s *Server) handleRecognize(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(err, face.ErrNoMatch):
 			writeError(w, http.StatusNotFound, "未识别到已登记学生")
+		case errors.Is(err, face.ErrMultipleFaces):
+			writeError(w, http.StatusConflict, "画面中检测到多张人脸，请一次只允许一名学生刷脸")
 		case errors.Is(err, face.ErrUnavailable):
 			writeError(w, http.StatusServiceUnavailable, "人脸识别服务未启用")
 		case repository.IsNotFound(err):

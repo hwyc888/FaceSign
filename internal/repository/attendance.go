@@ -109,7 +109,24 @@ func (r *Repository) RecordRecognition(ctx context.Context, sessionID, studentID
 		INSERT INTO attendance_records(session_id,student_id,status,recognized_at,similarity,source,note,updated_at)
 		VALUES(?,?,?,?,?,'face','',?)
 		ON CONFLICT(session_id,student_id) DO UPDATE SET
-		 status=excluded.status, recognized_at=excluded.recognized_at, similarity=excluded.similarity, source='face', note='', updated_at=excluded.updated_at`,
+		 status=CASE
+		  WHEN attendance_records.source='manual' THEN attendance_records.status
+		  WHEN attendance_records.recognized_at IS NOT NULL AND attendance_records.recognized_at<=excluded.recognized_at THEN attendance_records.status
+		  ELSE excluded.status
+		 END,
+		 recognized_at=CASE
+		  WHEN attendance_records.source='manual' THEN attendance_records.recognized_at
+		  WHEN attendance_records.recognized_at IS NULL OR excluded.recognized_at<attendance_records.recognized_at THEN excluded.recognized_at
+		  ELSE attendance_records.recognized_at
+		 END,
+		 similarity=CASE
+		  WHEN attendance_records.source='manual' THEN attendance_records.similarity
+		  WHEN attendance_records.similarity IS NULL OR excluded.similarity>attendance_records.similarity THEN excluded.similarity
+		  ELSE attendance_records.similarity
+		 END,
+		 source=CASE WHEN attendance_records.source='manual' THEN attendance_records.source ELSE 'face' END,
+		 note=CASE WHEN attendance_records.source='manual' THEN attendance_records.note ELSE '' END,
+		 updated_at=CASE WHEN attendance_records.source='manual' THEN attendance_records.updated_at ELSE excluded.updated_at END`,
 		sessionID, studentID, status, recognizedAt.Unix(), similarity, time.Now().Unix())
 	if err != nil {
 		return domain.AttendanceRecord{}, err
