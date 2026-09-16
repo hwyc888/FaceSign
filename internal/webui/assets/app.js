@@ -393,10 +393,10 @@ async function renderKiosk() {
   classroom.value=sessionStorage.getItem('facesign_classroom')||'';key.value=sessionStorage.getItem('facesign_kiosk_key')||'';
   if(!window.isSecureContext){document.getElementById('secure-warning').innerHTML='<div class="error">浏览器摄像头通常要求 HTTPS（localhost 例外）。请给 FaceSign 配置 TLS 证书或通过 HTTPS 反向代理访问。</div>';}
   let faceEnabled=true;
-  try{const status=await api('/api/kiosk/status');if(!status.face_enabled){faceEnabled=false;startButton.disabled=true;result.className='result bad';result.innerHTML='人脸识别服务尚未启用，请联系管理员到“人脸识别设置”完成配置。';}if(!status.kiosk_key_required)key.closest('.field').style.display='none';}catch(error){faceEnabled=false;startButton.disabled=true;result.className='result bad';result.innerHTML=esc(error.message);}
+  try{const status=await api('/api/kiosk/status');if(!status.face_enabled||!status.face_ready){faceEnabled=false;startButton.disabled=true;result.className='result bad';result.innerHTML=esc(status.face_message||'人脸识别服务当前不可用，请联系管理员到“人脸识别设置”检查服务。');}if(!status.kiosk_key_required)key.closest('.field').style.display='none';}catch(error){faceEnabled=false;startButton.disabled=true;result.className='result bad';result.innerHTML=esc(error.message);}
   let stream=null,timer=null,busy=false;
   startButton.addEventListener('click',async()=>{
-    if(!faceEnabled){notify('人脸识别服务尚未启用，请联系管理员完成配置。','error');return;}
+    if(!faceEnabled){notify('人脸识别服务当前不可用，请联系管理员检查“人脸识别设置”。','error');return;}
     if(!classroom.value.trim()){notify('请先填写教室名称','error');return;}
     sessionStorage.setItem('facesign_classroom',classroom.value.trim());sessionStorage.setItem('facesign_kiosk_key',key.value);
     try{if(stream)stream.getTracks().forEach(t=>t.stop());stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:1280},height:{ideal:720}},audio:false});video.srcObject=stream;result.className='result';result.textContent='摄像头已启动，正在识别…';if(timer)clearInterval(timer);timer=setInterval(scan,2600);setTimeout(scan,900);}catch(error){result.className='result bad';result.textContent='无法打开摄像头：'+error.message;}
