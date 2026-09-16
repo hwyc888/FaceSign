@@ -148,40 +148,43 @@ function adminSectionContent(data) {
 function adminFaceSettings(settings) {
   if (!settings) return '<section class="panel error">无法读取人脸识别设置。</section>';
   const configured = settings.api_key_configured;
+  const ready = settings.provider === 'localcpu' || (settings.provider === 'compreface' && configured);
+  const serviceURL = settings.service_url || (settings.provider === 'localcpu' ? 'http://127.0.0.1:18081' : 'http://127.0.0.1:8000');
   return `<section class="panel">
     <div class="section-title">
-      <div><h3 style="margin:0">人脸识别设置</h3><div class="muted">设置保存在 FaceSign 数据库中，保存后立即生效，不需要手工修改 facesign.env。</div></div>
-      <span class="badge ${settings.provider === 'compreface' && configured ? 'on_time' : 'pending'}">${settings.provider === 'compreface' && configured ? '已配置' : '未启用'}</span>
+      <div><h3 style="margin:0">人脸识别设置</h3><div class="muted">推荐使用本地 CPU 引擎：不需要 GPU、CUDA 或 Docker。设置保存在 FaceSign 数据库中，保存后立即生效。</div></div>
+      <span class="badge ${ready ? 'on_time' : 'pending'}">${ready ? '已配置' : '未启用'}</span>
     </div>
     <form id="face-settings-form">
       <div class="form-grid">
-        <div class="field"><label>人脸识别引擎</label><select name="provider">
+        <div class="field"><label>人脸识别引擎</label><select name="provider" id="face-provider-select">
           <option value="disabled" ${settings.provider === 'disabled' ? 'selected' : ''}>停用</option>
+          <option value="localcpu" ${settings.provider === 'localcpu' ? 'selected' : ''}>本地 CPU 引擎（推荐，无需 GPU / Docker）</option>
           <option value="compreface" ${settings.provider === 'compreface' ? 'selected' : ''}>CompreFace</option>
         </select></div>
-        <div class="field"><label>服务地址</label><input name="service_url" value="${esc(settings.service_url || 'http://127.0.0.1:8000')}" placeholder="http://127.0.0.1:8000"></div>
-        <div class="field"><label>API Key</label><input type="password" name="api_key" autocomplete="new-password" placeholder="${configured ? '已保存；留空表示不修改' : '请输入 Face Recognition Service API Key'}"></div>
+        <div class="field"><label>服务地址</label><input name="service_url" id="face-service-url" value="${esc(serviceURL)}" placeholder="http://127.0.0.1:18081"></div>
+        <div class="field" id="face-api-key-field"><label>API Key（仅 CompreFace）</label><input type="password" name="api_key" autocomplete="new-password" placeholder="${configured ? '已保存；留空表示不修改' : 'CompreFace 才需要填写'}"></div>
         <div class="field"><label>识别相似度阈值</label><input type="number" name="similarity" min="0" max="1" step="0.01" value="${Number(settings.similarity ?? 0.78)}"></div>
         <div class="field"><label>人脸检测阈值</label><input type="number" name="detection_threshold" min="0" max="1" step="0.01" value="${Number(settings.detection_threshold ?? 0.80)}"></div>
       </div>
       <div class="actions" style="margin-top:12px">
         <button class="btn primary" type="submit">保存并立即应用</button>
         <button class="btn good" type="button" id="face-check-btn">检测服务</button>
-        <a class="btn" href="${esc(settings.service_url || 'http://127.0.0.1:8000')}" target="_blank" rel="noopener">打开 CompreFace 控制台</a>
+        ${settings.provider === 'compreface' ? `<a class="btn" href="${esc(serviceURL)}" target="_blank" rel="noopener">打开 CompreFace 控制台</a>` : ''}
       </div>
     </form>
     <div id="face-check-result" class="face-status-box">
-      <div class="muted">保存设置后点击“检测服务”，系统会验证服务地址和 API Key。</div>
+      <div class="muted">保存设置后点击“检测服务”。本地 CPU 引擎不需要 API Key。</div>
     </div>
   </section>
   <section class="panel">
-    <h3>一键部署 CompreFace</h3>
-    <p class="muted">发布包内已包含 Windows / Linux 一键部署脚本。需要本机已经安装并启动 Docker（Windows 使用 Docker Desktop）。脚本会部署官方 CompreFace 1.2.0 并等待 8000 端口可用。</p>
+    <h3>一键部署本地 CPU 人脸引擎</h3>
+    <p class="muted">发布包内提供 Windows / Linux 本地 CPU 引擎。使用 OpenCV YuNet + SFace ONNX 模型，只使用 CPU，不需要独立显卡、CUDA、Docker 或 Docker Desktop。</p>
     <div class="deploy-grid">
-      <div class="deploy-card"><b>Windows</b><code>face-engine\\install-compreface.ps1</code><span>管理员 PowerShell 运行</span></div>
-      <div class="deploy-card"><b>Linux</b><code>face-engine/install-compreface.sh</code><span>执行 chmod +x 后运行</span></div>
+      <div class="deploy-card"><b>Windows</b><code>face-engine\\install-localcpu.ps1</code><span>管理员 PowerShell 运行；自动准备独立 Python 运行环境、CPU 模型并注册开机启动任务。</span></div>
+      <div class="deploy-card"><b>Linux</b><code>face-engine/install-localcpu.sh</code><span>自动创建 venv、安装 CPU 依赖和 systemd 服务。</span></div>
     </div>
-    <div class="notice">部署完成后打开 CompreFace 控制台，创建 Face Recognition Service 并复制 API Key，再回到本页保存并检测。</div>
+    <div class="notice">部署完成后选择“本地 CPU 引擎”，服务地址填写 http://127.0.0.1:18081，保存后点击“检测服务”即可。不需要 API Key。</div>
   </section>`;
 }
 
@@ -258,6 +261,26 @@ function bindAdminForms() {
     similarity: Number(data.similarity),
     detection_threshold: Number(data.detection_threshold)
   } }));
+
+  const faceProviderSelect = document.getElementById('face-provider-select');
+  const faceServiceURL = document.getElementById('face-service-url');
+  const faceAPIKeyField = document.getElementById('face-api-key-field');
+  const faceSimilarity = document.querySelector('#face-settings-form [name="similarity"]');
+  const syncFaceProviderUI = (changed = false) => {
+    if (!faceProviderSelect) return;
+    const localCPU = faceProviderSelect.value === 'localcpu';
+    if (faceAPIKeyField) faceAPIKeyField.style.display = faceProviderSelect.value === 'compreface' ? '' : 'none';
+    if (changed && faceServiceURL) {
+      faceServiceURL.value = localCPU ? 'http://127.0.0.1:18081' : (faceProviderSelect.value === 'compreface' ? 'http://127.0.0.1:8000' : faceServiceURL.value);
+    }
+    if (changed && localCPU && faceSimilarity && Number(faceSimilarity.value) === 0.78) {
+      faceSimilarity.value = '0.72';
+    }
+  };
+  if (faceProviderSelect) {
+    syncFaceProviderUI(false);
+    faceProviderSelect.addEventListener('change', () => syncFaceProviderUI(true));
+  }
 
   const faceCheck = document.getElementById('face-check-btn');
   if (faceCheck) {

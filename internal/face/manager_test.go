@@ -55,3 +55,36 @@ func TestManagerStatusReportsDisabledInChinese(t *testing.T) {
 		t.Fatalf("unexpected disabled status: %#v", status)
 	}
 }
+
+func TestManagerStatusChecksLocalCPUWithoutAPIKey(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/recognition/subjects/" {
+			http.NotFound(w, r)
+			return
+		}
+		if r.Header.Get("x-api-key") != "" {
+			http.Error(w, "unexpected api key", http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"subjects":[]}`))
+	}))
+	defer server.Close()
+
+	manager, err := NewManager(domain.FaceSettings{
+		Provider:           "localcpu",
+		ServiceURL:         server.URL,
+		Similarity:         0.72,
+		DetectionThreshold: 0.80,
+	})
+	if err != nil {
+		t.Fatalf("NewManager() error = %v", err)
+	}
+	status := manager.Status(context.Background())
+	if !status.Reachable || !status.Enabled || !status.Configured {
+		t.Fatalf("status = %#v, want ready local CPU service", status)
+	}
+	if status.Provider != "localcpu" {
+		t.Fatalf("provider = %q, want localcpu", status.Provider)
+	}
+}

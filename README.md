@@ -9,7 +9,7 @@ FaceSign is a Go + SQLite student face-attendance server for school classrooms. 
 - Classes, students, courses, course enrollment and weekly schedules.
 - Browser camera enrollment for student face samples.
 - Browser kiosk at `/kiosk` for classroom face attendance.
-- CompreFace REST integration for real face enrollment and recognition.
+- Built-in provider management with a recommended local CPU face engine (OpenCV YuNet + SFace) that does not require GPU, CUDA or Docker; CompreFace remains optional.
 - Schedule-based `on_time` / `late` decision with configurable grace period.
 - Approved leave records and automatic `absent` finalization at course end.
 - Repeated face scans are idempotent per student/session.
@@ -47,7 +47,7 @@ CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -o dist/facesign-wind
 
 Copy `config.example.env` to `facesign.env`. FaceSign automatically reads `facesign.env` beside the executable, or use `FACESIGN_ENV_FILE` to point to another file. Real environment variables take precedence.
 
-The server can start with `FACESIGN_FACE_PROVIDER=disabled` while you configure the academic data. To enable real face matching, deploy CompreFace and set its recognition-service API key. See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
+The server can start with `FACESIGN_FACE_PROVIDER=disabled` while you configure academic data. Face-engine settings are normally managed from **Administrator -> Face Recognition** and stored in SQLite, so `facesign.env` does not need to contain an API key. The recommended Windows/Linux engine is the local CPU service in `deploy/face-engine`; it requires no GPU or Docker. CompreFace is still supported as an optional external provider. See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
 ## Quick development run
 
@@ -62,6 +62,6 @@ Open `http://127.0.0.1:8080/` for the teacher/admin platform. The first run asks
 ## Production notes
 
 - Use HTTPS for classroom camera devices; browser camera APIs generally require a secure context outside localhost.
-- Put the CompreFace API on a protected server-side network. The browser never receives the CompreFace API key.
+- The local CPU face engine binds to `127.0.0.1:18081` by default and should remain server-local. If you use CompreFace instead, keep its API on a protected server-side network; the browser never receives the CompreFace API key.
 - Back up the SQLite database while respecting WAL semantics (stop the service or use SQLite's online backup tooling).
 - Treat face data as sensitive biometric data and apply your organization's consent, retention and access-control requirements.

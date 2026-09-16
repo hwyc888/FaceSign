@@ -19,7 +19,7 @@ func faceSettingsForResponse(settings domain.FaceSettings) faceSettingsResponse 
 	return faceSettingsResponse{
 		Provider:           settings.Provider,
 		ServiceURL:         settings.ServiceURL,
-		APIKeyConfigured:   settings.APIKey != "",
+		APIKeyConfigured:   settings.Provider == "compreface" && settings.APIKey != "",
 		Similarity:         settings.Similarity,
 		DetectionThreshold: settings.DetectionThreshold,
 	}
@@ -42,8 +42,11 @@ func (s *Server) handleUpdateFaceSettings(w http.ResponseWriter, r *http.Request
 	}
 
 	current := s.faces.Settings()
-	apiKey := req.APIKey
-	if apiKey == "" {
+	apiKey := ""
+	if req.Provider == "compreface" {
+		apiKey = req.APIKey
+	}
+	if req.Provider == "compreface" && apiKey == "" && current.Provider == "compreface" {
 		apiKey = current.APIKey
 	}
 	settings, err := face.ValidateSettings(domain.FaceSettings{

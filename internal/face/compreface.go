@@ -14,8 +14,10 @@ import (
 )
 
 type CompreFace struct {
+	name               string
 	baseURL            string
 	apiKey             string
+	requireAPIKey      bool
 	similarity         float64
 	detectionThreshold float64
 	client             *http.Client
@@ -23,26 +25,43 @@ type CompreFace struct {
 
 func NewCompreFace(baseURL, apiKey string, similarity, detectionThreshold float64) *CompreFace {
 	return &CompreFace{
+		name:               "compreface",
 		baseURL:            baseURL,
 		apiKey:             apiKey,
+		requireAPIKey:      true,
 		similarity:         similarity,
 		detectionThreshold: detectionThreshold,
 		client:             &http.Client{Timeout: 15 * time.Second},
 	}
 }
 
-func (c *CompreFace) Name() string  { return "compreface" }
-func (c *CompreFace) Enabled() bool { return c.apiKey != "" }
+func NewLocalCPU(baseURL string, similarity, detectionThreshold float64) *CompreFace {
+	return &CompreFace{
+		name:               "localcpu",
+		baseURL:            baseURL,
+		requireAPIKey:      false,
+		similarity:         similarity,
+		detectionThreshold: detectionThreshold,
+		client:             &http.Client{Timeout: 15 * time.Second},
+	}
+}
+
+func (c *CompreFace) Name() string { return c.name }
+func (c *CompreFace) Enabled() bool {
+	return !c.requireAPIKey || c.apiKey != ""
+}
 
 func (c *CompreFace) Check(ctx context.Context) error {
-	if c.apiKey == "" {
+	if c.requireAPIKey && c.apiKey == "" {
 		return ErrInvalidAPIKey
 	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/api/v1/recognition/subjects/", nil)
 	if err != nil {
 		return err
 	}
-	req.Header.Set("x-api-key", c.apiKey)
+	if c.apiKey != "" {
+		req.Header.Set("x-api-key", c.apiKey)
+	}
 	resp, err := c.client.Do(req)
 	if err != nil {
 		return fmt.Errorf("%w: %v", ErrUnavailable, err)
@@ -76,7 +95,7 @@ func (c *CompreFace) Enroll(ctx context.Context, subject string, image []byte) (
 		return "", err
 	}
 	if response.ImageID == "" {
-		return "", fmt.Errorf("compreface returned an empty image id")
+		return "", fmt.Errorf("人脸识别服务返回了空的 image_id")
 	}
 	return response.ImageID, nil
 }
@@ -139,7 +158,9 @@ func (c *CompreFace) postImage(ctx context.Context, endpoint string, image []byt
 		return err
 	}
 	req.Header.Set("Content-Type", writer.FormDataContentType())
-	req.Header.Set("x-api-key", c.apiKey)
+	if c.apiKey != "" {
+		req.Header.Set("x-api-key", c.apiKey)
+	}
 
 	resp, err := c.client.Do(req)
 	if err != nil {
@@ -151,10 +172,21 @@ func (c *CompreFace) postImage(ctx context.Context, endpoint string, image []byt
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		message, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		var problem struct {
+			Detail string `json:"detail"`
+			Error  string `json:"error"`
+		}
+		if json.Unmarshal(message, &problem) == nil {
+			if problem.Detail != "" {
+				message = []byte(problem.Detail)
+			} else if problem.Error != "" {
+				message = []byte(problem.Error)
+			}
+		}
 		if resp.StatusCode >= 500 {
 			return fmt.Errorf("%w: HTTP %s %s", ErrUnavailable, resp.Status, bytes.TrimSpace(message))
 		}
-		return fmt.Errorf("CompreFace 返回 HTTP %s: %s", resp.Status, bytes.TrimSpace(message))
+		return fmt.Errorf("人脸识别服务返回 HTTP %s: %s", resp.Status, bytes.TrimSpace(message))
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 2<<20)).Decode(target); err != nil {
 		return fmt.Errorf("decode compreface response: %w", err)

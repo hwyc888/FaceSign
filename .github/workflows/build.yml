@@ -36,6 +36,23 @@ jobs:
       - name: Vet
         run: go vet ./...
 
+      - name: Validate local CPU face engine scripts
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m py_compile deploy/face-engine/face_engine.py
+          bash -n deploy/face-engine/install-localcpu.sh
+
+      - name: Validate Windows face engine installer
+        shell: pwsh
+        run: |
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path 'deploy/face-engine/install-localcpu.ps1'), [ref]$null, [ref]$errors) | Out-Null
+          if ($errors.Count -gt 0) { $errors | ForEach-Object { Write-Error $_.Message }; exit 1 }
+          $errors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path 'deploy/face-engine/uninstall-localcpu.ps1'), [ref]$null, [ref]$errors) | Out-Null
+          if ($errors.Count -gt 0) { $errors | ForEach-Object { Write-Error $_.Message }; exit 1 }
+
       - name: Build Linux and Windows servers
         shell: bash
         run: |

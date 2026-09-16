@@ -42,6 +42,9 @@ func Load() (Config, error) {
 		TLSCertFile:      os.Getenv("FACESIGN_TLS_CERT"),
 		TLSKeyFile:       os.Getenv("FACESIGN_TLS_KEY"),
 	}
+	if cfg.FaceProvider == "localcpu" && strings.TrimSpace(os.Getenv("FACESIGN_COMPREFACE_URL")) == "" {
+		cfg.CompreFaceURL = strings.TrimRight(env("FACESIGN_LOCALCPU_URL", "http://127.0.0.1:18081"), "/")
+	}
 
 	hours, err := strconv.Atoi(env("FACESIGN_SESSION_HOURS", "12"))
 	if err != nil || hours < 1 || hours > 168 {
@@ -71,7 +74,7 @@ func Load() (Config, error) {
 	if _, err := time.LoadLocation(cfg.Timezone); err != nil {
 		return Config{}, fmt.Errorf("invalid FACESIGN_TIMEZONE: %w", err)
 	}
-	if cfg.FaceProvider != "disabled" && cfg.FaceProvider != "compreface" {
+	if cfg.FaceProvider != "disabled" && cfg.FaceProvider != "compreface" && cfg.FaceProvider != "localcpu" {
 		return Config{}, fmt.Errorf("unsupported FACESIGN_FACE_PROVIDER %q", cfg.FaceProvider)
 	}
 	return cfg, nil

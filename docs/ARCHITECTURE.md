@@ -11,7 +11,7 @@ FaceSign is intentionally split by responsibility. The executable entry point co
 - `internal/domain`: shared business entities and attendance status constants.
 - `internal/repository`: SQL persistence for users, academic data and attendance data.
 - `internal/security`: Argon2id password hashes and opaque server-side sessions.
-- `internal/face`: face-recognition provider interface and CompreFace adapter.
+- `internal/face`: face-recognition provider interface, runtime provider manager, local CPU REST adapter and optional CompreFace adapter.
 - `internal/attendance`: schedule-driven attendance rules and background finalization.
 - `internal/realtime`: in-process publish/subscribe hub for teacher dashboard refresh.
 - `internal/httpapi`: HTTP API, authorization and request validation.
@@ -36,7 +36,7 @@ Go's HTTP server handles requests concurrently. SQLite runs in WAL mode with a 5
 
 ## Face recognition boundary
 
-FaceSign does not fake recognition inside the Go process. `internal/face.Provider` defines enrollment and recognition operations. The current production adapter uses CompreFace over REST, while `disabled` lets the management platform start before the face engine is configured. A future ONNX/InsightFace provider can be added without changing the attendance rules.
+FaceSign does not fake recognition inside the Go process. `internal/face.Provider` defines enrollment, health-check and recognition operations. The recommended production provider is `localcpu`: a server-local CPU-only service implemented with OpenCV YuNet + SFace ONNX models and listening on `127.0.0.1:18081`. It requires neither GPU/CUDA nor Docker. `compreface` remains available for schools that already run an external CompreFace service, while `disabled` lets the management platform start before a face engine is configured. Provider settings are persisted in SQLite and can be changed at runtime without restarting FaceSign.
 
 ## Data protection
 
