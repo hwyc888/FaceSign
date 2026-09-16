@@ -1,0 +1,9 @@
+/facesign
+/facesign.exe
+/dist/
+/data/
+*.db
+*.db-shm
+*.db-wal
+.env
+*.log
