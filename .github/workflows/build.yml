@@ -36,21 +36,77 @@ jobs:
       - name: Vet
         run: go vet ./...
 
-      - name: Build Linux and Windows servers
+      - name: Validate deployment scripts
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p dist
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o dist/facesign-linux-amd64 ./cmd/facesign
-          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o dist/facesign-windows-amd64.exe ./cmd/facesign
-          cp config.example.env dist/config.example.env
-          cp -R deploy/face-engine dist/face-engine
+          bash -n deploy/linux/install.sh
+          bash -n deploy/face-engine/install-compreface.sh
 
-      - name: Upload server binaries
+      - name: Validate PowerShell deployment scripts
+        shell: pwsh
+        run: |
+          $failed = $false
+          foreach ($path in @('deploy/windows/install-service.ps1', 'deploy/windows/uninstall-service.ps1', 'deploy/face-engine/install-compreface.ps1')) {
+            $tokens = $null
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($path, [ref]$tokens, [ref]$errors) | Out-Null
+            if ($errors.Count -gt 0) {
+              $errors | ForEach-Object { Write-Error "$path`: $_" }
+              $failed = $true
+            }
+          }
+          if ($failed) { exit 1 }
+
+      - name: Build platform release packages
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist/linux/face-engine dist/windows/face-engine
+
+          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o dist/linux/facesign ./cmd/facesign
+          install -m 0755 deploy/linux/install.sh dist/linux/install.sh
+          install -m 0644 deploy/linux/facesign.service dist/linux/facesign.service
+          install -m 0755 deploy/face-engine/install-compreface.sh dist/linux/face-engine/install-compreface.sh
+          install -m 0644 deploy/linux/README.txt dist/linux/README.txt
+          install -m 0644 config.example.env dist/linux/config.example.env
+
+          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o dist/windows/facesign.exe ./cmd/facesign
+          cp deploy/windows/install-service.ps1 deploy/windows/uninstall-service.ps1 dist/windows/
+          cp deploy/face-engine/install-compreface.ps1 dist/windows/face-engine/
+          cp deploy/windows/README.txt config.example.env dist/windows/
+
+          tar -czf dist/facesign-linux-amd64.tar.gz -C dist/linux .
+          (cd dist/windows && zip -qr ../facesign-windows-amd64.zip .)
+
+      - name: Verify release package contents
+        shell: bash
+        run: |
+          set -euo pipefail
+          linux_files="$(tar -tzf dist/facesign-linux-amd64.tar.gz)"
+          windows_files="$(unzip -Z1 dist/facesign-windows-amd64.zip)"
+          for path in ./facesign ./install.sh ./facesign.service ./face-engine/install-compreface.sh ./README.txt; do
+            grep -Fxq "$path" <<<"$linux_files"
+          done
+          for path in facesign.exe install-service.ps1 uninstall-service.ps1 face-engine/install-compreface.ps1 README.txt; do
+            grep -Fxq "$path" <<<"$windows_files"
+          done
+          test -x dist/linux/facesign
+          file dist/windows/facesign.exe | grep -q 'PE32+'
+
+      - name: Upload Linux release package
         uses: actions/upload-artifact@v7
         with:
-          name: facesign-server-amd64
-          path: dist/
+          name: facesign-linux-amd64
+          path: dist/facesign-linux-amd64.tar.gz
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Upload Windows release package
+        uses: actions/upload-artifact@v7
+        with:
+          name: facesign-windows-amd64
+          path: dist/facesign-windows-amd64.zip
           if-no-files-found: error
           retention-days: 30
 

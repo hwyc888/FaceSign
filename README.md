@@ -18,6 +18,7 @@ FaceSign is a Go + SQLite student face-attendance server for school classrooms. 
 - SQLite WAL mode, busy timeout and constrained writes for concurrent browser clients.
 - Argon2id password hashing and opaque cookie sessions.
 - Native Linux systemd deployment and native Windows Service execution.
+- One-command Windows/Linux packages that deploy and provision CompreFace automatically.
 - Optional native HTTPS mode for browser camera secure-context requirements.
 - GitHub Actions builds Linux/amd64 and Windows/amd64 server binaries.
 
@@ -47,7 +48,7 @@ CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -o dist/facesign-wind
 
 Copy `config.example.env` to `facesign.env`. FaceSign automatically reads `facesign.env` beside the executable, or use `FACESIGN_ENV_FILE` to point to another file. Real environment variables take precedence.
 
-The server can start with `FACESIGN_FACE_PROVIDER=disabled` while you configure the academic data. To enable real face matching, deploy CompreFace and set its recognition-service API key. See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
+The platform packages install FaceSign and provision a local CompreFace recognition service automatically. The administrator page can also switch to an existing remote CompreFace instance without editing `facesign.env`. See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
 
 ## Quick development run
 

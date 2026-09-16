@@ -176,12 +176,12 @@ function adminFaceSettings(settings) {
   </section>
   <section class="panel">
     <h3>一键部署 CompreFace</h3>
-    <p class="muted">发布包内已包含 Windows / Linux 一键部署脚本。需要本机已经安装并启动 Docker（Windows 使用 Docker Desktop）。脚本会部署官方 CompreFace 1.2.0 并等待 8000 端口可用。</p>
+    <p class="muted">Windows / Linux 发布包均带完整安装脚本。主机安装并启动 Docker 后，脚本会部署 CompreFace 1.2.0、自动创建人脸识别服务、写入 API Key，并在退出前完成连通性检查。</p>
     <div class="deploy-grid">
-      <div class="deploy-card"><b>Windows</b><code>face-engine\\install-compreface.ps1</code><span>管理员 PowerShell 运行</span></div>
-      <div class="deploy-card"><b>Linux</b><code>face-engine/install-compreface.sh</code><span>执行 chmod +x 后运行</span></div>
+      <div class="deploy-card"><b>Windows</b><code>.\\install-service.ps1</code><span>管理员 PowerShell 一次完成安装</span></div>
+      <div class="deploy-card"><b>Linux</b><code>sudo ./install.sh</code><span>root 一次完成安装</span></div>
     </div>
-    <div class="notice">部署完成后打开 CompreFace 控制台，创建 Face Recognition Service 并复制 API Key，再回到本页保存并检测。</div>
+    <div class="notice">已有独立 CompreFace 时，也可在上方手工填写地址和 API Key；拍照录入和 kiosk 启动前都会先确认服务真实可用。</div>
   </section>`;
 }
 
