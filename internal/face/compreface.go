@@ -35,7 +35,7 @@ func (c *CompreFace) Name() string  { return "compreface" }
 func (c *CompreFace) Enabled() bool { return c.apiKey != "" }
 
 func (c *CompreFace) Enroll(ctx context.Context, subject string, image []byte) (string, error) {
-	endpoint, err := url.Parse(c.baseURL + "/api/v1/recognition/faces")
+	endpoint, err := url.Parse(c.baseURL + "/api/v1/recognition/faces/")
 	if err != nil {
 		return "", err
 	}
