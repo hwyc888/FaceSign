@@ -22,8 +22,14 @@ jobs:
           go-version: '1.26.6'
           cache: false
 
-      - name: Download modules
-        run: go mod download
+      - name: Resolve module checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          go mod tidy
+          echo '---BEGIN GO.SUM---'
+          cat go.sum
+          echo '---END GO.SUM---'
 
       - name: Test
         run: go test ./...
