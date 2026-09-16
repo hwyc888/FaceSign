@@ -94,5 +94,13 @@ func (s *Server) handleHealth(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) handleKioskStatus(w http.ResponseWriter, r *http.Request) {
-	writeJSON(w, http.StatusOK, map[string]any{"face_provider": s.attendance.FaceProvider().Name(), "face_enabled": s.attendance.FaceProvider().Enabled(), "kiosk_key_required": s.cfg.KioskAccessKey != ""})
+	status := s.faces.Status(r.Context())
+	writeJSON(w, http.StatusOK, map[string]any{
+		"face_provider":      status.Provider,
+		"face_enabled":       status.Enabled,
+		"face_ready":         status.Reachable,
+		"face_message":       status.Message,
+		"face_checked_at":    status.CheckedAt,
+		"kiosk_key_required": s.cfg.KioskAccessKey != "",
+	})
 }
