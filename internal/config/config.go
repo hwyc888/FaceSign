@@ -71,9 +71,6 @@ func Load() (Config, error) {
 	if _, err := time.LoadLocation(cfg.Timezone); err != nil {
 		return Config{}, fmt.Errorf("invalid FACESIGN_TIMEZONE: %w", err)
 	}
-	if cfg.FaceProvider == "compreface" && cfg.CompreFaceAPIKey == "" {
-		return Config{}, fmt.Errorf("FACESIGN_COMPREFACE_API_KEY is required when FACESIGN_FACE_PROVIDER=compreface")
-	}
 	if cfg.FaceProvider != "disabled" && cfg.FaceProvider != "compreface" {
 		return Config{}, fmt.Errorf("unsupported FACESIGN_FACE_PROVIDER %q", cfg.FaceProvider)
 	}

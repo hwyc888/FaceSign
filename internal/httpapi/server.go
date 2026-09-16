@@ -7,6 +7,7 @@ import (
 
 	"github.com/hwyc888/FaceSign/internal/attendance"
 	"github.com/hwyc888/FaceSign/internal/config"
+	"github.com/hwyc888/FaceSign/internal/face"
 	"github.com/hwyc888/FaceSign/internal/realtime"
 	"github.com/hwyc888/FaceSign/internal/repository"
 	"github.com/hwyc888/FaceSign/internal/webui"
@@ -16,13 +17,14 @@ type Server struct {
 	cfg        config.Config
 	repo       *repository.Repository
 	attendance *attendance.Service
+	faces      *face.Manager
 	hub        *realtime.Hub
 	logger     *slog.Logger
 	location   *time.Location
 }
 
-func New(cfg config.Config, repo *repository.Repository, attendanceService *attendance.Service, hub *realtime.Hub, logger *slog.Logger, location *time.Location) *Server {
-	return &Server{cfg: cfg, repo: repo, attendance: attendanceService, hub: hub, logger: logger, location: location}
+func New(cfg config.Config, repo *repository.Repository, attendanceService *attendance.Service, faces *face.Manager, hub *realtime.Hub, logger *slog.Logger, location *time.Location) *Server {
+	return &Server{cfg: cfg, repo: repo, attendance: attendanceService, faces: faces, hub: hub, logger: logger, location: location}
 }
 
 func (s *Server) Handler() http.Handler {
@@ -42,6 +44,9 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("GET /api/attendance/sessions/{id}/records", s.requireAuth(s.handleSessionRecords))
 	mux.HandleFunc("POST /api/attendance/manual", s.requireAuth(s.handleManualAttendance))
 	mux.HandleFunc("POST /api/leaves", s.requireAuth(s.handleCreateLeave))
+	mux.HandleFunc("GET /api/settings/face", s.requireAdmin(s.handleGetFaceSettings))
+	mux.HandleFunc("PUT /api/settings/face", s.requireAdmin(s.handleUpdateFaceSettings))
+	mux.HandleFunc("POST /api/settings/face/check", s.requireAdmin(s.handleCheckFaceService))
 
 	mux.HandleFunc("GET /api/users", s.requireAdmin(s.handleListUsers))
 	mux.HandleFunc("POST /api/users", s.requireAdmin(s.handleCreateUser))

@@ -34,6 +34,30 @@ func NewCompreFace(baseURL, apiKey string, similarity, detectionThreshold float6
 func (c *CompreFace) Name() string  { return "compreface" }
 func (c *CompreFace) Enabled() bool { return c.apiKey != "" }
 
+func (c *CompreFace) Check(ctx context.Context) error {
+	if c.apiKey == "" {
+		return ErrInvalidAPIKey
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.baseURL+"/api/v1/recognition/subjects/", nil)
+	if err != nil {
+		return err
+	}
+	req.Header.Set("x-api-key", c.apiKey)
+	resp, err := c.client.Do(req)
+	if err != nil {
+		return fmt.Errorf("%w: %v", ErrUnavailable, err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return ErrInvalidAPIKey
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		message, _ := io.ReadAll(io.LimitReader(resp.Body, 2048))
+		return fmt.Errorf("%w: HTTP %s %s", ErrUnavailable, resp.Status, bytes.TrimSpace(message))
+	}
+	return nil
+}
+
 func (c *CompreFace) Enroll(ctx context.Context, subject string, image []byte) (string, error) {
 	endpoint, err := url.Parse(c.baseURL + "/api/v1/recognition/faces/")
 	if err != nil {
@@ -119,12 +143,18 @@ func (c *CompreFace) postImage(ctx context.Context, endpoint string, image []byt
 
 	resp, err := c.client.Do(req)
 	if err != nil {
-		return fmt.Errorf("compreface request failed: %w", err)
+		return fmt.Errorf("%w: %v", ErrUnavailable, err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return ErrInvalidAPIKey
+	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		message, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
-		return fmt.Errorf("compreface returned %s: %s", resp.Status, bytes.TrimSpace(message))
+		if resp.StatusCode >= 500 {
+			return fmt.Errorf("%w: HTTP %s %s", ErrUnavailable, resp.Status, bytes.TrimSpace(message))
+		}
+		return fmt.Errorf("CompreFace 返回 HTTP %s: %s", resp.Status, bytes.TrimSpace(message))
 	}
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 2<<20)).Decode(target); err != nil {
 		return fmt.Errorf("decode compreface response: %w", err)

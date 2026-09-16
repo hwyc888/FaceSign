@@ -44,6 +44,7 @@ jobs:
           CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o dist/facesign-linux-amd64 ./cmd/facesign
           CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o dist/facesign-windows-amd64.exe ./cmd/facesign
           cp config.example.env dist/config.example.env
+          cp -R deploy/face-engine dist/face-engine
 
       - name: Upload server binaries
         uses: actions/upload-artifact@v7

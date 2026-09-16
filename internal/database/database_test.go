@@ -23,6 +23,7 @@ func TestOpenMigratesSchema(t *testing.T) {
 		"attendance_sessions",
 		"attendance_records",
 		"leave_records",
+		"system_settings",
 	} {
 		var name string
 		if err := db.QueryRow(`SELECT name FROM sqlite_master WHERE type='table' AND name=?`, table).Scan(&name); err != nil {

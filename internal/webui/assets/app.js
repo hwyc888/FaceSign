@@ -334,6 +334,16 @@ async function removeEntity(url, label) {
 }
 
 async function openFaceDialog(studentID, name) {
+  try {
+    const status = await api('/api/settings/face/check', { method:'POST' });
+    if (!status.reachable) {
+      notify(status.message || '人脸识别服务当前不可用，请先完成配置并检测服务。', 'error');
+      return;
+    }
+  } catch (error) {
+    notify(`无法检测人脸识别服务：${error.message}`, 'error');
+    return;
+  }
   const dialog = document.createElement('dialog');
   dialog.innerHTML = `<div class="dialog-body"><div class="section-title"><h3 style="margin:0">采集 ${esc(name)} 的人脸</h3><button class="btn" id="face-close">关闭</button></div><div class="notice">建议光线均匀、正脸无遮挡；可重复采集 2–3 张不同角度样本提高识别稳定性。</div><video class="camera" autoplay playsinline muted></video><div class="actions" style="margin-top:12px"><button class="btn good" id="face-capture">拍照并录入</button></div><div id="face-message"></div></div>`;
   document.body.appendChild(dialog);
@@ -379,12 +389,14 @@ function captureBlob(video) {
 
 async function renderKiosk() {
   app.innerHTML=`<main class="kiosk"><header class="topbar"><div><div class="brand">FaceSign 教室刷脸终端</div><div class="muted">按当前教室课表自动判定准时或迟到</div></div><a class="btn ghost" href="/">教师平台</a></header><section class="panel" id="kiosk-config"><div class="form-grid"><div class="field"><label>教室</label><input id="kiosk-classroom" placeholder="例如 机房301"></div><div class="field"><label>终端密钥</label><input id="kiosk-key" type="password" placeholder="由服务器管理员配置"></div><button class="btn primary" id="kiosk-start">启动摄像头</button></div><div id="secure-warning"></div></section><section class="panel"><div class="video-box"><video id="kiosk-video" autoplay playsinline muted></video><div class="scan-line"></div></div><div class="result" id="kiosk-result">等待启动</div></section></main>`;
-  const classroom=document.getElementById('kiosk-classroom'),key=document.getElementById('kiosk-key'),result=document.getElementById('kiosk-result'),video=document.getElementById('kiosk-video');
+  const classroom=document.getElementById('kiosk-classroom'),key=document.getElementById('kiosk-key'),result=document.getElementById('kiosk-result'),video=document.getElementById('kiosk-video'),startButton=document.getElementById('kiosk-start');
   classroom.value=sessionStorage.getItem('facesign_classroom')||'';key.value=sessionStorage.getItem('facesign_kiosk_key')||'';
   if(!window.isSecureContext){document.getElementById('secure-warning').innerHTML='<div class="error">浏览器摄像头通常要求 HTTPS（localhost 例外）。请给 FaceSign 配置 TLS 证书或通过 HTTPS 反向代理访问。</div>';}
-  try{const status=await api('/api/kiosk/status');if(!status.face_enabled)result.innerHTML='服务器尚未启用人脸识别引擎';if(!status.kiosk_key_required)key.closest('.field').style.display='none';}catch(error){result.innerHTML=esc(error.message);}
+  let faceEnabled=true;
+  try{const status=await api('/api/kiosk/status');if(!status.face_enabled){faceEnabled=false;startButton.disabled=true;result.className='result bad';result.innerHTML='人脸识别服务尚未启用，请联系管理员到“人脸识别设置”完成配置。';}if(!status.kiosk_key_required)key.closest('.field').style.display='none';}catch(error){faceEnabled=false;startButton.disabled=true;result.className='result bad';result.innerHTML=esc(error.message);}
   let stream=null,timer=null,busy=false;
-  document.getElementById('kiosk-start').addEventListener('click',async()=>{
+  startButton.addEventListener('click',async()=>{
+    if(!faceEnabled){notify('人脸识别服务尚未启用，请联系管理员完成配置。','error');return;}
     if(!classroom.value.trim()){notify('请先填写教室名称','error');return;}
     sessionStorage.setItem('facesign_classroom',classroom.value.trim());sessionStorage.setItem('facesign_kiosk_key',key.value);
     try{if(stream)stream.getTracks().forEach(t=>t.stop());stream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'user',width:{ideal:1280},height:{ideal:720}},audio:false});video.srcObject=stream;result.className='result';result.textContent='摄像头已启动，正在识别…';if(timer)clearInterval(timer);timer=setInterval(scan,2600);setTimeout(scan,900);}catch(error){result.className='result bad';result.textContent='无法打开摄像头：'+error.message;}

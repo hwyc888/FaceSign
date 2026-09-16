@@ -11,6 +11,7 @@ import (
 	"github.com/hwyc888/FaceSign/internal/attendance"
 	"github.com/hwyc888/FaceSign/internal/config"
 	"github.com/hwyc888/FaceSign/internal/database"
+	"github.com/hwyc888/FaceSign/internal/domain"
 	"github.com/hwyc888/FaceSign/internal/face"
 	"github.com/hwyc888/FaceSign/internal/httpapi"
 	"github.com/hwyc888/FaceSign/internal/realtime"
@@ -31,12 +32,22 @@ func Run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 
 	repo := repository.New(db)
 	hub := realtime.NewHub()
-	var faceProvider face.Provider = face.Disabled{}
-	if cfg.FaceProvider == "compreface" {
-		faceProvider = face.NewCompreFace(cfg.CompreFaceURL, cfg.CompreFaceAPIKey, cfg.FaceSimilarity, cfg.FaceDetectionThreshold)
+	faceSettings, err := repo.LoadFaceSettings(ctx, domain.FaceSettings{
+		Provider:           cfg.FaceProvider,
+		ServiceURL:         cfg.CompreFaceURL,
+		APIKey:             cfg.CompreFaceAPIKey,
+		Similarity:         cfg.FaceSimilarity,
+		DetectionThreshold: cfg.FaceDetectionThreshold,
+	})
+	if err != nil {
+		return fmt.Errorf("load face settings: %w", err)
 	}
-	attendanceService := attendance.New(repo, faceProvider, hub, location, logger)
-	api := httpapi.New(cfg, repo, attendanceService, hub, logger, location)
+	faceManager, err := face.NewManager(faceSettings)
+	if err != nil {
+		return fmt.Errorf("configure face recognition: %w", err)
+	}
+	attendanceService := attendance.New(repo, faceManager, hub, location, logger)
+	api := httpapi.New(cfg, repo, attendanceService, faceManager, hub, logger, location)
 
 	server := &http.Server{
 		Addr:              cfg.Addr,
@@ -53,7 +64,7 @@ func Run(ctx context.Context, cfg config.Config, logger *slog.Logger) error {
 
 	errCh := make(chan error, 1)
 	go func() {
-		logger.Info("FaceSign server starting", "address", cfg.Addr, "timezone", cfg.Timezone, "face_provider", faceProvider.Name(), "tls", cfg.TLSCertFile != "")
+		logger.Info("FaceSign server starting", "address", cfg.Addr, "timezone", cfg.Timezone, "face_provider", faceManager.Name(), "tls", cfg.TLSCertFile != "")
 		if cfg.TLSCertFile != "" {
 			errCh <- server.ListenAndServeTLS(cfg.TLSCertFile, cfg.TLSKeyFile)
 			return

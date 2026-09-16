@@ -31,8 +31,10 @@ func (s *Server) handleRecognize(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, "未识别到已登记学生")
 		case errors.Is(err, face.ErrMultipleFaces):
 			writeError(w, http.StatusConflict, "画面中检测到多张人脸，请一次只允许一名学生刷脸")
+		case errors.Is(err, face.ErrInvalidAPIKey):
+			writeError(w, http.StatusBadGateway, "人脸识别服务 API Key 无效，请联系管理员重新配置")
 		case errors.Is(err, face.ErrUnavailable):
-			writeError(w, http.StatusServiceUnavailable, "人脸识别服务未启用")
+			writeError(w, http.StatusServiceUnavailable, "人脸识别服务未启用或当前不可用，请联系管理员检查人脸识别设置")
 		case repository.IsNotFound(err):
 			writeError(w, http.StatusNotFound, "当前教室没有可签到课程")
 		default:

@@ -7,7 +7,8 @@ const adminSectionLabels = {
   students: '学生管理',
   courses: '课程管理',
   enrollment: '课程名单',
-  schedules: '课表管理'
+  schedules: '课表管理',
+  face: '人脸识别设置'
 };
 
 function asArray(value) {
@@ -23,7 +24,8 @@ function renderShell() {
     <button class="btn ghost" data-admin-nav="students">学生管理</button>
     <button class="btn ghost" data-admin-nav="courses">课程管理</button>
     <button class="btn ghost" data-admin-nav="enrollment">课程名单</button>
-    <button class="btn ghost" data-admin-nav="schedules">课表管理</button>` : '';
+    <button class="btn ghost" data-admin-nav="schedules">课表管理</button>
+    <button class="btn ghost" data-admin-nav="face">人脸识别</button>` : '';
 
   app.innerHTML = `
     <div class="shell">
@@ -65,7 +67,8 @@ function adminSectionNav(counts) {
     ['students', '学生管理', counts.students],
     ['courses', '课程管理', counts.courses],
     ['enrollment', '课程名单', null],
-    ['schedules', '课表管理', counts.schedules]
+    ['schedules', '课表管理', counts.schedules],
+    ['face', '人脸识别', null]
   ];
   return `<div class="admin-tabs">${sections.map(([key, label, count]) => `
     <button class="admin-tab ${state.adminSection === key ? 'active' : ''}" data-admin-section="${key}">
@@ -95,13 +98,17 @@ async function loadAdmin() {
     const schedules = asArray(raw[4]);
 
     let enrolled = [];
+    let faceSettings = null;
     if (state.adminSection === 'enrollment' && courses.length > 0) {
       const validCourse = courses.some(course => course.id === Number(state.adminCourseID));
       if (!validCourse) state.adminCourseID = courses[0].id;
       enrolled = asArray(await api(`/api/courses/${Number(state.adminCourseID)}/students`));
     }
+    if (state.adminSection === 'face') {
+      faceSettings = await api('/api/settings/face');
+    }
 
-    const content = adminSectionContent({ users, classes, students, courses, schedules, enrolled });
+    const content = adminSectionContent({ users, classes, students, courses, schedules, enrolled, faceSettings });
     main.innerHTML = `
       <section class="panel admin-header">
         <div class="section-title">
@@ -132,9 +139,50 @@ function adminSectionContent(data) {
     case 'courses': return adminCourses(data.users, data.courses);
     case 'enrollment': return adminEnrollmentManager(data.courses, data.classes, data.students, data.enrolled);
     case 'schedules': return adminSchedules(data.courses, data.schedules);
+    case 'face': return adminFaceSettings(data.faceSettings);
     case 'teachers':
     default: return adminUsers(data.users);
   }
+}
+
+function adminFaceSettings(settings) {
+  if (!settings) return '<section class="panel error">无法读取人脸识别设置。</section>';
+  const configured = settings.api_key_configured;
+  return `<section class="panel">
+    <div class="section-title">
+      <div><h3 style="margin:0">人脸识别设置</h3><div class="muted">设置保存在 FaceSign 数据库中，保存后立即生效，不需要手工修改 facesign.env。</div></div>
+      <span class="badge ${settings.provider === 'compreface' && configured ? 'on_time' : 'pending'}">${settings.provider === 'compreface' && configured ? '已配置' : '未启用'}</span>
+    </div>
+    <form id="face-settings-form">
+      <div class="form-grid">
+        <div class="field"><label>人脸识别引擎</label><select name="provider">
+          <option value="disabled" ${settings.provider === 'disabled' ? 'selected' : ''}>停用</option>
+          <option value="compreface" ${settings.provider === 'compreface' ? 'selected' : ''}>CompreFace</option>
+        </select></div>
+        <div class="field"><label>服务地址</label><input name="service_url" value="${esc(settings.service_url || 'http://127.0.0.1:8000')}" placeholder="http://127.0.0.1:8000"></div>
+        <div class="field"><label>API Key</label><input type="password" name="api_key" autocomplete="new-password" placeholder="${configured ? '已保存；留空表示不修改' : '请输入 Face Recognition Service API Key'}"></div>
+        <div class="field"><label>识别相似度阈值</label><input type="number" name="similarity" min="0" max="1" step="0.01" value="${Number(settings.similarity ?? 0.78)}"></div>
+        <div class="field"><label>人脸检测阈值</label><input type="number" name="detection_threshold" min="0" max="1" step="0.01" value="${Number(settings.detection_threshold ?? 0.80)}"></div>
+      </div>
+      <div class="actions" style="margin-top:12px">
+        <button class="btn primary" type="submit">保存并立即应用</button>
+        <button class="btn good" type="button" id="face-check-btn">检测服务</button>
+        <a class="btn" href="${esc(settings.service_url || 'http://127.0.0.1:8000')}" target="_blank" rel="noopener">打开 CompreFace 控制台</a>
+      </div>
+    </form>
+    <div id="face-check-result" class="face-status-box">
+      <div class="muted">保存设置后点击“检测服务”，系统会验证服务地址和 API Key。</div>
+    </div>
+  </section>
+  <section class="panel">
+    <h3>一键部署 CompreFace</h3>
+    <p class="muted">发布包内已包含 Windows / Linux 一键部署脚本。需要本机已经安装并启动 Docker（Windows 使用 Docker Desktop）。脚本会部署官方 CompreFace 1.2.0 并等待 8000 端口可用。</p>
+    <div class="deploy-grid">
+      <div class="deploy-card"><b>Windows</b><code>face-engine\\install-compreface.ps1</code><span>管理员 PowerShell 运行</span></div>
+      <div class="deploy-card"><b>Linux</b><code>face-engine/install-compreface.sh</code><span>执行 chmod +x 后运行</span></div>
+    </div>
+    <div class="notice">部署完成后打开 CompreFace 控制台，创建 Face Recognition Service 并复制 API Key，再回到本页保存并检测。</div>
+  </section>`;
 }
 
 function adminEnrollmentManager(courses, classes, students, enrolled) {
@@ -203,6 +251,30 @@ function bindAdminForms() {
   submit('course-form', data => api('/api/courses', { method: 'POST', body: { ...data, teacher_id: Number(data.teacher_id) } }));
   submit('enroll-form', data => api(`/api/courses/${Number(data.course_id)}/students`, { method: 'POST', body: { student_id: Number(data.student_id) } }));
   submit('schedule-form', data => api('/api/schedules', { method: 'POST', body: { course_id: Number(data.course_id), classroom: data.classroom, weekday: Number(data.weekday), start_minute: timeToMinutes(data.start), end_minute: timeToMinutes(data.end), grace_minutes: Number(data.grace_minutes), checkin_before_minutes: Number(data.checkin_before_minutes), enabled: true } }));
+  submit('face-settings-form', data => api('/api/settings/face', { method: 'PUT', body: {
+    provider: data.provider,
+    service_url: data.service_url,
+    api_key: data.api_key,
+    similarity: Number(data.similarity),
+    detection_threshold: Number(data.detection_threshold)
+  } }));
+
+  const faceCheck = document.getElementById('face-check-btn');
+  if (faceCheck) {
+    faceCheck.addEventListener('click', async () => {
+      const box = document.getElementById('face-check-result');
+      faceCheck.disabled = true;
+      box.innerHTML = '<div class="notice">正在检测人脸识别服务…</div>';
+      try {
+        const status = await api('/api/settings/face/check', { method: 'POST' });
+        box.innerHTML = `<div class="${status.reachable ? 'success' : 'error'}"><b>${esc(status.message)}</b>${status.detail ? `<div class="face-detail">${esc(status.detail)}</div>` : ''}</div>`;
+      } catch (error) {
+        box.innerHTML = `<div class="error">检测失败：${esc(error.message)}</div>`;
+      } finally {
+        faceCheck.disabled = false;
+      }
+    });
+  }
 
   const courseSelect = document.getElementById('enrollment-course');
   if (courseSelect) {

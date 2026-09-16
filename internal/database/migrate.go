@@ -95,6 +95,11 @@ func migrate(db *sql.DB) error {
 			created_at INTEGER NOT NULL,
 			UNIQUE(student_id, schedule_id, leave_date)
 		)`,
+		`CREATE TABLE IF NOT EXISTS system_settings (
+			key TEXT PRIMARY KEY,
+			value TEXT NOT NULL,
+			updated_at INTEGER NOT NULL
+		)`,
 	}
 
 	for _, statement := range statements {

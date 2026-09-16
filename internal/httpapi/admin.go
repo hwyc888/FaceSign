@@ -1,11 +1,13 @@
 package httpapi
 
 import (
+	"errors"
 	"net/http"
 	"strconv"
 	"strings"
 
 	"github.com/hwyc888/FaceSign/internal/domain"
+	"github.com/hwyc888/FaceSign/internal/face"
 	"github.com/hwyc888/FaceSign/internal/security"
 )
 
@@ -160,7 +162,14 @@ func (s *Server) handleEnrollFace(w http.ResponseWriter, r *http.Request) {
 	}
 	imageID, err := s.attendance.EnrollFace(r.Context(), id, image)
 	if err != nil {
-		writeError(w, 502, "人脸样本录入失败: "+err.Error())
+		switch {
+		case errors.Is(err, face.ErrUnavailable):
+			writeError(w, http.StatusServiceUnavailable, "人脸识别服务未启用或当前不可用，请先到“人脸识别设置”完成配置并检测服务")
+		case errors.Is(err, face.ErrInvalidAPIKey):
+			writeError(w, http.StatusBadGateway, "人脸识别服务 API Key 无效，请到“人脸识别设置”重新配置")
+		default:
+			writeError(w, http.StatusBadGateway, "人脸样本录入失败: "+err.Error())
+		}
 		return
 	}
 	writeJSON(w, 201, map[string]any{"image_id": imageID, "student_id": id})

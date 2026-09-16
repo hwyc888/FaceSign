@@ -97,3 +97,21 @@ type Leave struct {
 	Reason     string `json:"reason"`
 	ApprovedBy int64  `json:"approved_by"`
 }
+
+type FaceSettings struct {
+	Provider           string  `json:"provider"`
+	ServiceURL         string  `json:"service_url"`
+	APIKey             string  `json:"api_key,omitempty"`
+	Similarity         float64 `json:"similarity"`
+	DetectionThreshold float64 `json:"detection_threshold"`
+}
+
+type FaceServiceStatus struct {
+	Provider   string `json:"provider"`
+	Configured bool   `json:"configured"`
+	Enabled    bool   `json:"enabled"`
+	Reachable  bool   `json:"reachable"`
+	Message    string `json:"message"`
+	Detail     string `json:"detail,omitempty"`
+	CheckedAt  int64  `json:"checked_at"`
+}
