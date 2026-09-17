@@ -26,8 +26,8 @@
     if (!meta || !header) return;
     const title = header.querySelector('h2');
     const description = header.querySelector('.muted');
-    if (title) title.textContent = meta[0];
-    if (description) description.textContent = meta[1];
+    if (title && title.textContent !== meta[0]) title.textContent = meta[0];
+    if (description && description.textContent !== meta[1]) description.textContent = meta[1];
   }
 
   const observer = new MutationObserver(syncNavigation);
