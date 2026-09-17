@@ -11,6 +11,10 @@ import (
 )
 
 func Run(logger *slog.Logger, runner func(context.Context) error) error {
+	return RunNamed(logger, "FaceSign", runner)
+}
+
+func RunNamed(_ *slog.Logger, _ string, runner func(context.Context) error) error {
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	return runner(ctx)

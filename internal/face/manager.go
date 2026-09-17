@@ -131,7 +131,7 @@ func (m *Manager) Status(ctx context.Context) domain.FaceServiceStatus {
 			status.Message = "连接人脸识别服务超时，请检查服务是否启动"
 		default:
 			if settings.Provider == "localcpu" {
-				status.Message = "无法连接本地 CPU 人脸引擎，请先运行一键部署脚本或检查服务状态"
+				status.Message = "无法连接本地原生 CPU 人脸引擎，请先运行一键部署脚本或检查服务状态"
 			} else {
 				status.Message = "无法连接 CompreFace，请检查服务地址和运行状态"
 			}
@@ -141,7 +141,7 @@ func (m *Manager) Status(ctx context.Context) domain.FaceServiceStatus {
 	}
 	status.Reachable = true
 	if settings.Provider == "localcpu" {
-		status.Message = "本地 CPU 人脸引擎运行正常（无需 GPU / Docker）"
+		status.Message = "本地原生 CPU 人脸引擎运行正常（无需 Python / Docker / GPU）"
 	} else {
 		status.Message = "CompreFace 服务正常，API Key 验证通过"
 	}

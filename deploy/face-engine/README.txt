@@ -1,48 +1,67 @@
-FaceSign 本地 CPU 人脸引擎
+FaceSign 原生 CPU 人脸引擎
 ========================
 
-默认推荐方案：Local CPU Engine
-- 不需要独立显卡
-- 不需要 CUDA
-- 不需要 Docker / Docker Desktop
-- 使用 OpenCV YuNet + SFace ONNX 模型，仅使用 CPU
-- 默认只监听 127.0.0.1:18081
+目标：新机器不安装 Python、不安装 Docker、不要求 GPU/CUDA。
+
+运行结构：
+- FaceSign 主程序：Go
+- 人脸引擎：facesign-face-engine（Go 原生可执行文件）
+- 推理库：ONNX Runtime CPU 版，随发布包携带
+- 模型：YuNet + SFace ONNX，随发布包携带
+- 人脸特征：SQLite faces.db
 
 Windows
 -------
-管理员 PowerShell 运行：
-  powershell -ExecutionPolicy Bypass -File .\install-localcpu.ps1
+进入发布包 face-engine\windows 目录，运行：
+  powershell -ExecutionPolicy Bypass -File .\install.ps1
 
-脚本会自动：
-1. 在 C:\ProgramData\FaceSign\face-engine 安装独立 Python 3.11 运行环境；
-2. 安装 CPU 版 OpenCV / FastAPI 依赖；
-3. 下载 YuNet 和 SFace ONNX 模型；
-4. 注册 FaceSignFaceEngine 开机启动任务；
-5. 启动并检测 http://127.0.0.1:18081/health。
+脚本会自动提升管理员权限，将原生引擎安装为 Windows Service：
+  FaceSignFaceEngine
 
-不要求系统预装 Python，也不要求安装 Docker。
-卸载：
-  powershell -ExecutionPolicy Bypass -File .\uninstall-localcpu.ps1
-默认保留已经采集的人脸特征数据。加 -RemoveData 才删除数据。
+不需要联网下载 Python/pip，也不需要 Docker Desktop。
+如果之前使用过 Python 版 FaceSign 本地引擎，会继续使用同一份：
+  C:\ProgramData\FaceSign\face-engine\data\faces.db
+所以已经采集的人脸不需要重新录入。
+
+卸载且保留人脸数据：
+  powershell -ExecutionPolicy Bypass -File .\uninstall.ps1
+
+只有确定要删除生物特征数据时才使用：
+  powershell -ExecutionPolicy Bypass -File .\uninstall.ps1 -RemoveData
 
 Linux
 -----
-执行：
-  chmod +x ./install-localcpu.sh
-  ./install-localcpu.sh
+进入发布包 face-engine/linux 目录：
+  chmod +x ./install.sh
+  sudo ./install.sh
 
-脚本会创建独立 venv 和 systemd 服务 facesign-face-engine，并监听 127.0.0.1:18081。
-不需要 GPU 或 Docker。
+安装后服务名：
+  facesign-face-engine.service
 
-FaceSign 管理端设置
-------------------
-人脸识别引擎：本地 CPU 引擎（推荐，无需 GPU / Docker）
+默认监听：
+  http://127.0.0.1:18081
+
+FaceSign 管理端
+---------------
+人脸识别引擎：本地 CPU 引擎
 服务地址：http://127.0.0.1:18081
-API Key：留空
-相似度阈值：建议先使用 0.72
+API Key：不需要填写
+识别相似度：建议先使用 0.72
 人脸检测阈值：建议 0.80
-保存后点击“检测服务”。
 
-可选方案
---------
-如果已有独立 CompreFace 服务，FaceSign 仍然保留 CompreFace Provider；该模式需要填写 CompreFace 服务地址与 API Key，但 Windows 默认部署不再依赖 CompreFace 或 Docker。
+保存后点击“检测服务”。正常应显示 CPU 引擎可达，并明确 GPU 不需要。
+
+迁移到新机器
+------------
+1. 迁移 FaceSign 主数据库 facesign.db。
+2. 同时迁移人脸数据库 faces.db。
+3. 在新机器安装同版本 FaceSign 和原生人脸引擎。
+4. 把数据库放回对应数据目录，启动服务即可。
+
+Windows 默认人脸数据库：
+  C:\ProgramData\FaceSign\face-engine\data\faces.db
+
+Linux 默认人脸数据库：
+  /var/lib/facesign/face-engine/data/faces.db
+
+运行时不依赖 Python、pip、venv、Docker、CUDA 或独立显卡。

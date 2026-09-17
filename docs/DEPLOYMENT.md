@@ -1,58 +1,88 @@
 # Deployment
 
-## 1. Recommended face engine: local CPU, no GPU or Docker
+## 1. Recommended face engine: native CPU, no Python, Docker or GPU
 
-FaceSign's default deployment target is the **Local CPU Engine** included under `deploy/face-engine`. It uses OpenCV YuNet for face detection and SFace for face embeddings. Inference runs on CPU only; CUDA, a discrete GPU, Docker and Docker Desktop are not required.
+FaceSign's default face-recognition deployment is the **Native CPU Engine** shipped inside the release package. The engine itself is a Go executable and uses ONNX Runtime CPU with YuNet face detection and SFace embeddings.
 
-The engine implements the small recognition API used by FaceSign and listens on `127.0.0.1:18081` by default. Face samples are stored in a separate SQLite database owned by the face engine.
+The target server does **not** install Python, pip, venv, Docker, Docker Desktop, CUDA or GPU drivers. ONNX Runtime and the two ONNX models are application files carried inside the FaceSign release package.
+
+The engine listens on `127.0.0.1:18081` by default and stores face embeddings in SQLite `faces.db`. The schema is intentionally compatible with the previous local CPU engine, so already-enrolled face samples remain usable after upgrading.
 
 ### Windows
 
-Open PowerShell as Administrator from the release package's `face-engine` directory:
+Open the release package's `face-engine\windows` directory and run:
 
 ```powershell
-Set-ExecutionPolicy -Scope Process Bypass
-.\install-localcpu.ps1
+powershell -ExecutionPolicy Bypass -File .\install.ps1
 ```
 
-The script does not require a preinstalled Python. It downloads an isolated Python 3.11 embeddable runtime, installs CPU-only OpenCV/FastAPI dependencies, downloads the YuNet/SFace ONNX models, registers the `FaceSignFaceEngine` startup task and checks `http://127.0.0.1:18081/health`.
-
-Default engine data is stored under:
+The installer copies the already-built native executable, ONNX Runtime CPU DLL, VC runtime app-local DLLs and models into FaceSign's private installation directory, then registers the native Windows Service:
 
 ```text
-C:\ProgramData\FaceSign\face-engine\data
+FaceSignFaceEngine
 ```
 
-Uninstall while preserving face data:
+No runtime download or language environment is created on the target machine.
+
+Default face data:
+
+```text
+C:\ProgramData\FaceSign\face-engine\data\faces.db
+```
+
+Uninstall while preserving enrolled face data:
 
 ```powershell
-.\uninstall-localcpu.ps1
+powershell -ExecutionPolicy Bypass -File .\uninstall.ps1
 ```
 
-Use `-RemoveData` only when you intentionally want to delete the collected face embeddings.
+Delete biometric data only when intentionally required:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\uninstall.ps1 -RemoveData
+```
 
 ### Linux
 
+Open the release package's `face-engine/linux` directory:
+
 ```sh
-chmod +x ./install-localcpu.sh
-./install-localcpu.sh
+chmod +x ./install.sh
+sudo ./install.sh
 ```
 
-The script creates an isolated Python virtual environment, installs CPU-only dependencies and registers `facesign-face-engine.service` with systemd. Docker and GPU drivers are not required.
+The installer copies the native executable, ONNX Runtime CPU shared library and models to `/opt/facesign/face-engine`, then registers `facesign-face-engine.service` with systemd. It does not install Python or Docker.
+
+Default face data:
+
+```text
+/var/lib/facesign/face-engine/data/faces.db
+```
 
 ### FaceSign admin settings
 
-After the local engine is running, sign in as an administrator and open **Face Recognition**:
+After the engine is installed, sign in as an administrator and open **Face Recognition**:
 
 ```text
-Engine: Local CPU Engine
+Engine: Local Native CPU Engine
 Service URL: http://127.0.0.1:18081
 API Key: leave blank
 Similarity threshold: 0.72 recommended starting point
 Detection threshold: 0.80
 ```
 
-Save the settings and click **Check Service**. A healthy installation reports that the local CPU engine is running and that GPU/Docker are not required.
+Save and click **Check Service**. A healthy engine reports CPU mode and `gpu_required=false`.
+
+### Moving to a new server
+
+A new server does not need Python/Docker reconstruction. Install the same FaceSign release and copy these persistent databases from the old machine:
+
+```text
+FaceSign database: facesign.db
+Face engine database: faces.db
+```
+
+Then start the FaceSign and FaceSignFaceEngine services. No face re-enrollment is required as long as `faces.db` is migrated with the application data.
 
 ## 2. Optional external CompreFace provider
 
@@ -84,7 +114,7 @@ Alternatively place Caddy/Nginx/IIS in front of FaceSign and proxy to `127.0.0.1
 
 ## 4. Linux FaceSign server
 
-Download the `facesign-linux-amd64` artifact, then from the checked-out repository:
+Download `facesign-linux-amd64`, then from the checked-out repository:
 
 ```sh
 sudo ./deploy/linux/install.sh /path/to/facesign-linux-amd64
@@ -92,7 +122,7 @@ sudo nano /etc/facesign/facesign.env
 sudo systemctl restart facesign
 ```
 
-Data defaults to `/var/lib/facesign/facesign.db`.
+FaceSign data defaults to `/var/lib/facesign/facesign.db`.
 
 ## 5. Windows FaceSign server
 
@@ -103,12 +133,12 @@ Set-ExecutionPolicy -Scope Process Bypass
 .\deploy\windows\install-service.ps1 -Binary .\facesign-windows-amd64.exe
 ```
 
-The Go executable contains native Windows Service support. Configuration is stored beside the installed executable at `C:\Program Files\FaceSign\facesign.env`, and data defaults to `C:\ProgramData\FaceSign\facesign.db`.
+The Go executable contains native Windows Service support. Configuration is stored beside the installed executable at `C:\Program Files\FaceSign\facesign.env`, and FaceSign data defaults to `C:\ProgramData\FaceSign\facesign.db`.
 
-The Windows FaceSign service and the local CPU face engine are independent services. Neither requires Docker.
+FaceSign and `FaceSignFaceEngine` are separate native Windows services, but both are delivered by the same release package and neither requires Docker or Python.
 
 ## 6. First run
 
-Open the server URL in a browser. The first page creates the initial administrator. Then configure teachers, classes, students, courses, course enrollment and schedules. Open **Face Recognition**, deploy/configure the local CPU engine, verify its status, then use the student list's face-capture button to register 2-3 samples per student.
+Open the server URL in a browser. The first page creates the initial administrator. Configure teachers, classes, students, courses, course enrollment and schedules. Then open **Face Recognition**, install/configure the native CPU engine, verify its status, and register 2-3 face samples per student.
 
 Classroom devices open `/kiosk`, enter the exact classroom name from the schedule and the kiosk access key from `facesign.env`, then start the camera.

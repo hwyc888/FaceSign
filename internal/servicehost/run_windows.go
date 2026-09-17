@@ -20,6 +20,10 @@ type windowsHandler struct {
 }
 
 func Run(logger *slog.Logger, runner func(context.Context) error) error {
+	return RunNamed(logger, serviceName, runner)
+}
+
+func RunNamed(logger *slog.Logger, name string, runner func(context.Context) error) error {
 	isService, err := svc.IsWindowsService()
 	if err != nil {
 		return err
@@ -29,7 +33,7 @@ func Run(logger *slog.Logger, runner func(context.Context) error) error {
 		defer stop()
 		return runner(ctx)
 	}
-	return svc.Run(serviceName, &windowsHandler{logger: logger, runner: runner})
+	return svc.Run(name, &windowsHandler{logger: logger, runner: runner})
 }
 
 func (h *windowsHandler) Execute(_ []string, requests <-chan svc.ChangeRequest, status chan<- svc.Status) (bool, uint32) {

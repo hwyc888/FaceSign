@@ -152,14 +152,14 @@ function adminFaceSettings(settings) {
   const serviceURL = settings.service_url || (settings.provider === 'localcpu' ? 'http://127.0.0.1:18081' : 'http://127.0.0.1:8000');
   return `<section class="panel">
     <div class="section-title">
-      <div><h3 style="margin:0">人脸识别设置</h3><div class="muted">推荐使用本地 CPU 引擎：不需要 GPU、CUDA 或 Docker。设置保存在 FaceSign 数据库中，保存后立即生效。</div></div>
+      <div><h3 style="margin:0">人脸识别设置</h3><div class="muted">推荐使用本地原生 CPU 引擎：Go 可执行程序 + ONNX Runtime CPU，不需要 Python、GPU、CUDA 或 Docker。设置保存在 FaceSign 数据库中，保存后立即生效。</div></div>
       <span class="badge ${ready ? 'on_time' : 'pending'}">${ready ? '已配置' : '未启用'}</span>
     </div>
     <form id="face-settings-form">
       <div class="form-grid">
         <div class="field"><label>人脸识别引擎</label><select name="provider" id="face-provider-select">
           <option value="disabled" ${settings.provider === 'disabled' ? 'selected' : ''}>停用</option>
-          <option value="localcpu" ${settings.provider === 'localcpu' ? 'selected' : ''}>本地 CPU 引擎（推荐，无需 GPU / Docker）</option>
+          <option value="localcpu" ${settings.provider === 'localcpu' ? 'selected' : ''}>本地原生 CPU 引擎（推荐，无 Python / Docker / GPU）</option>
           <option value="compreface" ${settings.provider === 'compreface' ? 'selected' : ''}>CompreFace</option>
         </select></div>
         <div class="field"><label>服务地址</label><input name="service_url" id="face-service-url" value="${esc(serviceURL)}" placeholder="http://127.0.0.1:18081"></div>
@@ -174,17 +174,17 @@ function adminFaceSettings(settings) {
       </div>
     </form>
     <div id="face-check-result" class="face-status-box">
-      <div class="muted">保存设置后点击“检测服务”。本地 CPU 引擎不需要 API Key。</div>
+      <div class="muted">保存设置后点击“检测服务”。本地原生 CPU 引擎不需要 API Key。</div>
     </div>
   </section>
   <section class="panel">
-    <h3>一键部署本地 CPU 人脸引擎</h3>
-    <p class="muted">发布包内提供 Windows / Linux 本地 CPU 引擎。使用 OpenCV YuNet + SFace ONNX 模型，只使用 CPU，不需要独立显卡、CUDA、Docker 或 Docker Desktop。</p>
+    <h3>一键部署本地原生 CPU 人脸引擎</h3>
+    <p class="muted">发布包已经包含原生人脸引擎、ONNX Runtime CPU 库以及 YuNet / SFace 模型。目标机器不安装 Python、pip、venv、Docker、CUDA，也不需要独立显卡。</p>
     <div class="deploy-grid">
-      <div class="deploy-card"><b>Windows</b><code>face-engine\\install-localcpu.ps1</code><span>管理员 PowerShell 运行；自动准备独立 Python 运行环境、CPU 模型并注册开机启动任务。</span></div>
-      <div class="deploy-card"><b>Linux</b><code>face-engine/install-localcpu.sh</code><span>自动创建 venv、安装 CPU 依赖和 systemd 服务。</span></div>
+      <div class="deploy-card"><b>Windows</b><code>face-engine\\windows\\install.ps1</code><span>管理员 PowerShell 运行；安装 FaceSignFaceEngine Windows Service，所有运行文件均来自发布包。</span></div>
+      <div class="deploy-card"><b>Linux</b><code>face-engine/linux/install.sh</code><span>安装原生二进制、CPU 推理库和 systemd 服务，不安装 Python 环境。</span></div>
     </div>
-    <div class="notice">部署完成后选择“本地 CPU 引擎”，服务地址填写 http://127.0.0.1:18081，保存后点击“检测服务”即可。不需要 API Key。</div>
+    <div class="notice">迁移新机器时同时复制 FaceSign 主数据库和人脸数据库 faces.db 即可；部署完成后选择“本地原生 CPU 引擎”，服务地址填写 http://127.0.0.1:18081，保存后点击“检测服务”。</div>
   </section>`;
 }
 

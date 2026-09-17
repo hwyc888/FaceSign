@@ -12,6 +12,7 @@ FaceSign is intentionally split by responsibility. The executable entry point co
 - `internal/repository`: SQL persistence for users, academic data and attendance data.
 - `internal/security`: Argon2id password hashes and opaque server-side sessions.
 - `internal/face`: face-recognition provider interface, runtime provider manager, local CPU REST adapter and optional CompreFace adapter.
+- `internal/faceengine`: native CPU inference service using ONNX Runtime, YuNet/SFace and SQLite face embeddings.
 - `internal/attendance`: schedule-driven attendance rules and background finalization.
 - `internal/realtime`: in-process publish/subscribe hub for teacher dashboard refresh.
 - `internal/httpapi`: HTTP API, authorization and request validation.
@@ -36,7 +37,7 @@ Go's HTTP server handles requests concurrently. SQLite runs in WAL mode with a 5
 
 ## Face recognition boundary
 
-FaceSign does not fake recognition inside the Go process. `internal/face.Provider` defines enrollment, health-check and recognition operations. The recommended production provider is `localcpu`: a server-local CPU-only service implemented with OpenCV YuNet + SFace ONNX models and listening on `127.0.0.1:18081`. It requires neither GPU/CUDA nor Docker. `compreface` remains available for schools that already run an external CompreFace service, while `disabled` lets the management platform start before a face engine is configured. Provider settings are persisted in SQLite and can be changed at runtime without restarting FaceSign.
+FaceSign does not fake recognition inside the attendance process. `internal/face.Provider` defines enrollment, health-check and recognition operations. The recommended production provider is `localcpu`: the separately supervised `facesign-face-engine` Go executable, which dynamically loads the CPU-only ONNX Runtime library shipped in the same application directory and runs YuNet + SFace models locally. It listens on `127.0.0.1:18081`, stores embeddings in SQLite `faces.db`, and requires no Python, Docker, CUDA or GPU. Keeping inference in a separate native service isolates model/runtime faults from the attendance HTTP server while preserving a portable application bundle. `compreface` remains available for schools that already run an external CompreFace service, while `disabled` lets the management platform start before a face engine is configured. Provider settings are persisted in SQLite and can be changed at runtime without restarting FaceSign.
 
 ## Data protection
 
