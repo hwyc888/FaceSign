@@ -1,3 +1,76 @@
-.admin-tabs{display:grid;grid-template-columns:repeat(7,minmax(110px,1fr));gap:10px;margin-top:14px}.admin-tab{display:flex;align-items:center;justify-content:space-between;gap:8px;border:1px solid #cbd5e1;border-radius:12px;padding:12px 14px;background:#f8fafc;color:#0f172a;font-weight:750;cursor:pointer}.admin-tab:hover{background:#eff6ff;border-color:#93c5fd}.admin-tab.active{background:#2563eb;border-color:#2563eb;color:#fff}.admin-tab b{min-width:28px;padding:2px 8px;border-radius:999px;background:#e2e8f0;color:#334155;text-align:center;font-size:12px}.admin-tab.active b{background:#ffffff26;color:#fff}.admin-current{display:inline-flex;padding:5px 10px;border-radius:999px;background:#dbeafe;color:#1d4ed8;font-size:13px;font-weight:800}.compact-field{margin:0;min-width:260px}.enrollment-summary{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;margin:10px 0 14px;border-radius:12px;background:#f8fafc;border:1px solid #e2e8f0}.enrollment-summary div{display:flex;gap:12px;align-items:center}.enrollment-summary span{color:#64748b}.admin-header{position:sticky;top:8px;z-index:10}.face-status-box{margin-top:14px}.face-detail{margin-top:6px;font-size:12px;opacity:.8;word-break:break-all}.deploy-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:12px 0}.deploy-card{display:grid;gap:7px;padding:14px;border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc}.deploy-card b{font-size:16px}.deploy-card code{display:block;padding:8px 10px;border-radius:8px;background:#0f172a;color:#e2e8f0;overflow:auto}.deploy-card span{color:#64748b;font-size:13px}
-@media(max-width:1100px){.admin-tabs{grid-template-columns:repeat(4,1fr)}.admin-header{position:static}}
-@media(max-width:700px){.admin-tabs{grid-template-columns:repeat(2,1fr)}.admin-tab{padding:10px}.section-title{align-items:flex-start;flex-direction:column}.compact-field{width:100%;min-width:0}.deploy-grid{grid-template-columns:1fr}}
+/* FaceSign admin workspace: desktop-first left navigation for classroom attendance. */
+body{background:#f4f7fb}
+.shell{max-width:none;min-height:100vh;margin:0;padding:0;display:grid;grid-template-columns:264px minmax(0,1fr);align-items:start}
+.topbar{position:sticky;top:0;z-index:30;align-self:start;width:264px;min-height:100vh;height:100vh;overflow-y:auto;border-radius:0;padding:24px 16px 18px;display:flex;flex-direction:column;align-items:stretch;justify-content:flex-start;gap:0;background:#0f172a;box-shadow:8px 0 30px #0f172a14}
+.topbar>div:first-child{padding:0 8px 18px;border-bottom:1px solid #ffffff18}
+.topbar .brand{font-size:20px;line-height:1.3;letter-spacing:.2px}
+.topbar .muted{margin-top:7px;color:#94a3b8;font-size:13px}
+.topbar .nav{display:flex;flex:1;flex-direction:column;flex-wrap:nowrap;gap:6px;width:100%;margin-top:16px;min-height:0}
+.topbar .nav::before{content:"考勤操作";order:0;padding:3px 10px 5px;color:#64748b;font-size:11px;font-weight:800;letter-spacing:.12em}
+.topbar .nav:has([data-admin-nav])::after{content:"系统管理";order:9;margin-top:12px;padding:12px 10px 5px;border-top:1px solid #ffffff18;color:#64748b;font-size:11px;font-weight:800;letter-spacing:.12em}
+.topbar .nav .btn{display:flex;align-items:center;justify-content:flex-start;gap:10px;width:100%;min-height:44px;padding:9px 11px;border:1px solid transparent;border-radius:10px;background:transparent;color:#cbd5e1;text-align:left;text-decoration:none;box-shadow:none;transition:background .16s ease,border-color .16s ease,color .16s ease,transform .16s ease}
+.topbar .nav .btn:hover{background:#1e293b;border-color:#334155;color:#fff;filter:none;transform:translateX(2px)}
+.topbar .nav .btn.active{background:#1d4ed8;border-color:#3b82f6;color:#fff;box-shadow:0 8px 20px #1d4ed833}
+.topbar .nav .btn::before{content:"•";display:inline-grid;place-items:center;flex:0 0 28px;width:28px;height:28px;border-radius:8px;background:#ffffff12;color:#e2e8f0;font-size:12px;font-weight:900}
+.topbar .nav [data-view="dashboard"]{order:1}
+.topbar .nav [data-view="dashboard"]::before{content:"考"}
+.topbar .nav a[href="/kiosk"]{order:2;background:#15803d;border-color:#16a34a;color:#fff;font-weight:800;box-shadow:0 8px 22px #15803d33}
+.topbar .nav a[href="/kiosk"]:hover{background:#16a34a;border-color:#22c55e;transform:translateX(2px)}
+.topbar .nav a[href="/kiosk"]::before{content:"脸";background:#ffffff24;color:#fff}
+.topbar .nav #leave-btn{order:3}
+.topbar .nav #leave-btn::before{content:"假"}
+.topbar .nav [data-admin-nav="teachers"]{order:10}
+.topbar .nav [data-admin-nav="teachers"]::before{content:"师"}
+.topbar .nav [data-admin-nav="classes"]{order:11}
+.topbar .nav [data-admin-nav="classes"]::before{content:"班"}
+.topbar .nav [data-admin-nav="students"]{order:12}
+.topbar .nav [data-admin-nav="students"]::before{content:"生"}
+.topbar .nav [data-admin-nav="courses"]{order:13}
+.topbar .nav [data-admin-nav="courses"]::before{content:"课"}
+.topbar .nav [data-admin-nav="enrollment"]{order:14}
+.topbar .nav [data-admin-nav="enrollment"]::before{content:"单"}
+.topbar .nav [data-admin-nav="schedules"]{order:15}
+.topbar .nav [data-admin-nav="schedules"]::before{content:"表"}
+.topbar .nav [data-admin-nav="face"]{order:16}
+.topbar .nav [data-admin-nav="face"]::before{content:"脸"}
+.topbar .nav #logout-btn{order:99;margin-top:auto;color:#94a3b8}
+.topbar .nav #logout-btn::before{content:"退"}
+#main{min-width:0;width:100%;padding:24px 28px 40px}
+#main>.panel:first-child,#admin-section-content>.panel:first-child{margin-top:0}
+#admin-section-content>.panel{margin-bottom:16px}
+.admin-header{position:sticky;top:16px;z-index:10;margin-top:0;border-color:#dbe4f0;box-shadow:0 12px 30px #0f172a0b}
+.admin-tabs{display:none!important}
+.admin-current{display:inline-flex;padding:5px 10px;border-radius:999px;background:#dbeafe;color:#1d4ed8;font-size:13px;font-weight:800;white-space:nowrap}
+.compact-field{margin:0;min-width:260px}
+.enrollment-summary{display:flex;align-items:center;justify-content:space-between;padding:12px 14px;margin:10px 0 14px;border-radius:12px;background:#f8fafc;border:1px solid #e2e8f0}
+.enrollment-summary div{display:flex;gap:12px;align-items:center}
+.enrollment-summary span{color:#64748b}
+.face-status-box{margin-top:14px}
+.face-detail{margin-top:6px;font-size:12px;opacity:.8;word-break:break-all}
+.deploy-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin:12px 0}
+.deploy-card{display:grid;gap:7px;padding:14px;border:1px solid #e2e8f0;border-radius:12px;background:#f8fafc}
+.deploy-card b{font-size:16px}
+.deploy-card code{display:block;padding:8px 10px;border-radius:8px;background:#0f172a;color:#e2e8f0;overflow:auto}
+.deploy-card span{color:#64748b;font-size:13px}
+@media(max-width:1100px){
+  .shell{grid-template-columns:228px minmax(0,1fr)}
+  .topbar{width:228px;padding-left:12px;padding-right:12px}
+  #main{padding:18px}
+}
+@media(max-width:780px){
+  .shell{display:block;min-height:100vh}
+  .topbar{position:static;width:100%;height:auto;min-height:0;padding:14px 12px;overflow:visible;border-radius:0;box-shadow:0 8px 24px #0f172a1f}
+  .topbar>div:first-child{padding:0 4px 10px;border-bottom:0}
+  .topbar .brand{font-size:17px}
+  .topbar>div:first-child .muted{display:none}
+  .topbar .nav{display:flex;flex-direction:row;flex-wrap:nowrap;gap:7px;margin-top:0;overflow-x:auto;padding:2px 0 3px;scrollbar-width:thin}
+  .topbar .nav::before,.topbar .nav::after{display:none}
+  .topbar .nav .btn{order:initial!important;flex:0 0 auto;width:auto;min-height:38px;padding:8px 11px;white-space:nowrap}
+  .topbar .nav .btn::before{display:none}
+  .topbar .nav #logout-btn{margin-top:0}
+  #main{padding:12px}
+  .admin-header{position:static}
+  .section-title{align-items:flex-start;flex-direction:column}
+  .compact-field{width:100%;min-width:0}
+  .deploy-grid{grid-template-columns:1fr}
+}
