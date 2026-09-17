@@ -163,10 +163,23 @@ jobs:
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path out, out/models | Out-Null
+          $gccCommand = Get-Command gcc.exe -ErrorAction SilentlyContinue
+          if ($gccCommand) {
+            $gcc = $gccCommand.Source
+          } else {
+            $gccFile = Get-ChildItem -Path $env:RUNNER_TEMP -Filter gcc.exe -File -Recurse -ErrorAction SilentlyContinue |
+              Where-Object { $_.FullName -match '[\\/]mingw64[\\/]bin[\\/]gcc\.exe$' } |
+              Select-Object -First 1
+            if (-not $gccFile) { throw 'MinGW gcc.exe was not found after msys2/setup-msys2' }
+            $gcc = $gccFile.FullName
+          }
+          $mingwBin = Split-Path $gcc -Parent
+          Write-Host "Using MinGW compiler: $gcc"
+          "MINGW_BIN=$mingwBin" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           $env:CGO_ENABLED = '1'
           $env:GOOS = 'windows'
           $env:GOARCH = 'amd64'
-          $env:CC = 'C:\msys64\mingw64\bin\gcc.exe'
+          $env:CC = $gcc
           $env:CGO_LDFLAGS = '-static-libgcc'
           & go build -trimpath -ldflags '-s -w' -o out/facesign-face-engine.exe ./cmd/faceengine
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -186,12 +199,13 @@ jobs:
             Copy-Item $source (Join-Path 'out' $dll) -Force
           }
 
-          $objdump = 'C:\msys64\mingw64\bin\objdump.exe'
+          $objdump = Join-Path $env:MINGW_BIN 'objdump.exe'
+          if (-not (Test-Path $objdump)) { throw "objdump.exe was not found: $objdump" }
           $dependencyText = & $objdump -p out\facesign-face-engine.exe
           Write-Host ($dependencyText | Select-String 'DLL Name:')
           foreach ($dll in @('libgcc_s_seh-1.dll', 'libwinpthread-1.dll')) {
             if (($dependencyText -join "`n") -match [regex]::Escape($dll)) {
-              $source = Join-Path 'C:\msys64\mingw64\bin' $dll
+              $source = Join-Path $env:MINGW_BIN $dll
               if (-not (Test-Path $source)) { throw "Required MinGW runtime DLL missing: $source" }
               Copy-Item $source (Join-Path 'out' $dll) -Force
             }
