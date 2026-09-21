@@ -1,0 +1,47 @@
+name: Seed FaceSign Models
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/seed-models.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  seed-models:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Download pinned face models
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p models
+          curl -fL --retry 3             'https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx'             -o models/face_detection_yunet_2023mar.onnx
+          curl -fL --retry 3             'https://github.com/opencv/opencv_zoo/raw/main/models/face_recognition_sface/face_recognition_sface_2021dec.onnx'             -o models/face_recognition_sface_2021dec.onnx
+          (
+            cd models
+            sha256sum face_detection_yunet_2023mar.onnx face_recognition_sface_2021dec.onnx > SHA256SUMS
+          )
+          test $(stat -c%s models/face_detection_yunet_2023mar.onnx) -gt 100000
+          test $(stat -c%s models/face_recognition_sface_2021dec.onnx) -gt 10000000
+
+      - name: Commit models once
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add models/face_detection_yunet_2023mar.onnx                   models/face_recognition_sface_2021dec.onnx                   models/SHA256SUMS
+          if git diff --cached --quiet; then
+            echo 'Models already committed; nothing to do.'
+            exit 0
+          fi
+          git commit -m 'chore: pin face models once'
+          git push origin HEAD:main
