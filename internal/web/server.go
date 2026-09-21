@@ -51,7 +51,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/students/", s.studentAction)
 	mux.HandleFunc("/api/recognize", s.recognize)
 	mux.HandleFunc("/api/attendance", s.attendance)
-	mux.HandleFunc("/", s.staticPage)
+	mux.Handle("/", s.static)
 	return s.logging(mux)
 }
 
@@ -227,16 +227,6 @@ func (s *Server) attendance(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, http.StatusOK, items)
-}
-
-func (s *Server) staticPage(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path == "/" {
-		r2 := r.Clone(r.Context())
-		r2.URL.Path = "/index.html"
-		s.static.ServeHTTP(w, r2)
-		return
-	}
-	s.static.ServeHTTP(w, r)
 }
 
 func readImage(w http.ResponseWriter, r *http.Request) (image.Image, error) {

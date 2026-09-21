@@ -95,7 +95,7 @@ jobs:
           $db = Join-Path $env:RUNNER_TEMP 'facesign.db'
           $originalPath = $env:PATH
           $env:PATH = (Resolve-Path 'dist').Path + ';' + (Join-Path $env:WINDIR 'System32') + ';' + $env:WINDIR
-          $process = Start-Process -FilePath (Resolve-Path 'dist\FaceSign.exe') -ArgumentList @('--listen','127.0.0.1:18082','--assets',(Resolve-Path 'dist').Path,'--data',$db,'--detection-threshold','0.60') -PassThru -WindowStyle Hidden
+          $process = Start-Process -FilePath (Resolve-Path 'dist\FaceSign.exe') -ArgumentList @('--listen','127.0.0.1:18082','--open-browser=false','--assets',(Resolve-Path 'dist').Path,'--data',$db,'--detection-threshold','0.60') -PassThru -WindowStyle Hidden
           try {
             $ready = $false
             for ($i = 0; $i -lt 30; $i++) {
