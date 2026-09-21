@@ -15,6 +15,7 @@ async function loadStudents() {
         <td>${esc(s.student_no)}</td>
         <td>${esc(s.name)}</td>
         <td><select class="table-class-select" data-student-class="${s.id}">${classOptionsHTML(s.class_name, false)}</select></td>
+        <td><input class="seat-number-input" data-student-seat="${s.id}" type="number" min="0" value="${s.seat_no || ''}" placeholder="未编排"></td>
         <td><span class="badge ${s.face_count > 0 ? 'yes' : 'no'}">${s.face_count > 0 ? s.face_count + ' 个样本' : '未录入'}</span></td>
         <td>
           <div class="student-actions">
@@ -23,9 +24,9 @@ async function loadStudents() {
           </div>
         </td>
       </tr>
-    `).join('') || '<tr><td colspan="5">暂无学生</td></tr>';
+    `).join('') || '<tr><td colspan="6">暂无学生</td></tr>';
 
-    $('[data-student-class]').forEach(select => {
+    $$('[data-student-class]').forEach(select => {
       select.onchange = async () => {
         const studentID = Number(select.dataset.studentClass);
         const previous = studentsCache.find(s => Number(s.id) === studentID)?.class_name || '';
@@ -41,9 +42,34 @@ async function loadStudents() {
             samplesStudent.class_name = select.value;
             $('#sampleStudentClass').textContent = select.value;
           }
-          toast('班级已更新');
+          toast('班级已更新；跨班时原座位号会自动清空');
+          await loadStudents();
+          if (typeof loadCheckinSeatBoard === 'function') await loadCheckinSeatBoard();
         } catch (e) {
           select.value = previous;
+          toast(e.message);
+        }
+      };
+    });
+
+    $('[data-student-seat]').forEach(input => {
+      input.onchange = async () => {
+        const studentID = Number(input.dataset.studentSeat);
+        const student = studentsCache.find(s => Number(s.id) === studentID);
+        const previous = student ? Number(student.seat_no || 0) : 0;
+        const seatNo = input.value.trim() === '' ? 0 : Number(input.value);
+        try {
+          await api('/api/students/' + studentID, {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({seat_no: seatNo})
+          });
+          if (student) student.seat_no = seatNo;
+          input.value = seatNo > 0 ? String(seatNo) : '';
+          toast(seatNo > 0 ? ('座位号已设为 ' + seatNo) : '座位号已清空');
+          if (typeof loadCheckinSeatBoard === 'function') await loadCheckinSeatBoard();
+        } catch (e) {
+          input.value = previous > 0 ? String(previous) : '';
           toast(e.message);
         }
       };

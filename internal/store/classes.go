@@ -9,6 +9,11 @@ import (
 	"time"
 )
 
+const (
+	defaultSeatRows    = 6
+	defaultSeatsPerRow = 8
+)
+
 func normalizeClassName(name string) (string, error) {
 	name = strings.TrimSpace(name)
 	if name == "" {
@@ -20,12 +25,22 @@ func normalizeClassName(name string) (string, error) {
 	return name, nil
 }
 
+func normalizeClassLayout(rows, perRow int) (int, int, error) {
+	if rows <= 0 || perRow <= 0 {
+		return 0, 0, errors.New("排数和每排人数必须大于0")
+	}
+	if rows > 20 || perRow > 20 {
+		return 0, 0, errors.New("排数和每排人数都不能超过20")
+	}
+	return rows, perRow, nil
+}
+
 func (s *Store) ListClasses(ctx context.Context) ([]Class, error) {
 	rows, err := s.db.QueryContext(ctx, `
-		SELECT c.id,c.name,c.sort_order,COUNT(s.id)
+		SELECT c.id,c.name,c.sort_order,c.seat_rows,c.seats_per_row,COUNT(s.id)
 		FROM classes c
 		LEFT JOIN students s ON TRIM(s.class_name)=c.name
-		GROUP BY c.id,c.name,c.sort_order
+		GROUP BY c.id,c.name,c.sort_order,c.seat_rows,c.seats_per_row
 		ORDER BY c.sort_order,c.id`)
 	if err != nil {
 		return nil, err
@@ -35,7 +50,7 @@ func (s *Store) ListClasses(ctx context.Context) ([]Class, error) {
 	out := make([]Class, 0)
 	for rows.Next() {
 		var item Class
-		if err := rows.Scan(&item.ID, &item.Name, &item.SortOrder, &item.StudentCount); err != nil {
+		if err := rows.Scan(&item.ID, &item.Name, &item.SortOrder, &item.SeatRows, &item.SeatsPerRow, &item.StudentCount); err != nil {
 			return nil, err
 		}
 		out = append(out, item)
@@ -44,14 +59,28 @@ func (s *Store) ListClasses(ctx context.Context) ([]Class, error) {
 }
 
 func (s *Store) CreateClass(ctx context.Context, name string) (Class, error) {
+	return s.CreateClassWithLayout(ctx, name, defaultSeatRows, defaultSeatsPerRow)
+}
+
+func (s *Store) CreateClassWithLayout(ctx context.Context, name string, seatRows, seatsPerRow int) (Class, error) {
 	name, err := normalizeClassName(name)
 	if err != nil {
 		return Class{}, err
 	}
+	if seatRows == 0 {
+		seatRows = defaultSeatRows
+	}
+	if seatsPerRow == 0 {
+		seatsPerRow = defaultSeatsPerRow
+	}
+	seatRows, seatsPerRow, err = normalizeClassLayout(seatRows, seatsPerRow)
+	if err != nil {
+		return Class{}, err
+	}
 	result, err := s.db.ExecContext(ctx, `
-		INSERT INTO classes(name,sort_order,created_at)
-		VALUES(?, COALESCE((SELECT MAX(sort_order)+1 FROM classes), 1), ?)`,
-		name, time.Now().Unix(),
+		INSERT INTO classes(name,sort_order,seat_rows,seats_per_row,created_at)
+		VALUES(?, COALESCE((SELECT MAX(sort_order)+1 FROM classes), 1), ?, ?, ?)`,
+		name, seatRows, seatsPerRow, time.Now().Unix(),
 	)
 	if err != nil {
 		if strings.Contains(err.Error(), "classes.name") {
@@ -65,8 +94,8 @@ func (s *Store) CreateClass(ctx context.Context, name string) (Class, error) {
 	}
 	var item Class
 	err = s.db.QueryRowContext(ctx,
-		"SELECT id,name,sort_order,0 FROM classes WHERE id=?", id,
-	).Scan(&item.ID, &item.Name, &item.SortOrder, &item.StudentCount)
+		"SELECT id,name,sort_order,seat_rows,seats_per_row,0 FROM classes WHERE id=?", id,
+	).Scan(&item.ID, &item.Name, &item.SortOrder, &item.SeatRows, &item.SeatsPerRow, &item.StudentCount)
 	return item, err
 }
 
@@ -82,8 +111,9 @@ func (s *Store) RenameClass(ctx context.Context, id int64, name string) (Class, 
 	defer tx.Rollback()
 
 	var oldName string
-	var sortOrder int
-	if err := tx.QueryRowContext(ctx, "SELECT name,sort_order FROM classes WHERE id=?", id).Scan(&oldName, &sortOrder); err != nil {
+	var sortOrder, seatRows, seatsPerRow int
+	if err := tx.QueryRowContext(ctx, "SELECT name,sort_order,seat_rows,seats_per_row FROM classes WHERE id=?", id).
+		Scan(&oldName, &sortOrder, &seatRows, &seatsPerRow); err != nil {
 		return Class{}, err
 	}
 	if oldName != name {
@@ -104,7 +134,96 @@ func (s *Store) RenameClass(ctx context.Context, id int64, name string) (Class, 
 	if err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM students WHERE TRIM(class_name)=?", name).Scan(&count); err != nil {
 		return Class{}, err
 	}
-	return Class{ID: id, Name: name, SortOrder: sortOrder, StudentCount: count}, nil
+	return Class{ID: id, Name: name, SortOrder: sortOrder, SeatRows: seatRows, SeatsPerRow: seatsPerRow, StudentCount: count}, nil
+}
+
+func (s *Store) UpdateClassLayout(ctx context.Context, id int64, seatRows, seatsPerRow int) (Class, error) {
+	seatRows, seatsPerRow, err := normalizeClassLayout(seatRows, seatsPerRow)
+	if err != nil {
+		return Class{}, err
+	}
+	var item Class
+	if err := s.db.QueryRowContext(ctx,
+		"SELECT id,name,sort_order,seat_rows,seats_per_row FROM classes WHERE id=?", id,
+	).Scan(&item.ID, &item.Name, &item.SortOrder, &item.SeatRows, &item.SeatsPerRow); err != nil {
+		return Class{}, err
+	}
+	if err := s.db.QueryRowContext(ctx,
+		"SELECT COUNT(*) FROM students WHERE TRIM(class_name)=?", item.Name,
+	).Scan(&item.StudentCount); err != nil {
+		return Class{}, err
+	}
+	capacity := seatRows * seatsPerRow
+	if item.StudentCount > capacity {
+		return Class{}, fmt.Errorf("当前班级有%d名学生，座位容量只有%d，请增加排数或每排人数", item.StudentCount, capacity)
+	}
+	var maxSeat int
+	if err := s.db.QueryRowContext(ctx,
+		"SELECT COALESCE(MAX(seat_no),0) FROM students WHERE TRIM(class_name)=?", item.Name,
+	).Scan(&maxSeat); err != nil {
+		return Class{}, err
+	}
+	if maxSeat > capacity {
+		return Class{}, fmt.Errorf("已有座位号%d超过新布局容量%d，请先调整学生座位号", maxSeat, capacity)
+	}
+	if _, err := s.db.ExecContext(ctx,
+		"UPDATE classes SET seat_rows=?,seats_per_row=? WHERE id=?", seatRows, seatsPerRow, id,
+	); err != nil {
+		return Class{}, err
+	}
+	item.SeatRows = seatRows
+	item.SeatsPerRow = seatsPerRow
+	return item, nil
+}
+
+func (s *Store) AutoArrangeSeats(ctx context.Context, id int64) (int, error) {
+	var className string
+	var seatRows, seatsPerRow int
+	if err := s.db.QueryRowContext(ctx,
+		"SELECT name,seat_rows,seats_per_row FROM classes WHERE id=?", id,
+	).Scan(&className, &seatRows, &seatsPerRow); err != nil {
+		return 0, err
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	rows, err := tx.QueryContext(ctx,
+		"SELECT id FROM students WHERE TRIM(class_name)=? ORDER BY student_no,id", className,
+	)
+	if err != nil {
+		return 0, err
+	}
+	ids := make([]int64, 0)
+	for rows.Next() {
+		var studentID int64
+		if err := rows.Scan(&studentID); err != nil {
+			rows.Close()
+			return 0, err
+		}
+		ids = append(ids, studentID)
+	}
+	if err := rows.Close(); err != nil {
+		return 0, err
+	}
+	if len(ids) > seatRows*seatsPerRow {
+		return 0, fmt.Errorf("当前班级有%d名学生，但座位容量只有%d", len(ids), seatRows*seatsPerRow)
+	}
+	if _, err := tx.ExecContext(ctx, "UPDATE students SET seat_no=0 WHERE TRIM(class_name)=?", className); err != nil {
+		return 0, err
+	}
+	for i, studentID := range ids {
+		if _, err := tx.ExecContext(ctx, "UPDATE students SET seat_no=? WHERE id=?", i+1, studentID); err != nil {
+			return 0, err
+		}
+	}
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return len(ids), nil
 }
 
 func (s *Store) DeleteClass(ctx context.Context, id int64) error {
@@ -184,4 +303,3 @@ func (s *Store) ClassExists(ctx context.Context, name string) (bool, error) {
 	}
 	return n > 0, nil
 }
-

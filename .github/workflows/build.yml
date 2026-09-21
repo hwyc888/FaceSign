@@ -142,10 +142,11 @@ jobs:
             $enrollmentJs = Invoke-WebRequest -Uri 'http://127.0.0.1:18082/js/enrollment.js' -UseBasicParsing -TimeoutSec 3
             $classesJs = Invoke-WebRequest -Uri 'http://127.0.0.1:18082/js/classes.js' -UseBasicParsing -TimeoutSec 3
             $photoImportJs = Invoke-WebRequest -Uri 'http://127.0.0.1:18082/js/photo_import.js' -UseBasicParsing -TimeoutSec 3
-            if ($coreJs.StatusCode -ne 200 -or $enrollmentJs.Content -notmatch 'captureEnrollment' -or $classesJs.Content -notmatch 'loadClasses' -or $photoImportJs.Content -notmatch 'photoImportSessionID') { throw 'FaceSign frontend module check failed' }
+            $seatingJs = Invoke-WebRequest -Uri 'http://127.0.0.1:18082/js/seating.js' -UseBasicParsing -TimeoutSec 3
+            if ($coreJs.StatusCode -ne 200 -or $enrollmentJs.Content -notmatch 'captureEnrollment' -or $classesJs.Content -notmatch 'loadClasses' -or $photoImportJs.Content -notmatch 'photoImportSessionID' -or $seatingJs.Content -notmatch 'loadCheckinSeatBoard') { throw 'FaceSign frontend module check failed' }
 
-            $classOne = Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:18082/api/classes' -ContentType 'application/json' -Body '{"name":"Test"}'
-            $classTwo = Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:18082/api/classes' -ContentType 'application/json' -Body '{"name":"Backup"}'
+            $classOne = Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:18082/api/classes' -ContentType 'application/json' -Body '{"name":"Test","seat_rows":2,"seats_per_row":3}'
+            $classTwo = Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:18082/api/classes' -ContentType 'application/json' -Body '{"name":"Backup","seat_rows":2,"seats_per_row":3}'
             Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:18082/api/classes/$($classTwo.id)/move" -ContentType 'application/json' -Body '{"direction":"up"}' | Out-Null
             $classes = Invoke-RestMethod -Uri 'http://127.0.0.1:18082/api/classes' -TimeoutSec 3
             if ($classes.Count -ne 2 -or $classes[0].name -ne 'Backup' -or $classes[1].name -ne 'Test') { throw 'Class ordering smoke test failed' }
@@ -227,6 +228,17 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw 'Recognition smoke test failed' }
             $recognize = $recognizeRaw | ConvertFrom-Json
             if (-not $recognize.recognized -or $recognize.student.student_no -ne 'SMOKE001') { throw 'Recognition did not match enrolled student' }
+
+            Invoke-RestMethod -Method Put -Uri "http://127.0.0.1:18082/api/students/$($student.id)" -ContentType 'application/json' -Body '{"seat_no":1}' | Out-Null
+            $absentStudent = Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:18082/api/students' -ContentType 'application/json' -Body '{"student_no":"SMOKE003","name":"Absent","class_name":"Test-Renamed"}'
+            Invoke-RestMethod -Method Put -Uri "http://127.0.0.1:18082/api/students/$($absentStudent.id)" -ContentType 'application/json' -Body '{"seat_no":2}' | Out-Null
+            $today = Get-Date -Format 'yyyy-MM-dd'
+            $seatBoard = Invoke-RestMethod -Uri "http://127.0.0.1:18082/api/attendance/seats?day=$today&class_name=Test-Renamed" -TimeoutSec 3
+            if ($seatBoard.total -ne 2 -or $seatBoard.signed -ne 1 -or $seatBoard.unsigned -ne 1) { throw 'Seat attendance summary smoke test failed' }
+            if ($seatBoard.class.seat_rows -ne 2 -or $seatBoard.class.seats_per_row -ne 3) { throw 'Seat layout smoke test failed' }
+            $signedSeat = $seatBoard.students | Where-Object { $_.seat_no -eq 1 -and $_.signed } | Select-Object -First 1
+            $unsignedSeat = $seatBoard.students | Where-Object { $_.seat_no -eq 2 -and -not $_.signed } | Select-Object -First 1
+            if (-not $signedSeat -or -not $unsignedSeat) { throw 'Seat attendance state smoke test failed' }
 
             $unknownPhoto = Join-Path $env:RUNNER_TEMP 'howard.jpg'
             Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/leandroveronezi/go-onnxface/main/examples/fotos/howard.jpg' -OutFile $unknownPhoto -UseBasicParsing

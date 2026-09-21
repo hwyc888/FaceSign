@@ -243,3 +243,58 @@ func TestUpdateStudentClass(t *testing.T) {
 		t.Fatalf("student class not updated: %#v", students)
 	}
 }
+
+
+func TestSeatLayoutAndAttendanceBoard(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "seats.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+
+	class, err := s.CreateClassWithLayout(ctx, "高三7班", 2, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := s.CreateStudent(ctx, "S001", "甲", class.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := s.CreateStudent(ctx, "S002", "乙", class.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpdateStudentSeat(ctx, first.ID, 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpdateStudentSeat(ctx, second.ID, 2); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpdateStudentSeat(ctx, second.ID, 1); err == nil {
+		t.Fatal("expected duplicate seat number to fail")
+	}
+	if _, _, err := s.MarkAttendance(ctx, first, 0.91, time.Date(2026, 9, 21, 8, 0, 0, 0, time.Local)); err != nil {
+		t.Fatal(err)
+	}
+	board, err := s.AttendanceSeatBoard(ctx, class.Name, "2026-09-21")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if board.Total != 2 || board.Signed != 1 || board.Unsigned != 1 || board.Class.SeatRows != 2 || board.Class.SeatsPerRow != 3 {
+		t.Fatalf("unexpected board: %#v", board)
+	}
+	if len(board.Students) != 2 || board.Students[0].SeatNo != 1 || !board.Students[0].Signed || board.Students[1].SeatNo != 2 || board.Students[1].Signed {
+		t.Fatalf("unexpected seat states: %#v", board.Students)
+	}
+	if _, err := s.UpdateClassLayout(ctx, class.ID, 1, 1); err == nil {
+		t.Fatal("layout smaller than student count should fail")
+	}
+	if _, err := s.UpdateClassLayout(ctx, class.ID, 1, 3); err != nil {
+		t.Fatal(err)
+	}
+	arranged, err := s.AutoArrangeSeats(ctx, class.ID)
+	if err != nil || arranged != 2 {
+		t.Fatalf("auto arrange count=%d err=%v", arranged, err)
+	}
+}

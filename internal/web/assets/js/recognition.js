@@ -56,7 +56,10 @@ async function recognize() {
     fd.append('file', blob, 'camera.jpg');
     const r = await api('/api/recognize', {method: 'POST', body: fd});
     renderRecognition(r);
-    if (r.recognized_count > 0) loadToday();
+    if (r.recognized_count > 0) {
+      loadToday();
+      if (typeof loadCheckinSeatBoard === 'function') loadCheckinSeatBoard();
+    }
   } catch (e) {
     drawFaceOverlay([]);
     if (!autoTimer) toast(e.message);

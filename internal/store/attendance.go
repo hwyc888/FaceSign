@@ -2,6 +2,8 @@ package store
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"strings"
 	"time"
 )
@@ -59,9 +61,80 @@ func (s *Store) ListAttendance(ctx context.Context, day string) ([]Attendance, e
 	return out, rows.Err()
 }
 
+func (s *Store) AttendanceSeatBoard(ctx context.Context, className, day string) (AttendanceBoard, error) {
+	className = strings.TrimSpace(className)
+	if className == "" {
+		return AttendanceBoard{}, errors.New("请选择班级")
+	}
+	day = strings.TrimSpace(day)
+	if day == "" {
+		day = time.Now().Format("2006-01-02")
+	}
+	if _, err := time.Parse("2006-01-02", day); err != nil {
+		return AttendanceBoard{}, errors.New("日期格式不正确")
+	}
+
+	var class Class
+	err := s.db.QueryRowContext(ctx, `
+		SELECT c.id,c.name,c.sort_order,c.seat_rows,c.seats_per_row,COUNT(s.id)
+		FROM classes c
+		LEFT JOIN students s ON TRIM(s.class_name)=c.name
+		WHERE c.name=?
+		GROUP BY c.id,c.name,c.sort_order,c.seat_rows,c.seats_per_row`, className,
+	).Scan(&class.ID, &class.Name, &class.SortOrder, &class.SeatRows, &class.SeatsPerRow, &class.StudentCount)
+	if errors.Is(err, sql.ErrNoRows) {
+		return AttendanceBoard{}, errors.New("班级不存在")
+	}
+	if err != nil {
+		return AttendanceBoard{}, err
+	}
+
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT s.id,s.student_no,s.name,s.class_name,s.seat_no,
+		       CASE WHEN a.id IS NULL THEN 0 ELSE 1 END,
+		       COALESCE(a.checked_at,0),COALESCE(a.similarity,0)
+		FROM students s
+		LEFT JOIN attendance a ON a.student_id=s.id AND a.day=?
+		WHERE TRIM(s.class_name)=?
+		ORDER BY CASE WHEN s.seat_no>0 THEN 0 ELSE 1 END,s.seat_no,s.student_no,s.id`,
+		day, className,
+	)
+	if err != nil {
+		return AttendanceBoard{}, err
+	}
+	defer rows.Close()
+
+	board := AttendanceBoard{Day: day, Class: class, Students: make([]SeatAttendance, 0)}
+	for rows.Next() {
+		var item SeatAttendance
+		var signed int
+		var checkedAt int64
+		if err := rows.Scan(
+			&item.StudentID, &item.StudentNo, &item.Name, &item.ClassName, &item.SeatNo,
+			&signed, &checkedAt, &item.Similarity,
+		); err != nil {
+			return AttendanceBoard{}, err
+		}
+		item.Signed = signed == 1
+		if item.Signed {
+			board.Signed++
+			item.CheckedAt = time.Unix(checkedAt, 0).Format("15:04:05")
+		}
+		if item.SeatNo <= 0 {
+			board.Unassigned++
+		}
+		board.Students = append(board.Students, item)
+	}
+	if err := rows.Err(); err != nil {
+		return AttendanceBoard{}, err
+	}
+	board.Total = len(board.Students)
+	board.Unsigned = board.Total - board.Signed
+	return board, nil
+}
+
 func (s *Store) CountStudents(ctx context.Context) (int, error) {
 	var n int
 	err := s.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM students").Scan(&n)
 	return n, err
 }
-

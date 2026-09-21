@@ -7,6 +7,7 @@ type Student struct {
 	StudentNo string `json:"student_no"`
 	Name      string `json:"name"`
 	ClassName string `json:"class_name"`
+	SeatNo    int    `json:"seat_no"`
 	HasFace   bool   `json:"has_face"`
 	FaceCount int    `json:"face_count"`
 }
@@ -15,6 +16,8 @@ type Class struct {
 	ID           int64  `json:"id"`
 	Name         string `json:"name"`
 	SortOrder    int    `json:"sort_order"`
+	SeatRows     int    `json:"seat_rows"`
+	SeatsPerRow  int    `json:"seats_per_row"`
 	StudentCount int    `json:"student_count"`
 }
 
@@ -45,3 +48,24 @@ type Attendance struct {
 }
 
 type Store struct { db *sql.DB }
+
+type SeatAttendance struct {
+	StudentID int64   `json:"student_id"`
+	StudentNo string  `json:"student_no"`
+	Name      string  `json:"name"`
+	ClassName string  `json:"class_name"`
+	SeatNo    int     `json:"seat_no"`
+	Signed    bool    `json:"signed"`
+	CheckedAt string  `json:"checked_at,omitempty"`
+	Similarity float64 `json:"similarity,omitempty"`
+}
+
+type AttendanceBoard struct {
+	Day        string           `json:"day"`
+	Class      Class            `json:"class"`
+	Total      int              `json:"total"`
+	Signed     int              `json:"signed"`
+	Unsigned   int              `json:"unsigned"`
+	Unassigned int              `json:"unassigned"`
+	Students   []SeatAttendance `json:"students"`
+}

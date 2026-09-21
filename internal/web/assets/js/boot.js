@@ -1,6 +1,8 @@
 $('#attendanceDay').value = today();
 updateCameraControls();
 loadHealth();
-loadClasses();
-loadStudents();
+loadClasses().then(() => {
+  loadStudents();
+  if (typeof loadCheckinSeatBoard === 'function') loadCheckinSeatBoard();
+});
 loadAttendance();

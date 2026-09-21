@@ -19,13 +19,15 @@ func (s *Server) classes(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, items)
 	case http.MethodPost:
 		var in struct {
-			Name string `json:"name"`
+			Name        string `json:"name"`
+			SeatRows    int    `json:"seat_rows"`
+			SeatsPerRow int    `json:"seats_per_row"`
 		}
 		if err := decodeJSON(r, &in); err != nil {
 			writeError(w, http.StatusBadRequest, err)
 			return
 		}
-		item, err := s.store.CreateClass(r.Context(), in.Name)
+		item, err := s.store.CreateClassWithLayout(r.Context(), in.Name, in.SeatRows, in.SeatsPerRow)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err)
 			return
@@ -100,6 +102,34 @@ func (s *Server) classAction(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 		return
 	}
+
+	if len(parts) == 2 && parts[1] == "layout" && r.Method == http.MethodPut {
+		var in struct {
+			SeatRows    int `json:"seat_rows"`
+			SeatsPerRow int `json:"seats_per_row"`
+		}
+		if err := decodeJSON(r, &in); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		item, err := s.store.UpdateClassLayout(r.Context(), id, in.SeatRows, in.SeatsPerRow)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, item)
+		return
+	}
+
+	if len(parts) == 2 && parts[1] == "arrange" && r.Method == http.MethodPost {
+		count, err := s.store.AutoArrangeSeats(r.Context(), id)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "arranged": count})
+		return
+	}
+
 	methodNotAllowed(w)
 }
-

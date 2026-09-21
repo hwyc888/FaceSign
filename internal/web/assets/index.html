@@ -49,6 +49,30 @@
             <div class="mini-list" id="todaySummary"></div>
           </div>
         </div>
+
+        <div class="card seat-board-card">
+          <div class="card-head seat-board-head">
+            <div>
+              <h2>班级座位签到图</h2>
+              <p class="muted compact">按班级座位号实时显示：绿色为已签到，灰色为未签到。</p>
+            </div>
+            <label class="seat-class-filter">班级
+              <select id="checkinSeatClass"><option value="">请选择班级</option></select>
+            </label>
+          </div>
+          <div class="seat-summary" id="checkinSeatSummary">
+            <span class="seat-stat">请选择班级查看签到状态</span>
+          </div>
+          <div class="seat-legend">
+            <span><i class="seat-dot signed"></i>已签到</span>
+            <span><i class="seat-dot unsigned"></i>未签到</span>
+            <span><i class="seat-dot empty"></i>空座位</span>
+          </div>
+          <div class="seat-board" id="checkinSeatBoard">
+            <div class="seat-board-empty">请先在设置中配置班级座位布局和学生座位号。</div>
+          </div>
+          <div class="seat-unassigned hidden" id="checkinSeatUnassigned"></div>
+        </div>
       </section>
 
       <section class="page" id="page-students">
@@ -197,7 +221,7 @@
           <div class="table-wrap">
             <table>
               <thead>
-                <tr><th>学号</th><th>姓名</th><th>班级</th><th>人脸样本</th><th>操作</th></tr>
+                <tr><th>学号</th><th>姓名</th><th>班级</th><th>座位号</th><th>人脸样本</th><th>操作</th></tr>
               </thead>
               <tbody id="studentsBody"></tbody>
             </table>
@@ -225,18 +249,24 @@
           <div class="card-head">
             <div>
               <h2>班级编排</h2>
-              <p class="muted compact">在这里统一管理班级。人脸首次录入时只能从这里建立的班级中选择。</p>
+              <p class="muted compact">统一管理班级及座位布局。设置排数、每排人数后，可手动填写座位号，也可按学号顺序自动编排。</p>
             </div>
           </div>
-          <form id="classForm" class="class-add-form">
+          <form id="classForm" class="class-add-form seat-layout-form">
             <label>新增班级
               <input id="className" maxlength="40" placeholder="例如：高一1班" required autocomplete="off">
+            </label>
+            <label>排数
+              <input id="classSeatRows" type="number" min="1" max="20" value="6" required>
+            </label>
+            <label>每排人数
+              <input id="classSeatsPerRow" type="number" min="1" max="20" value="8" required>
             </label>
             <button class="primary" type="submit">添加班级</button>
           </form>
           <div class="table-wrap class-table-wrap">
             <table>
-              <thead><tr><th>顺序</th><th>班级名称</th><th>学生人数</th><th>编排</th><th>操作</th></tr></thead>
+              <thead><tr><th>顺序</th><th>班级名称</th><th>学生人数</th><th>排数</th><th>每排人数</th><th>容量</th><th>顺序</th><th>座位编排</th><th>操作</th></tr></thead>
               <tbody id="classesBody"></tbody>
             </table>
           </div>
@@ -299,6 +329,7 @@
   <script src="/js/core.js"></script>
   <script src="/js/navigation.js"></script>
   <script src="/js/camera.js"></script>
+  <script src="/js/seating.js"></script>
   <script src="/js/recognition.js"></script>
   <script src="/js/enrollment.js"></script>
   <script src="/js/classes.js"></script>

@@ -94,11 +94,11 @@ func (s *Store) CreateStudentWithFace(ctx context.Context, studentNo, name, clas
 
 func (s *Store) ListStudents(ctx context.Context) ([]Student, error) {
 	rows, err := s.db.QueryContext(ctx, `
-        SELECT s.id,s.student_no,s.name,s.class_name,COUNT(f.id)
+        SELECT s.id,s.student_no,s.name,s.class_name,s.seat_no,COUNT(f.id)
         FROM students s
         LEFT JOIN face_samples f ON f.student_id=s.id
-        GROUP BY s.id,s.student_no,s.name,s.class_name
-        ORDER BY s.class_name,s.student_no,s.id`)
+        GROUP BY s.id,s.student_no,s.name,s.class_name,s.seat_no
+        ORDER BY s.class_name,CASE WHEN s.seat_no>0 THEN 0 ELSE 1 END,s.seat_no,s.student_no,s.id`)
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +106,7 @@ func (s *Store) ListStudents(ctx context.Context) ([]Student, error) {
 	out := make([]Student, 0)
 	for rows.Next() {
 		var student Student
-		if err := rows.Scan(&student.ID, &student.StudentNo, &student.Name, &student.ClassName, &student.FaceCount); err != nil {
+		if err := rows.Scan(&student.ID, &student.StudentNo, &student.Name, &student.ClassName, &student.SeatNo, &student.FaceCount); err != nil {
 			return nil, err
 		}
 		student.HasFace = student.FaceCount > 0
@@ -114,7 +114,6 @@ func (s *Store) ListStudents(ctx context.Context) ([]Student, error) {
 	}
 	return out, rows.Err()
 }
-
 
 func (s *Store) UpdateStudentClass(ctx context.Context, id int64, className string) error {
 	if id <= 0 {
@@ -124,16 +123,60 @@ func (s *Store) UpdateStudentClass(ctx context.Context, id int64, className stri
 	if className == "" {
 		return errors.New("class name is required")
 	}
-	result, err := s.db.ExecContext(ctx, "UPDATE students SET class_name=? WHERE id=?", className, id)
-	if err != nil {
+	var current string
+	if err := s.db.QueryRowContext(ctx, "SELECT class_name FROM students WHERE id=?", id).Scan(&current); err != nil {
 		return err
 	}
-	n, err := result.RowsAffected()
-	if err != nil {
+	if strings.TrimSpace(current) == className {
+		return nil
+	}
+	_, err := s.db.ExecContext(ctx, "UPDATE students SET class_name=?,seat_no=0 WHERE id=?", className, id)
+	return err
+}
+
+func (s *Store) UpdateStudentSeat(ctx context.Context, id int64, seatNo int) error {
+	if id <= 0 {
+		return errors.New("invalid student id")
+	}
+	if seatNo < 0 {
+		return errors.New("座位号不能小于0")
+	}
+	var className string
+	if err := s.db.QueryRowContext(ctx, "SELECT class_name FROM students WHERE id=?", id).Scan(&className); err != nil {
 		return err
 	}
-	if n == 0 {
-		return sql.ErrNoRows
+	className = strings.TrimSpace(className)
+	if seatNo == 0 {
+		_, err := s.db.ExecContext(ctx, "UPDATE students SET seat_no=0 WHERE id=?", id)
+		return err
+	}
+	var seatRows, seatsPerRow int
+	if err := s.db.QueryRowContext(ctx,
+		"SELECT seat_rows,seats_per_row FROM classes WHERE name=?", className,
+	).Scan(&seatRows, &seatsPerRow); err != nil {
+		return errors.New("请先在设置中建立并配置该班级")
+	}
+	capacity := seatRows * seatsPerRow
+	if seatNo > capacity {
+		return fmt.Errorf("座位号不能超过%d（%d排 × 每排%d人）", capacity, seatRows, seatsPerRow)
+	}
+	var occupiedName string
+	err := s.db.QueryRowContext(ctx,
+		"SELECT name FROM students WHERE class_name=? AND seat_no=? AND id<>? LIMIT 1",
+		className, seatNo, id,
+	).Scan(&occupiedName)
+	if err == nil {
+		return fmt.Errorf("%d号座位已由%s使用", seatNo, occupiedName)
+	}
+	if !errors.Is(err, sql.ErrNoRows) {
+		return err
+	}
+	_, err = s.db.ExecContext(ctx, "UPDATE students SET seat_no=? WHERE id=?", seatNo, id)
+	if err != nil {
+		if strings.Contains(err.Error(), "idx_students_class_seat") {
+			return errors.New("该班级座位号已被占用")
+		}
+		return err
 	}
 	return nil
 }
@@ -152,4 +195,3 @@ func (s *Store) DeleteStudent(ctx context.Context, id int64) error {
 	}
 	return nil
 }
-

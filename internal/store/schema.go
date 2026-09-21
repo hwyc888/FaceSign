@@ -18,12 +18,15 @@ func (s *Store) init(ctx context.Context) error {
             student_no TEXT NOT NULL UNIQUE,
             name TEXT NOT NULL,
             class_name TEXT NOT NULL DEFAULT '',
+            seat_no INTEGER NOT NULL DEFAULT 0,
             created_at INTEGER NOT NULL
         )`,
 		`CREATE TABLE IF NOT EXISTS classes (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL UNIQUE,
             sort_order INTEGER NOT NULL,
+            seat_rows INTEGER NOT NULL DEFAULT 6,
+            seats_per_row INTEGER NOT NULL DEFAULT 8,
             created_at INTEGER NOT NULL
         )`,
 		`CREATE TABLE IF NOT EXISTS face_samples (
@@ -49,6 +52,15 @@ func (s *Store) init(ctx context.Context) error {
 			return fmt.Errorf("initialize database: %w", err)
 		}
 	}
+	if err := s.ensureColumn(ctx, "students", "seat_no", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn(ctx, "classes", "seat_rows", "INTEGER NOT NULL DEFAULT 6"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn(ctx, "classes", "seats_per_row", "INTEGER NOT NULL DEFAULT 8"); err != nil {
+		return err
+	}
 	if err := s.migrateFaceSamples(ctx); err != nil {
 		return err
 	}
@@ -58,10 +70,38 @@ func (s *Store) init(ctx context.Context) error {
 	for _, statement := range []string{
 		"CREATE INDEX IF NOT EXISTS idx_face_samples_student ON face_samples(student_id, created_at DESC)",
 		"CREATE INDEX IF NOT EXISTS idx_attendance_day ON attendance(day, checked_at DESC)",
+		"CREATE UNIQUE INDEX IF NOT EXISTS idx_students_class_seat ON students(class_name,seat_no) WHERE seat_no > 0",
 	} {
 		if _, err := s.db.ExecContext(ctx, statement); err != nil {
 			return fmt.Errorf("initialize database index: %w", err)
 		}
+	}
+	return nil
+}
+
+
+func (s *Store) ensureColumn(ctx context.Context, table, column, definition string) error {
+	rows, err := s.db.QueryContext(ctx, "PRAGMA table_info("+table+")")
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var cid, notNull, pk int
+		var name, columnType string
+		var defaultValue any
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &pk); err != nil {
+			return err
+		}
+		if strings.EqualFold(name, column) {
+			return nil
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if _, err := s.db.ExecContext(ctx, "ALTER TABLE "+table+" ADD COLUMN "+column+" "+definition); err != nil {
+		return fmt.Errorf("add %s.%s: %w", table, column, err)
 	}
 	return nil
 }
