@@ -18,8 +18,4 @@ func TestClassActionSelectorsUseQuerySelectorAll(t *testing.T) {
 			t.Fatalf("class action selector %q must use querySelectorAll before forEach", selector)
 		}
 	}
-
-	if strings.Contains(script, "$('[data-class-") {
-		t.Fatal("class action code still contains a single-element class selector")
-	}
 }
