@@ -178,12 +178,12 @@ jobs:
             $samples = Invoke-RestMethod -Uri "http://127.0.0.1:18082/api/students/$($student.id)/faces" -TimeoutSec 3
             if ($samples.Count -ne 1 -or $samples[0].label -ne '正面') { throw 'Initial face sample was not queryable' }
 
-            $bernadettePhoto = Join-Path $env:RUNNER_TEMP 'bernadette.jpg'
-            Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/leandroveronezi/go-onnxface/main/examples/fotos/bernadette.jpg' -OutFile $bernadettePhoto -UseBasicParsing
+            $importPhoto = Join-Path $env:RUNNER_TEMP 'penny.jpg'
+            Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/leandroveronezi/go-onnxface/main/examples/fotos/penny.jpg' -OutFile $importPhoto -UseBasicParsing
             $importDir = Join-Path $env:RUNNER_TEMP 'photo-import'
             New-Item -ItemType Directory -Force -Path $importDir | Out-Null
             Copy-Item $photo (Join-Path $importDir 'SMOKE001_Amy.jpg') -Force
-            Copy-Item $bernadettePhoto (Join-Path $importDir 'SMOKE002_Bernadette.jpg') -Force
+            Copy-Item $importPhoto (Join-Path $importDir 'SMOKE002_Penny.jpg') -Force
             Set-Content -Path (Join-Path $importDir 'notes.txt') -Value 'ignored non-image'
             $importZip = Join-Path $env:RUNNER_TEMP 'photo-import.zip'
             Compress-Archive -Path (Join-Path $importDir '*') -DestinationPath $importZip -Force
@@ -200,7 +200,7 @@ jobs:
             $commitBody = @{
               items = @(
                 @{ id = $amyImport.id; action = 'skip'; student_no = 'SMOKE001'; name = 'Amy'; class_name = 'Test-Renamed' },
-                @{ id = $bernadetteImport.id; action = 'new'; student_no = 'SMOKE002'; name = 'Bernadette'; class_name = 'Test-Renamed' }
+                @{ id = $bernadetteImport.id; action = 'new'; student_no = 'SMOKE002'; name = 'Penny'; class_name = 'Test-Renamed' }
               )
             } | ConvertTo-Json -Depth 6
             $commitResult = Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:18082/api/photo-import/$($analysis.session_id)/commit" -ContentType 'application/json' -Body $commitBody
@@ -215,7 +215,7 @@ jobs:
             $editedStudent = $studentsAfterEdit | Where-Object { $_.student_no -eq 'SMOKE002' } | Select-Object -First 1
             if (-not $editedStudent -or $editedStudent.class_name -ne 'Backup') { throw 'Imported student class edit failed' }
 
-            $importRecognizeRaw = & curl.exe -fsS -F "file=@$bernadettePhoto" 'http://127.0.0.1:18082/api/recognize'
+            $importRecognizeRaw = & curl.exe -fsS -F "file=@$importPhoto" 'http://127.0.0.1:18082/api/recognize'
             if ($LASTEXITCODE -ne 0) { throw 'Imported photo recognition failed' }
             $importRecognize = $importRecognizeRaw | ConvertFrom-Json
             if (-not $importRecognize.recognized -or $importRecognize.student.student_no -ne 'SMOKE002') { throw 'Imported face sample did not recognize correctly' }
