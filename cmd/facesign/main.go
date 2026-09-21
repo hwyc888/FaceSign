@@ -3,16 +3,13 @@ package main
 import (
 	"context"
 	"errors"
-	"flag"
 	"fmt"
 	"log/slog"
 	"net"
 	"net/http"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
-	"runtime"
 	"syscall"
 	"time"
 
@@ -20,8 +17,6 @@ import (
 	"github.com/hwyc888/FaceSign/internal/store"
 	webapp "github.com/hwyc888/FaceSign/internal/web"
 )
-
-const ortVersion = "1.26.0"
 
 var version = "dev"
 
@@ -35,34 +30,19 @@ func main() {
 }
 
 func run(logger *slog.Logger) error {
-	exe, err := os.Executable()
+	cfg, err := loadConfig()
 	if err != nil {
 		return err
 	}
-	base := filepath.Dir(exe)
-	listen := flag.String("listen", "0.0.0.0:8080", "HTTP listen address")
-	dataPath := flag.String("data", filepath.Join(base, "data", "facesign.db"), "SQLite database path")
-	assetsPath := flag.String("assets", base, "directory containing ONNX Runtime and models")
-	matchThreshold := flag.Float64("match-threshold", 0.68, "face match threshold from 0 to 1")
-	detectionThreshold := flag.Float64("detection-threshold", 0.80, "face detection threshold from 0 to 1")
-	openBrowser := flag.Bool("open-browser", true, "open the local FaceSign page after startup")
-	flag.Parse()
 
-	if *matchThreshold <= 0 || *matchThreshold >= 1 {
-		return fmt.Errorf("match-threshold must be between 0 and 1")
-	}
-	if *detectionThreshold <= 0 || *detectionThreshold >= 1 {
-		return fmt.Errorf("detection-threshold must be between 0 and 1")
-	}
-
-	runtimePath, err := runtimeLibraryPath(*assetsPath)
+	runtimePath, err := runtimeLibraryPath(cfg.AssetsPath)
 	if err != nil {
 		return err
 	}
-	detectorModel := filepath.Join(*assetsPath, "models", "face_detection_yunet_2023mar.onnx")
-	recognizerModel := filepath.Join(*assetsPath, "models", "face_recognition_sface_2021dec.onnx")
+	detectorModel := filepath.Join(cfg.AssetsPath, "models", "face_detection_yunet_2023mar.onnx")
+	recognizerModel := filepath.Join(cfg.AssetsPath, "models", "face_recognition_sface_2021dec.onnx")
 
-	st, err := store.Open(*dataPath)
+	st, err := store.Open(cfg.DataPath)
 	if err != nil {
 		return fmt.Errorf("open database: %w", err)
 	}
@@ -74,7 +54,7 @@ func run(logger *slog.Logger) error {
 	}
 	defer engine.Close()
 
-	webServer, err := webapp.New(logger, st, engine, *matchThreshold, *detectionThreshold, version)
+	webServer, err := webapp.New(logger, st, engine, cfg.MatchThreshold, cfg.DetectionThreshold, version)
 	if err != nil {
 		return err
 	}
@@ -86,23 +66,23 @@ func run(logger *slog.Logger) error {
 		IdleTimeout:       60 * time.Second,
 	}
 
-	listener, err := net.Listen("tcp", *listen)
+	listener, err := net.Listen("tcp", cfg.Listen)
 	if err != nil {
-		return fmt.Errorf("listen on %s: %w; another FaceSign instance may still be running, so use scripts/install.ps1 as Administrator when upgrading", *listen, err)
+		return fmt.Errorf("listen on %s: %w; another FaceSign instance may still be running, so use scripts/install.ps1 as Administrator when upgrading", cfg.Listen, err)
 	}
 	defer listener.Close()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
 	done := make(chan error, 1)
-	localURL := browserURL(*listen)
-	writeStartupInfo(filepath.Dir(*dataPath), listener.Addr().String(), localURL)
+	localURL := browserURL(cfg.Listen)
+	writeStartupInfo(filepath.Dir(cfg.DataPath), listener.Addr().String(), localURL)
 	go func() {
-		logger.Info("FaceSign started", "version", version, "listen", listener.Addr().String(), "browser", localURL, "database", *dataPath, "device", "cpu")
+		logger.Info("FaceSign started", "version", version, "listen", listener.Addr().String(), "browser", localURL, "database", cfg.DataPath, "device", "cpu")
 		done <- server.Serve(listener)
 	}()
 
-	if *openBrowser {
+	if cfg.OpenBrowser {
 		go func() {
 			time.Sleep(250 * time.Millisecond)
 			if err := openURL(localURL + "?v=" + version); err != nil {
@@ -128,64 +108,5 @@ func run(logger *slog.Logger) error {
 			return nil
 		}
 		return err
-	}
-}
-
-func browserURL(listen string) string {
-	host, port, err := net.SplitHostPort(listen)
-	if err != nil {
-		return "http://127.0.0.1:8080/"
-	}
-	switch host {
-	case "", "0.0.0.0", "::":
-		host = "127.0.0.1"
-	}
-	return "http://" + net.JoinHostPort(host, port) + "/"
-}
-
-func openURL(url string) error {
-	var cmd *exec.Cmd
-	switch runtime.GOOS {
-	case "windows":
-		cmd = exec.Command("rundll32", "url.dll,FileProtocolHandler", url)
-	case "linux":
-		cmd = exec.Command("xdg-open", url)
-	default:
-		return fmt.Errorf("open browser is not supported on %s", runtime.GOOS)
-	}
-	return cmd.Start()
-}
-
-func writeStartupInfo(dir, listen, localURL string) {
-	if err := os.MkdirAll(dir, 0o755); err != nil {
-		return
-	}
-	message := fmt.Sprintf(
-		"started=%s\r\nversion=%s\r\npid=%d\r\nlisten=%s\r\nurl=%s\r\n",
-		time.Now().Format(time.RFC3339), version, os.Getpid(), listen, localURL,
-	)
-	_ = os.WriteFile(filepath.Join(dir, "facesign-startup.log"), []byte(message), 0o644)
-}
-
-func writeStartupError(startupErr error) {
-	message := time.Now().Format(time.RFC3339) + " " + startupErr.Error() + "\r\n"
-	exe, err := os.Executable()
-	if err == nil {
-		path := filepath.Join(filepath.Dir(exe), "facesign-error.log")
-		if err := os.WriteFile(path, []byte(message), 0o644); err == nil {
-			return
-		}
-	}
-	_ = os.WriteFile(filepath.Join(os.TempDir(), "facesign-error.log"), []byte(message), 0o644)
-}
-
-func runtimeLibraryPath(assets string) (string, error) {
-	switch runtime.GOOS {
-	case "windows":
-		return filepath.Join(assets, "onnxruntime.dll"), nil
-	case "linux":
-		return filepath.Join(assets, "libonnxruntime.so."+ortVersion), nil
-	default:
-		return "", fmt.Errorf("unsupported operating system %s", runtime.GOOS)
 	}
 }

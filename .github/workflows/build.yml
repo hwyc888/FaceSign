@@ -35,6 +35,10 @@ jobs:
       - name: Test and vet
         shell: pwsh
         run: |
+          Get-ChildItem 'internal\web\assets\js' -Filter '*.js' | ForEach-Object {
+            node --check $_.FullName
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          }
           go test ./...
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           go vet ./...
@@ -134,8 +138,10 @@ jobs:
             if ($homeHeaderText -match '(?im)^Location:') { throw 'FaceSign home page unexpectedly redirects' }
             $homeContent = Get-Content $homeBody -Raw
             if ($homeContent -notmatch '<title>FaceSign</title>') { throw 'FaceSign home page content check failed' }
-            $appJs = Invoke-WebRequest -Uri 'http://127.0.0.1:18082/app.js' -UseBasicParsing -TimeoutSec 3
-            if ($appJs.StatusCode -ne 200 -or $appJs.Content.Length -lt 100 -or $appJs.Content -notmatch 'captureEnrollment') { throw 'FaceSign app.js check failed' }
+            $coreJs = Invoke-WebRequest -Uri 'http://127.0.0.1:18082/js/core.js' -UseBasicParsing -TimeoutSec 3
+            $enrollmentJs = Invoke-WebRequest -Uri 'http://127.0.0.1:18082/js/enrollment.js' -UseBasicParsing -TimeoutSec 3
+            $classesJs = Invoke-WebRequest -Uri 'http://127.0.0.1:18082/js/classes.js' -UseBasicParsing -TimeoutSec 3
+            if ($coreJs.StatusCode -ne 200 -or $enrollmentJs.Content -notmatch 'captureEnrollment' -or $classesJs.Content -notmatch 'loadClasses') { throw 'FaceSign frontend module check failed' }
 
             $classOne = Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:18082/api/classes' -ContentType 'application/json' -Body '{"name":"Test"}'
             $classTwo = Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:18082/api/classes' -ContentType 'application/json' -Body '{"name":"Backup"}'
