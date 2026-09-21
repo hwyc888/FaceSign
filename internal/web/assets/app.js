@@ -394,13 +394,13 @@ async function loadClasses() {
       </tr>
     `).join('') || '<tr><td colspan="5">还没有班级，请先添加</td></tr>';
 
-    $('[data-class-up]').forEach(button => {
+    $$('[data-class-up]').forEach(button => {
       button.onclick = () => moveClass(Number(button.dataset.classUp), 'up');
     });
-    $('[data-class-down]').forEach(button => {
+    $$('[data-class-down]').forEach(button => {
       button.onclick = () => moveClass(Number(button.dataset.classDown), 'down');
     });
-    $('[data-class-rename]').forEach(button => {
+    $$('[data-class-rename]').forEach(button => {
       button.onclick = async () => {
         const item = classesCache.find(c => Number(c.id) === Number(button.dataset.classRename));
         if (!item) return;
@@ -420,7 +420,7 @@ async function loadClasses() {
         }
       };
     });
-    $('[data-class-delete]').forEach(button => {
+    $$('[data-class-delete]').forEach(button => {
       button.onclick = async () => {
         const item = classesCache.find(c => Number(c.id) === Number(button.dataset.classDelete));
         if (!item) return;

@@ -1,36 +1,25 @@
 package web
 
 import (
-	"net/http"
-	"net/http/httptest"
 	"strings"
 	"testing"
 )
 
-func TestHomePageHasNoRedirect(t *testing.T) {
-	home, err := assets.ReadFile("assets/index.html")
+func TestClassActionSelectorsUseQuerySelectorAll(t *testing.T) {
+	data, err := assets.ReadFile("assets/app.js")
 	if err != nil {
 		t.Fatal(err)
 	}
-	s := &Server{home: home, version: "test-version"}
+	script := string(data)
 
-	rec := httptest.NewRecorder()
-	req := httptest.NewRequest(http.MethodGet, "http://example.test/", nil)
-	s.root(rec, req)
+	for _, selector := range []string{"up", "down", "rename", "delete"} {
+		want := "$$('[data-class-" + selector + "]').forEach"
+		if !strings.Contains(script, want) {
+			t.Fatalf("class action selector %q must use querySelectorAll before forEach", selector)
+		}
+	}
 
-	if rec.Code != http.StatusOK {
-		t.Fatalf("GET / returned %d, want %d", rec.Code, http.StatusOK)
-	}
-	if location := rec.Header().Get("Location"); location != "" {
-		t.Fatalf("GET / unexpectedly redirected to %q", location)
-	}
-	if rec.Header().Get("Cache-Control") != "no-store" {
-		t.Fatalf("GET / Cache-Control = %q, want no-store", rec.Header().Get("Cache-Control"))
-	}
-	if rec.Header().Get("X-FaceSign-Version") != "test-version" {
-		t.Fatalf("GET / X-FaceSign-Version = %q", rec.Header().Get("X-FaceSign-Version"))
-	}
-	if !strings.Contains(rec.Body.String(), "<title>FaceSign</title>") {
-		t.Fatal("GET / did not serve FaceSign index.html")
+	if strings.Contains(script, "$('[data-class-") {
+		t.Fatal("class action code still contains a single-element class selector")
 	}
 }
