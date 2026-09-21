@@ -109,3 +109,11 @@ pre{background:#0b1220;color:#d8e2f3;border-radius:12px;padding:16px;overflow:au
   .enroll-actions,.sample-add-row{grid-template-columns:1fr}
   .card-head{flex-direction:column}
 }
+
+.class-add-form{display:grid;grid-template-columns:minmax(260px,1fr) auto;gap:12px;align-items:end;margin:18px 0}
+.class-add-form label{display:grid;gap:6px;color:#475467;font-size:14px}
+.class-add-form button{height:42px}
+.class-table-wrap{margin-top:6px}
+.class-order-actions{display:flex;gap:8px;flex-wrap:wrap}
+.class-order-actions button{padding:7px 10px}
+@media(max-width:620px){.class-add-form{grid-template-columns:1fr}}

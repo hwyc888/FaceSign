@@ -118,6 +118,12 @@ jobs:
             $appJs = Invoke-WebRequest -Uri 'http://127.0.0.1:18082/app.js' -UseBasicParsing -TimeoutSec 3
             if ($appJs.StatusCode -ne 200 -or $appJs.Content.Length -lt 100 -or $appJs.Content -notmatch 'captureEnrollment') { throw 'FaceSign app.js check failed' }
 
+            $classOne = Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:18082/api/classes' -ContentType 'application/json' -Body '{"name":"Test"}'
+            $classTwo = Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:18082/api/classes' -ContentType 'application/json' -Body '{"name":"Backup"}'
+            Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:18082/api/classes/$($classTwo.id)/move" -ContentType 'application/json' -Body '{"direction":"up"}' | Out-Null
+            $classes = Invoke-RestMethod -Uri 'http://127.0.0.1:18082/api/classes' -TimeoutSec 3
+            if ($classes.Count -ne 2 -or $classes[0].name -ne 'Backup' -or $classes[1].name -ne 'Test') { throw 'Class ordering smoke test failed' }
+
             $photo = Join-Path $env:RUNNER_TEMP 'amy.jpg'
             Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/leandroveronezi/go-onnxface/main/examples/fotos/amy.jpg' -OutFile $photo -UseBasicParsing
 
@@ -130,7 +136,13 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw 'Face-first enrollment creation failed' }
             $create = $createRaw | ConvertFrom-Json
             $student = $create.student
-            if ($student.student_no -ne 'SMOKE001' -or $student.face_count -ne 1) { throw 'Face-first enrollment returned unexpected student data' }
+            if ($student.student_no -ne 'SMOKE001' -or $student.face_count -ne 1 -or $student.class_name -ne 'Test') { throw 'Face-first enrollment returned unexpected student data' }
+            $deleteUsedClassStatus = & curl.exe -sS -o NUL -w "%{http_code}" -X DELETE "http://127.0.0.1:18082/api/classes/$($classOne.id)"
+            if ($deleteUsedClassStatus -ne '400') { throw "Used class deletion should be blocked with 400, got $deleteUsedClassStatus" }
+            $renameClass = Invoke-RestMethod -Method Put -Uri "http://127.0.0.1:18082/api/classes/$($classOne.id)" -ContentType 'application/json' -Body '{"name":"Test-Renamed"}'
+            if ($renameClass.name -ne 'Test-Renamed' -or $renameClass.student_count -ne 1) { throw 'Class rename smoke test failed' }
+            $studentAfterRename = (Invoke-RestMethod -Uri 'http://127.0.0.1:18082/api/students' -TimeoutSec 3 | Where-Object { $_.student_no -eq 'SMOKE001' } | Select-Object -First 1)
+            if (-not $studentAfterRename -or $studentAfterRename.class_name -ne 'Test-Renamed') { throw 'Class rename did not update student record' }
 
             $duplicateRaw = & curl.exe -fsS -F "file=@$photo" 'http://127.0.0.1:18082/api/enrollment/check'
             if ($LASTEXITCODE -ne 0) { throw 'Duplicate enrollment re-check failed' }

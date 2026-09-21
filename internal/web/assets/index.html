@@ -15,6 +15,7 @@
         <button class="nav active" data-page="checkin">人脸签到</button>
         <button class="nav" data-page="students">学生管理</button>
         <button class="nav" data-page="attendance">考勤记录</button>
+        <button class="nav" data-page="settings">设置</button>
         <button class="nav" data-page="status">系统状态</button>
       </nav>
     </aside>
@@ -126,6 +127,29 @@
         </div>
       </section>
 
+      <section class="page" id="page-settings">
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h2>班级编排</h2>
+              <p class="muted compact">在这里统一管理班级。人脸首次录入时只能从这里建立的班级中选择。</p>
+            </div>
+          </div>
+          <form id="classForm" class="class-add-form">
+            <label>新增班级
+              <input id="className" maxlength="40" placeholder="例如：高一1班" required autocomplete="off">
+            </label>
+            <button class="primary" type="submit">添加班级</button>
+          </form>
+          <div class="table-wrap class-table-wrap">
+            <table>
+              <thead><tr><th>顺序</th><th>班级名称</th><th>学生人数</th><th>编排</th><th>操作</th></tr></thead>
+              <tbody id="classesBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
       <section class="page" id="page-status">
         <div class="card">
           <h2>系统状态</h2>
@@ -148,7 +172,11 @@
       <form id="studentInfoForm" class="form">
         <label>学号<input id="modalStudentNo" required autocomplete="off"></label>
         <label>姓名<input id="modalStudentName" required autocomplete="off"></label>
-        <label>班级<input id="modalClassName" autocomplete="off"></label>
+        <label>班级
+          <select id="modalClassName" required>
+            <option value="">请先选择班级</option>
+          </select>
+        </label>
         <div class="modal-actions">
           <button data-close="studentModal" type="button">取消</button>
           <button class="primary" type="submit">保存并完成人脸录入</button>
