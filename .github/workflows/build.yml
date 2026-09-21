@@ -126,10 +126,40 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw 'Recognition smoke test failed' }
             $recognize = $recognizeRaw | ConvertFrom-Json
             if (-not $recognize.recognized -or $recognize.student.student_no -ne 'SMOKE001') { throw 'Recognition did not match enrolled student' }
+
+            $unknownPhoto = Join-Path $env:RUNNER_TEMP 'bernadette.jpg'
+            Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/leandroveronezi/go-onnxface/main/examples/fotos/bernadette.jpg' -OutFile $unknownPhoto -UseBasicParsing
             $groupPhoto = Join-Path $env:RUNNER_TEMP 'group.jpg'
-            Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/leandroveronezi/go-onnxface/main/examples/fotos/elenco3.jpg' -OutFile $groupPhoto -UseBasicParsing
-            $groupStatus = & curl.exe -sS -o NUL -w "%{http_code}" -F "file=@$groupPhoto" "http://127.0.0.1:18082/api/students/$($student.id)/face"
-            if ($groupStatus -ne '422') { throw "Multi-face enrollment should be rejected with 422, got $groupStatus" }
+            Add-Type -AssemblyName System.Drawing
+            $knownImage = [System.Drawing.Image]::FromFile($photo)
+            $unknownImage = [System.Drawing.Image]::FromFile($unknownPhoto)
+            $groupBitmap = New-Object System.Drawing.Bitmap 900,450
+            $graphics = [System.Drawing.Graphics]::FromImage($groupBitmap)
+            try {
+              $graphics.Clear([System.Drawing.Color]::White)
+              $graphics.DrawImage($knownImage, 0, 0, 450, 450)
+              $graphics.DrawImage($unknownImage, 450, 0, 450, 450)
+              $groupBitmap.Save($groupPhoto, [System.Drawing.Imaging.ImageFormat]::Jpeg)
+            } finally {
+              $graphics.Dispose()
+              $groupBitmap.Dispose()
+              $knownImage.Dispose()
+              $unknownImage.Dispose()
+            }
+
+            $groupEnrollStatus = & curl.exe -sS -o NUL -w "%{http_code}" -F "file=@$groupPhoto" "http://127.0.0.1:18082/api/students/$($student.id)/face"
+            if ($groupEnrollStatus -ne '422') { throw "Multi-face enrollment should be rejected with 422, got $groupEnrollStatus" }
+
+            $groupRecognizeRaw = & curl.exe -fsS -F "file=@$groupPhoto" 'http://127.0.0.1:18082/api/recognize'
+            if ($LASTEXITCODE -ne 0) { throw 'Multi-face recognition smoke test failed' }
+            $groupRecognize = $groupRecognizeRaw | ConvertFrom-Json
+            if ($groupRecognize.detected_count -lt 2) { throw "Expected at least 2 detected faces, got $($groupRecognize.detected_count)" }
+            if ($groupRecognize.recognized_count -lt 1) { throw 'Expected at least one enrolled face in group recognition' }
+            if ($groupRecognize.unregistered_count -lt 1) { throw 'Expected at least one unregistered face in group recognition' }
+            $knownResult = $groupRecognize.faces | Where-Object { $_.recognized -and $_.student.student_no -eq 'SMOKE001' } | Select-Object -First 1
+            if (-not $knownResult) { throw 'Enrolled student was not identified in group recognition' }
+            $unknownResult = $groupRecognize.faces | Where-Object { -not $_.recognized -and $_.status -eq '未录入' } | Select-Object -First 1
+            if (-not $unknownResult) { throw 'Unregistered face was not reported as 未录入' }
           } finally {
             Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
             $env:PATH = $originalPath

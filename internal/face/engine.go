@@ -18,6 +18,11 @@ var (
 	ErrMultipleFaces = errors.New("multiple faces detected")
 )
 
+type Detection struct {
+	Rectangle image.Rectangle
+	Feature   []float32
+}
+
 type Engine struct {
 	mu         sync.Mutex
 	detector   *yunet.Detector
@@ -71,6 +76,49 @@ func (e *Engine) Close() {
 
 func (e *Engine) Extract(img image.Image, threshold float64) ([]float32, error) {
 	return e.extract(img, threshold, false)
+}
+
+// ExtractAll returns one embedding for every face detected in the same frame.
+// Recognition uses this path so a classroom group can check in together.
+func (e *Engine) ExtractAll(img image.Image, threshold float64) ([]Detection, error) {
+	if img == nil || img.Bounds().Dx() < 40 || img.Bounds().Dy() < 40 {
+		return nil, ErrNoFace
+	}
+	if threshold <= 0 {
+		threshold = 0.80
+	}
+	if threshold < 0.10 {
+		threshold = 0.10
+	}
+	if threshold > 0.99 {
+		threshold = 0.99
+	}
+
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	e.detector.ScoreThreshold = float32(threshold)
+	faces, err := e.detector.Detect(img)
+	if err != nil {
+		return nil, fmt.Errorf("detect face: %w", err)
+	}
+	if len(faces) == 0 {
+		return nil, ErrNoFace
+	}
+
+	out := make([]Detection, 0, len(faces))
+	for _, detected := range faces {
+		aligned := e.recognizer.Align(img, detected.Landmarks)
+		feature, err := e.recognizer.Feature(aligned)
+		if err != nil {
+			return nil, fmt.Errorf("extract face feature: %w", err)
+		}
+		out = append(out, Detection{
+			Rectangle: detected.Rectangle,
+			Feature:   append([]float32(nil), feature...),
+		})
+	}
+	return out, nil
 }
 
 // ExtractEnrollment is slightly more tolerant than recognition. A clearly
