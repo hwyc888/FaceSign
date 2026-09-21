@@ -126,6 +126,10 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw 'Recognition smoke test failed' }
             $recognize = $recognizeRaw | ConvertFrom-Json
             if (-not $recognize.recognized -or $recognize.student.student_no -ne 'SMOKE001') { throw 'Recognition did not match enrolled student' }
+            $groupPhoto = Join-Path $env:RUNNER_TEMP 'group.jpg'
+            Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/leandroveronezi/go-onnxface/main/examples/fotos/elenco3.jpg' -OutFile $groupPhoto -UseBasicParsing
+            $groupStatus = & curl.exe -sS -o NUL -w "%{http_code}" -F "file=@$groupPhoto" "http://127.0.0.1:18082/api/students/$($student.id)/face"
+            if ($groupStatus -ne '422') { throw "Multi-face enrollment should be rejected with 422, got $groupStatus" }
           } finally {
             Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
             $env:PATH = $originalPath

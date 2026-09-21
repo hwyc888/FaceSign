@@ -70,6 +70,17 @@ func (e *Engine) Close() {
 }
 
 func (e *Engine) Extract(img image.Image, threshold float64) ([]float32, error) {
+	return e.extract(img, threshold, false)
+}
+
+// ExtractEnrollment is slightly more tolerant than recognition. A clearly
+// dominant foreground face may be enrolled even when YuNet also finds a much
+// smaller background face. Two similarly sized faces are still rejected.
+func (e *Engine) ExtractEnrollment(img image.Image, threshold float64) ([]float32, error) {
+	return e.extract(img, threshold, true)
+}
+
+func (e *Engine) extract(img image.Image, threshold float64, enrollment bool) ([]float32, error) {
 	if img == nil || img.Bounds().Dx() < 40 || img.Bounds().Dy() < 40 {
 		return nil, ErrNoFace
 	}
@@ -94,15 +105,61 @@ func (e *Engine) Extract(img image.Image, threshold float64) ([]float32, error) 
 	if len(faces) == 0 {
 		return nil, ErrNoFace
 	}
+
+	selected := faces[0]
 	if len(faces) > 1 {
-		return nil, ErrMultipleFaces
+		if !enrollment {
+			return nil, ErrMultipleFaces
+		}
+		selected, err = selectEnrollmentFace(faces)
+		if err != nil {
+			return nil, err
+		}
 	}
-	aligned := e.recognizer.Align(img, faces[0].Landmarks)
+
+	aligned := e.recognizer.Align(img, selected.Landmarks)
 	feature, err := e.recognizer.Feature(aligned)
 	if err != nil {
 		return nil, fmt.Errorf("extract face feature: %w", err)
 	}
 	return append([]float32(nil), feature...), nil
+}
+
+func selectEnrollmentFace(faces []onnxface.Face) (onnxface.Face, error) {
+	if len(faces) == 0 {
+		return onnxface.Face{}, ErrNoFace
+	}
+
+	best := faces[0]
+	bestArea := rectangleArea(best.Rectangle)
+	for _, candidate := range faces[1:] {
+		area := rectangleArea(candidate.Rectangle)
+		if area > bestArea {
+			best = candidate
+			bestArea = area
+		}
+	}
+	if bestArea <= 0 {
+		return onnxface.Face{}, ErrNoFace
+	}
+
+	const significantFaceRatio = 0.30
+	for _, candidate := range faces {
+		if candidate.Rectangle == best.Rectangle {
+			continue
+		}
+		if rectangleArea(candidate.Rectangle) >= bestArea*significantFaceRatio {
+			return onnxface.Face{}, ErrMultipleFaces
+		}
+	}
+	return best, nil
+}
+
+func rectangleArea(rect image.Rectangle) float64 {
+	if rect.Empty() {
+		return 0
+	}
+	return float64(rect.Dx() * rect.Dy())
 }
 
 func Similarity(a, b []float32) float64 {

@@ -186,7 +186,7 @@ func (s *Server) enrollFace(w http.ResponseWriter, r *http.Request, studentID in
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	feature, err := s.engine.Extract(img, s.detectionThreshold)
+	feature, err := s.engine.ExtractEnrollment(img, s.detectionThreshold)
 	if err != nil {
 		writeFaceError(w, err)
 		return
@@ -300,9 +300,9 @@ func decodeJSON(r *http.Request, dst any) error {
 func writeFaceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, face.ErrNoFace):
-		writeError(w, http.StatusUnprocessableEntity, errors.New("no face detected"))
+		writeError(w, http.StatusUnprocessableEntity, errors.New("未检测到清晰人脸，请正对摄像头并靠近一些"))
 	case errors.Is(err, face.ErrMultipleFaces):
-		writeError(w, http.StatusUnprocessableEntity, errors.New("multiple faces detected; keep only one person in the frame"))
+		writeError(w, http.StatusUnprocessableEntity, errors.New("检测到多张明显人脸，请确保镜头前只有一人后再试"))
 	default:
 		writeError(w, http.StatusInternalServerError, err)
 	}
