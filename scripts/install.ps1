@@ -5,8 +5,64 @@ param(
 $ErrorActionPreference = 'Stop'
 $source = Split-Path -Parent $PSScriptRoot
 
-# Stop every older FaceSign instance before replacing files. This prevents an
-# old scheduled-task process from continuing to own port 8080 after upgrade.
+$ModelCommit = '5f4dbed1d5e78b95b9af95f492f363d654bb01d9'
+$ModelBaseUrl = "https://raw.githubusercontent.com/hwyc888/FaceSign/$ModelCommit/models"
+$Models = @(
+  @{
+    Name = 'face_detection_yunet_2023mar.onnx'
+    SHA256 = '8F2383E4DD3CFBB4553EA8718107FC0423210DC964F9F4280604804ED2552FA4'
+  },
+  @{
+    Name = 'face_recognition_sface_2021dec.onnx'
+    SHA256 = '0BA9FBFA01B5270C96627C4EF784DA859931E02F04419C829E83484087C34E79'
+  }
+)
+
+function Test-ModelFile {
+  param(
+    [string]$Path,
+    [string]$SHA256
+  )
+  if (-not (Test-Path $Path -PathType Leaf)) { return $false }
+  return (Get-FileHash $Path -Algorithm SHA256).Hash -eq $SHA256
+}
+
+function Ensure-FaceModels {
+  param([string]$TargetDir)
+
+  New-Item -ItemType Directory -Force -Path $TargetDir | Out-Null
+  $sourceModels = Join-Path $source 'models'
+
+  foreach ($model in $Models) {
+    $target = Join-Path $TargetDir $model.Name
+    if (Test-ModelFile -Path $target -SHA256 $model.SHA256) {
+      Write-Host "Model ready: $($model.Name)"
+      continue
+    }
+
+    $sourceModel = Join-Path $sourceModels $model.Name
+    if (Test-ModelFile -Path $sourceModel -SHA256 $model.SHA256) {
+      Copy-Item $sourceModel $target -Force
+      Write-Host "Model installed from local models folder: $($model.Name)"
+      continue
+    }
+
+    $url = "$ModelBaseUrl/$($model.Name)"
+    $temp = "$target.download"
+    Write-Host "Downloading model once: $($model.Name)"
+    try {
+      Invoke-WebRequest -Uri $url -OutFile $temp -UseBasicParsing
+      if (-not (Test-ModelFile -Path $temp -SHA256 $model.SHA256)) {
+        throw "Model checksum verification failed: $($model.Name)"
+      }
+      Move-Item $temp $target -Force
+    } finally {
+      Remove-Item $temp -Force -ErrorAction SilentlyContinue
+    }
+  }
+}
+
+# Stop every older FaceSign instance before replacing files.
 $oldTask = Get-ScheduledTask -TaskName 'FaceSign' -ErrorAction SilentlyContinue
 if ($oldTask) {
   Stop-ScheduledTask -TaskName 'FaceSign' -ErrorAction SilentlyContinue
@@ -29,7 +85,11 @@ foreach ($dll in @('msvcp140.dll','msvcp140_1.dll','vcruntime140.dll','vcruntime
   $p = Join-Path $source $dll
   if (Test-Path $p) { Copy-Item $p $InstallDir -Force }
 }
-Copy-Item (Join-Path $source 'models') $InstallDir -Recurse -Force
+
+# Models are deliberately not included in every program build. Existing valid
+# models are kept; a fresh machine downloads the fixed repository models once.
+Ensure-FaceModels -TargetDir (Join-Path $InstallDir 'models')
+
 New-Item -ItemType Directory -Force -Path (Join-Path $InstallDir 'data') | Out-Null
 Remove-Item (Join-Path $InstallDir 'facesign-error.log') -Force -ErrorAction SilentlyContinue
 
@@ -71,6 +131,7 @@ if (-not $versionInfo.version) {
 $url = "http://127.0.0.1:$port/?v=$($versionInfo.version)"
 Write-Host "FaceSign upgraded and started."
 Write-Host "Version: $($versionInfo.version)"
+Write-Host "Models:  pinned at $ModelCommit"
 Write-Host "Local:   $url"
 if ($Listen.StartsWith('0.0.0.0:') -or $Listen.StartsWith(':')) {
   Write-Host "LAN:     http://<this-PC-IP>:$port/"
