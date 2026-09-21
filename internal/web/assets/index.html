@@ -10,21 +10,22 @@
   <div class="shell">
     <aside class="sidebar">
       <div class="brand">FaceSign</div>
-      <div class="brand-sub">&#26657;&#22253;&#20154;&#33080;&#32771;&#21220;</div>
+      <div class="brand-sub">校园人脸考勤</div>
       <nav>
-        <button class="nav active" data-page="checkin">&#20154;&#33080;&#31614;&#21040;</button>
-        <button class="nav" data-page="students">&#23398;&#29983;&#31649;&#29702;</button>
-        <button class="nav" data-page="attendance">&#32771;&#21220;&#35760;&#24405;</button>
-        <button class="nav" data-page="status">&#31995;&#32479;&#29366;&#24577;</button>
+        <button class="nav active" data-page="checkin">人脸签到</button>
+        <button class="nav" data-page="students">学生管理</button>
+        <button class="nav" data-page="attendance">考勤记录</button>
+        <button class="nav" data-page="status">系统状态</button>
       </nav>
     </aside>
+
     <main class="main">
       <header class="topbar">
         <div>
-          <h1 id="pageTitle">&#20154;&#33080;&#31614;&#21040;</h1>
-          <p id="pageHint">&#26412;&#26426;&#25668;&#20687;&#22836;&#25293;&#29031;&#21518;&#30452;&#25509;&#22312; Go &#31243;&#24207;&#20869;&#35782;&#21035;</p>
+          <h1 id="pageTitle">人脸签到</h1>
+          <p id="pageHint">摄像头可同时识别多人并完成签到</p>
         </div>
-        <div class="pill" id="healthPill">&#27491;&#22312;&#26816;&#27979;...</div>
+        <div class="pill" id="healthPill">正在检测...</div>
       </header>
 
       <section class="page active" id="page-checkin">
@@ -36,71 +37,174 @@
               <canvas id="canvas" hidden></canvas>
             </div>
             <div class="actions">
-              <button class="primary" id="startCamera">&#25171;&#24320;&#25668;&#20687;&#22836;</button>
-              <button id="recognize" disabled>&#35782;&#21035;&#24182;&#31614;&#21040;</button>
-              <label class="switch"><input id="autoScan" type="checkbox"> &#33258;&#21160;&#35782;&#21035;</label>
+              <button class="primary" id="startCamera">打开摄像头</button>
+              <button id="recognize" disabled>识别并签到</button>
+              <label class="switch"><input id="autoScan" type="checkbox"> 自动识别</label>
             </div>
           </div>
           <div class="card result-card">
-            <h2>&#35782;&#21035;&#32467;&#26524;</h2>
-            <div id="result" class="result empty">&#23578;&#26410;&#35782;&#21035;</div>
+            <h2>识别结果</h2>
+            <div id="result" class="result empty">尚未识别</div>
             <div class="mini-list" id="todaySummary"></div>
           </div>
         </div>
       </section>
 
       <section class="page" id="page-students">
-        <div class="grid two">
-          <div class="card">
-            <h2>&#26032;&#22686;&#23398;&#29983;</h2>
-            <form id="studentForm" class="form">
-              <label>&#23398;&#21495;<input id="studentNo" required></label>
-              <label>&#22995;&#21517;<input id="studentName" required></label>
-              <label>&#29677;&#32423;<input id="className"></label>
-              <button class="primary" type="submit">&#20445;&#23384;&#23398;&#29983;</button>
-            </form>
+        <div class="card enrollment-card">
+          <div class="card-head">
+            <div>
+              <h2>人脸录入</h2>
+              <p class="muted compact">首次录入直接拍照：系统先做人脸重复比对，通过后再弹出学生信息。已有学生请在下方“人脸样本”中补充多角度特征。</p>
+            </div>
+            <div class="mode-pill" id="enrollMode">首次录入</div>
           </div>
-          <div class="card">
-            <h2>&#24405;&#20837;&#20154;&#33080;</h2>
-            <p class="muted">&#35831;&#35753;&#24405;&#20837;&#23398;&#29983;&#30340;&#20154;&#33080;&#23621;&#20013;&#24182;&#23613;&#37327;&#38752;&#36817;&#25668;&#20687;&#22836;&#12290;&#23567;&#30340;&#32972;&#26223;&#20154;&#33080;&#20250;&#33258;&#21160;&#24573;&#30053;&#65292;&#20294;&#20004;&#24352;&#26126;&#26174;&#20154;&#33080;&#20250;&#25298;&#32477;&#24405;&#20837;&#12290;</p>
+
+          <div class="enroll-layout">
             <div class="enroll-video-wrap">
               <video id="enrollCamera" autoplay playsinline muted></video>
               <div class="face-guide"></div>
             </div>
-            <div class="form">
-              <label>&#36873;&#25321;&#23398;&#29983;<select id="enrollStudent"></select></label>
-              <div class="actions enroll-actions">
-                <button id="openEnrollCamera" type="button">&#25171;&#24320;&#25668;&#20687;&#22836;</button>
-                <button class="primary" id="enrollFace" type="button">&#25293;&#29031;&#24182;&#24405;&#20837;</button>
+            <div class="enroll-controls">
+              <div class="enroll-instruction" id="enrollInstruction">
+                <strong>录入步骤</strong>
+                <span>1. 正对摄像头并让脸部位于引导框内。</span>
+                <span>2. 点击“拍照并录入”，系统先检查是否已经录入。</span>
+                <span>3. 确认新面孔后，再填写学号、姓名和班级。</span>
               </div>
+              <label id="supplementAngleWrap" class="angle-select hidden">
+                补充角度
+                <select id="supplementAngle">
+                  <option value="正面">正面</option>
+                  <option value="左侧">左侧</option>
+                  <option value="右侧">右侧</option>
+                  <option value="轻微抬头">轻微抬头</option>
+                  <option value="轻微低头">轻微低头</option>
+                  <option value="其他">其他</option>
+                </select>
+              </label>
+              <div class="enroll-actions">
+                <button id="toggleEnrollCamera" type="button">打开摄像头</button>
+                <button class="primary" id="captureEnrollment" type="button" disabled>拍照并录入</button>
+              </div>
+              <button id="cancelSupplement" class="link-button hidden" type="button">取消补充录入，返回首次录入</button>
             </div>
           </div>
         </div>
+
         <div class="card table-card">
-          <div class="card-head"><h2>&#23398;&#29983;&#21015;&#34920;</h2><button id="refreshStudents">&#21047;&#26032;</button></div>
-          <div class="table-wrap"><table><thead><tr><th>&#23398;&#21495;</th><th>&#22995;&#21517;</th><th>&#29677;&#32423;</th><th>&#20154;&#33080;</th><th>&#25805;&#20316;</th></tr></thead><tbody id="studentsBody"></tbody></table></div>
+          <div class="card-head">
+            <div>
+              <h2>学生列表</h2>
+              <p class="muted compact">“人脸样本”可查询已录入角度、继续补充或删除某个样本。</p>
+            </div>
+            <button id="refreshStudents">刷新</button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr><th>学号</th><th>姓名</th><th>班级</th><th>人脸样本</th><th>操作</th></tr>
+              </thead>
+              <tbody id="studentsBody"></tbody>
+            </table>
+          </div>
         </div>
       </section>
 
       <section class="page" id="page-attendance">
         <div class="card table-card">
           <div class="card-head">
-            <h2>&#32771;&#21220;&#35760;&#24405;</h2>
-            <div class="inline"><input id="attendanceDay" type="date"><button id="refreshAttendance">&#26597;&#35810;</button></div>
+            <h2>考勤记录</h2>
+            <div class="inline"><input id="attendanceDay" type="date"><button id="refreshAttendance">查询</button></div>
           </div>
-          <div class="table-wrap"><table><thead><tr><th>&#26102;&#38388;</th><th>&#23398;&#21495;</th><th>&#22995;&#21517;</th><th>&#29677;&#32423;</th><th>&#30456;&#20284;&#24230;</th></tr></thead><tbody id="attendanceBody"></tbody></table></div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th>时间</th><th>学号</th><th>姓名</th><th>班级</th><th>相似度</th></tr></thead>
+              <tbody id="attendanceBody"></tbody>
+            </table>
+          </div>
         </div>
       </section>
 
       <section class="page" id="page-status">
         <div class="card">
-          <h2>&#31995;&#32479;&#29366;&#24577;</h2>
+          <h2>系统状态</h2>
           <pre id="statusJson">loading...</pre>
-          <p class="muted">Windows &#21457;&#24067;&#21253;&#21482;&#38656; FaceSign.exe&#12289;ONNX Runtime DLL &#21644;&#27169;&#22411;&#25991;&#20214;&#12290;&#19981;&#20351;&#29992; Python&#12289;Docker &#25110; GPU&#12290;</p>
+          <p class="muted">Windows 发布包使用 Go + ONNX Runtime CPU，不需要 Python、Docker 或 GPU。</p>
         </div>
       </section>
     </main>
   </div>
+
+  <div class="modal-backdrop hidden" id="studentModal">
+    <div class="modal">
+      <div class="modal-head">
+        <div>
+          <h2>录入学生信息</h2>
+          <p>人脸检测和重复比对已通过，请填写该学生资料。</p>
+        </div>
+        <button class="icon-button" data-close="studentModal" type="button">×</button>
+      </div>
+      <form id="studentInfoForm" class="form">
+        <label>学号<input id="modalStudentNo" required autocomplete="off"></label>
+        <label>姓名<input id="modalStudentName" required autocomplete="off"></label>
+        <label>班级<input id="modalClassName" autocomplete="off"></label>
+        <div class="modal-actions">
+          <button data-close="studentModal" type="button">取消</button>
+          <button class="primary" type="submit">保存并完成人脸录入</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-backdrop hidden" id="duplicateModal">
+    <div class="modal">
+      <div class="modal-head">
+        <div>
+          <h2>该人脸已经录入</h2>
+          <p>系统检测到当前人脸与已有学生重复，不能再次建立新学生。</p>
+        </div>
+        <button class="icon-button" data-close="duplicateModal" type="button">×</button>
+      </div>
+      <div class="duplicate-card" id="duplicateInfo"></div>
+      <div class="modal-actions">
+        <button data-close="duplicateModal" type="button">关闭</button>
+        <button class="primary" id="duplicateViewSamples" type="button">查看该学生人脸样本</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop hidden" id="samplesModal">
+    <div class="modal modal-wide">
+      <div class="modal-head">
+        <div>
+          <h2 id="samplesTitle">人脸样本</h2>
+          <p id="samplesHint">可查询、删除和补充多角度人脸样本。</p>
+        </div>
+        <button class="icon-button" data-close="samplesModal" type="button">×</button>
+      </div>
+      <div class="table-wrap">
+        <table>
+          <thead><tr><th>角度/说明</th><th>录入时间</th><th>操作</th></tr></thead>
+          <tbody id="samplesBody"></tbody>
+        </table>
+      </div>
+      <div class="sample-add-row">
+        <label>准备补充
+          <select id="sampleAngle">
+            <option value="正面">正面</option>
+            <option value="左侧">左侧</option>
+            <option value="右侧">右侧</option>
+            <option value="轻微抬头">轻微抬头</option>
+            <option value="轻微低头">轻微低头</option>
+            <option value="其他">其他</option>
+          </select>
+        </label>
+        <button class="primary" id="startSupplement" type="button">开始补充该角度</button>
+      </div>
+    </div>
+  </div>
+
   <div class="toast" id="toast"></div>
   <script src="/app.js"></script>
 </body>
