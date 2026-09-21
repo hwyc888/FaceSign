@@ -29,6 +29,7 @@ SQL stays in the store package; HTTP handlers do not execute SQL directly.
 - students.go: student endpoints.
 - classes.go: class endpoints.
 - enrollment.go: enrollment, duplicate checking, supplemental face samples.
+- photo_import.go: ZIP photo analysis, quality gates, duplicate review and batch commit.
 - recognition.go: multi-face recognition and check-in.
 - attendance.go: attendance endpoint.
 - http_helpers.go: shared request/response helpers.
@@ -42,6 +43,7 @@ SQL stays in the store package; HTTP handlers do not execute SQL directly.
 - enrollment.js: first enrollment and duplicate flow.
 - classes.js: class arrangement UI.
 - students.js: students and face samples.
+- photo_import.js: ZIP photo import preview, class editing and confirmation.
 - attendance.js: attendance UI.
 - boot.js: startup.
 

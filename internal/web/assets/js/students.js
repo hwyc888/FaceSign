@@ -1,12 +1,20 @@
+function classOptionsHTML(selected = '', includeBlank = true) {
+  const blank = includeBlank ? '<option value="">请选择班级</option>' : '';
+  return blank + classesCache.map(item =>
+    '<option value="' + esc(item.name) + '" ' + (item.name === selected ? 'selected' : '') + '>' + esc(item.name) + '</option>'
+  ).join('');
+}
+
 async function loadStudents() {
   try {
+    if (!classesCache.length) await loadClasses();
     const items = await api('/api/students');
     studentsCache = items;
     $('#studentsBody').innerHTML = items.map(s => `
       <tr>
         <td>${esc(s.student_no)}</td>
         <td>${esc(s.name)}</td>
-        <td>${esc(s.class_name || '-')}</td>
+        <td><select class="table-class-select" data-student-class="${s.id}">${classOptionsHTML(s.class_name, false)}</select></td>
         <td><span class="badge ${s.face_count > 0 ? 'yes' : 'no'}">${s.face_count > 0 ? s.face_count + ' 个样本' : '未录入'}</span></td>
         <td>
           <div class="student-actions">
@@ -17,7 +25,31 @@ async function loadStudents() {
       </tr>
     `).join('') || '<tr><td colspan="5">暂无学生</td></tr>';
 
-    $$('[data-faces]').forEach(button => {
+    $('[data-student-class]').forEach(select => {
+      select.onchange = async () => {
+        const studentID = Number(select.dataset.studentClass);
+        const previous = studentsCache.find(s => Number(s.id) === studentID)?.class_name || '';
+        try {
+          await api('/api/students/' + studentID, {
+            method: 'PUT',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({class_name: select.value})
+          });
+          const student = studentsCache.find(s => Number(s.id) === studentID);
+          if (student) student.class_name = select.value;
+          if (samplesStudent && Number(samplesStudent.id) === studentID) {
+            samplesStudent.class_name = select.value;
+            $('#sampleStudentClass').textContent = select.value;
+          }
+          toast('班级已更新');
+        } catch (e) {
+          select.value = previous;
+          toast(e.message);
+        }
+      };
+    });
+
+    $('[data-faces]').forEach(button => {
       button.onclick = () => openSamplesPanel(Number(button.dataset.faces));
     });
     $$('[data-del]').forEach(button => {

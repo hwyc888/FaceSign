@@ -50,12 +50,40 @@ func (s *Server) studentAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if len(parts) == 1 && r.Method == http.MethodDelete {
-		if err := s.store.DeleteStudent(r.Context(), studentID); err != nil {
-			writeError(w, http.StatusNotFound, err)
-			return
+	if len(parts) == 1 {
+		switch r.Method {
+		case http.MethodDelete:
+			if err := s.store.DeleteStudent(r.Context(), studentID); err != nil {
+				writeError(w, http.StatusNotFound, err)
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+		case http.MethodPut:
+			var in struct {
+				ClassName string `json:"class_name"`
+			}
+			if err := decodeJSON(r, &in); err != nil {
+				writeError(w, http.StatusBadRequest, err)
+				return
+			}
+			className := strings.TrimSpace(in.ClassName)
+			exists, err := s.store.ClassExists(r.Context(), className)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err)
+				return
+			}
+			if !exists {
+				writeError(w, http.StatusBadRequest, errors.New("请选择设置中已经建立的班级"))
+				return
+			}
+			if err := s.store.UpdateStudentClass(r.Context(), studentID, className); err != nil {
+				writeError(w, http.StatusBadRequest, err)
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"ok": true, "class_name": className})
+		default:
+			methodNotAllowed(w)
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 		return
 	}
 

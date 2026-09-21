@@ -115,6 +115,29 @@ func (s *Store) ListStudents(ctx context.Context) ([]Student, error) {
 	return out, rows.Err()
 }
 
+
+func (s *Store) UpdateStudentClass(ctx context.Context, id int64, className string) error {
+	if id <= 0 {
+		return errors.New("invalid student id")
+	}
+	className = strings.TrimSpace(className)
+	if className == "" {
+		return errors.New("class name is required")
+	}
+	result, err := s.db.ExecContext(ctx, "UPDATE students SET class_name=? WHERE id=?", className, id)
+	if err != nil {
+		return err
+	}
+	n, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if n == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
 func (s *Store) DeleteStudent(ctx context.Context, id int64) error {
 	result, err := s.db.ExecContext(ctx, "DELETE FROM students WHERE id=?", id)
 	if err != nil {

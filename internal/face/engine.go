@@ -20,6 +20,8 @@ var (
 
 type Detection struct {
 	Rectangle image.Rectangle
+	Landmarks [5]image.Point
+	Score     float32
 	Feature   []float32
 }
 
@@ -75,7 +77,11 @@ func (e *Engine) Close() {
 }
 
 func (e *Engine) Extract(img image.Image, threshold float64) ([]float32, error) {
-	return e.extract(img, threshold, false)
+	detected, err := e.extractDetection(img, threshold, false)
+	if err != nil {
+		return nil, err
+	}
+	return detected.Feature, nil
 }
 
 // ExtractAll returns one embedding for every face detected in the same frame.
@@ -115,6 +121,8 @@ func (e *Engine) ExtractAll(img image.Image, threshold float64) ([]Detection, er
 		}
 		out = append(out, Detection{
 			Rectangle: detected.Rectangle,
+			Landmarks: detected.Landmarks,
+			Score:     detected.Score,
 			Feature:   append([]float32(nil), feature...),
 		})
 	}
@@ -125,12 +133,22 @@ func (e *Engine) ExtractAll(img image.Image, threshold float64) ([]Detection, er
 // dominant foreground face may be enrolled even when YuNet also finds a much
 // smaller background face. Two similarly sized faces are still rejected.
 func (e *Engine) ExtractEnrollment(img image.Image, threshold float64) ([]float32, error) {
-	return e.extract(img, threshold, true)
+	detected, err := e.extractDetection(img, threshold, true)
+	if err != nil {
+		return nil, err
+	}
+	return detected.Feature, nil
 }
 
-func (e *Engine) extract(img image.Image, threshold float64, enrollment bool) ([]float32, error) {
+// ExtractPhotoSample returns the selected enrollment face together with its
+// geometry and detector score so bulk imports can reject weak portrait photos.
+func (e *Engine) ExtractPhotoSample(img image.Image, threshold float64) (Detection, error) {
+	return e.extractDetection(img, threshold, true)
+}
+
+func (e *Engine) extractDetection(img image.Image, threshold float64, enrollment bool) (Detection, error) {
 	if img == nil || img.Bounds().Dx() < 40 || img.Bounds().Dy() < 40 {
-		return nil, ErrNoFace
+		return Detection{}, ErrNoFace
 	}
 	if threshold <= 0 {
 		threshold = 0.80
@@ -148,29 +166,34 @@ func (e *Engine) extract(img image.Image, threshold float64, enrollment bool) ([
 	e.detector.ScoreThreshold = float32(threshold)
 	faces, err := e.detector.Detect(img)
 	if err != nil {
-		return nil, fmt.Errorf("detect face: %w", err)
+		return Detection{}, fmt.Errorf("detect face: %w", err)
 	}
 	if len(faces) == 0 {
-		return nil, ErrNoFace
+		return Detection{}, ErrNoFace
 	}
 
 	selected := faces[0]
 	if len(faces) > 1 {
 		if !enrollment {
-			return nil, ErrMultipleFaces
+			return Detection{}, ErrMultipleFaces
 		}
 		selected, err = selectEnrollmentFace(faces)
 		if err != nil {
-			return nil, err
+			return Detection{}, err
 		}
 	}
 
 	aligned := e.recognizer.Align(img, selected.Landmarks)
 	feature, err := e.recognizer.Feature(aligned)
 	if err != nil {
-		return nil, fmt.Errorf("extract face feature: %w", err)
+		return Detection{}, fmt.Errorf("extract face feature: %w", err)
 	}
-	return append([]float32(nil), feature...), nil
+	return Detection{
+		Rectangle: selected.Rectangle,
+		Landmarks: selected.Landmarks,
+		Score:     selected.Score,
+		Feature:   append([]float32(nil), feature...),
+	}, nil
 }
 
 func selectEnrollmentFace(faces []onnxface.Face) (onnxface.Face, error) {

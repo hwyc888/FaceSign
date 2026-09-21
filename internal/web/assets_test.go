@@ -14,6 +14,7 @@ func TestFrontendModulesAreEmbedded(t *testing.T) {
 		"assets/js/enrollment.js",
 		"assets/js/classes.js",
 		"assets/js/students.js",
+		"assets/js/photo_import.js",
 		"assets/js/attendance.js",
 		"assets/js/boot.js",
 	}
@@ -51,5 +52,19 @@ func TestEnrollmentWorkbenchKeepsCameraVisible(t *testing.T) {
 	}
 	if strings.Contains(html, `id="samplesModal"`) {
 		t.Fatal("face samples must not use a modal that covers the camera")
+	}
+}
+
+
+func TestPhotoImportUI(t *testing.T) {
+	data, err := assets.ReadFile("assets/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	html := string(data)
+	for _, want := range []string{`id="photoImportFile"`, `id="photoImportPreview"`, `/js/photo_import.js`} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("photo import UI missing %s", want)
+		}
 	}
 }

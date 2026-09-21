@@ -212,3 +212,34 @@ func TestExistingStudentClassesAreImported(t *testing.T) {
 		t.Fatalf("unexpected imported classes: %#v", classes)
 	}
 }
+
+
+func TestUpdateStudentClass(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "update-class.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+
+	if _, err := s.CreateClass(ctx, "高三1班"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateClass(ctx, "高三2班"); err != nil {
+		t.Fatal(err)
+	}
+	student, err := s.CreateStudent(ctx, "C001", "测试学生", "高三1班")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpdateStudentClass(ctx, student.ID, "高三2班"); err != nil {
+		t.Fatal(err)
+	}
+	students, err := s.ListStudents(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(students) != 1 || students[0].ClassName != "高三2班" {
+		t.Fatalf("student class not updated: %#v", students)
+	}
+}

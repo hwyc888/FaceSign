@@ -141,7 +141,8 @@ jobs:
             $coreJs = Invoke-WebRequest -Uri 'http://127.0.0.1:18082/js/core.js' -UseBasicParsing -TimeoutSec 3
             $enrollmentJs = Invoke-WebRequest -Uri 'http://127.0.0.1:18082/js/enrollment.js' -UseBasicParsing -TimeoutSec 3
             $classesJs = Invoke-WebRequest -Uri 'http://127.0.0.1:18082/js/classes.js' -UseBasicParsing -TimeoutSec 3
-            if ($coreJs.StatusCode -ne 200 -or $enrollmentJs.Content -notmatch 'captureEnrollment' -or $classesJs.Content -notmatch 'loadClasses') { throw 'FaceSign frontend module check failed' }
+            $photoImportJs = Invoke-WebRequest -Uri 'http://127.0.0.1:18082/js/photo_import.js' -UseBasicParsing -TimeoutSec 3
+            if ($coreJs.StatusCode -ne 200 -or $enrollmentJs.Content -notmatch 'captureEnrollment' -or $classesJs.Content -notmatch 'loadClasses' -or $photoImportJs.Content -notmatch 'photoImportSessionID') { throw 'FaceSign frontend module check failed' }
 
             $classOne = Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:18082/api/classes' -ContentType 'application/json' -Body '{"name":"Test"}'
             $classTwo = Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:18082/api/classes' -ContentType 'application/json' -Body '{"name":"Backup"}'
@@ -177,6 +178,48 @@ jobs:
             $samples = Invoke-RestMethod -Uri "http://127.0.0.1:18082/api/students/$($student.id)/faces" -TimeoutSec 3
             if ($samples.Count -ne 1 -or $samples[0].label -ne '正面') { throw 'Initial face sample was not queryable' }
 
+            $bernadettePhoto = Join-Path $env:RUNNER_TEMP 'bernadette.jpg'
+            Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/leandroveronezi/go-onnxface/main/examples/fotos/bernadette.jpg' -OutFile $bernadettePhoto -UseBasicParsing
+            $importDir = Join-Path $env:RUNNER_TEMP 'photo-import'
+            New-Item -ItemType Directory -Force -Path $importDir | Out-Null
+            Copy-Item $photo (Join-Path $importDir 'SMOKE001_Amy.jpg') -Force
+            Copy-Item $bernadettePhoto (Join-Path $importDir 'SMOKE002_Bernadette.jpg') -Force
+            Set-Content -Path (Join-Path $importDir 'notes.txt') -Value 'ignored non-image'
+            $importZip = Join-Path $env:RUNNER_TEMP 'photo-import.zip'
+            Compress-Archive -Path (Join-Path $importDir '*') -DestinationPath $importZip -Force
+
+            $analysisRaw = & curl.exe -fsS -F "file=@$importZip" 'http://127.0.0.1:18082/api/photo-import/analyze'
+            if ($LASTEXITCODE -ne 0) { throw 'Photo ZIP analysis failed' }
+            $analysis = $analysisRaw | ConvertFrom-Json
+            if (-not $analysis.session_id -or $analysis.items.Count -ne 2) { throw 'Unexpected photo import analysis result' }
+            $amyImport = $analysis.items | Where-Object { $_.student_no -eq 'SMOKE001' } | Select-Object -First 1
+            $bernadetteImport = $analysis.items | Where-Object { $_.student_no -eq 'SMOKE002' } | Select-Object -First 1
+            if (-not $amyImport -or $amyImport.status -ne 'existing') { throw 'Existing face was not detected during ZIP import' }
+            if (-not $bernadetteImport -or $bernadetteImport.status -ne 'ready') { throw "New photo was not ready for import: $($bernadetteImport.status) $($bernadetteImport.reason)" }
+
+            $commitBody = @{
+              items = @(
+                @{ id = $amyImport.id; action = 'skip'; student_no = 'SMOKE001'; name = 'Amy'; class_name = 'Test-Renamed' },
+                @{ id = $bernadetteImport.id; action = 'new'; student_no = 'SMOKE002'; name = 'Bernadette'; class_name = 'Test-Renamed' }
+              )
+            } | ConvertTo-Json -Depth 6
+            $commitResult = Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:18082/api/photo-import/$($analysis.session_id)/commit" -ContentType 'application/json' -Body $commitBody
+            if ($commitResult.imported -ne 1 -or $commitResult.failed -ne 0) { throw 'Photo ZIP commit failed' }
+
+            $studentsAfterImport = Invoke-RestMethod -Uri 'http://127.0.0.1:18082/api/students' -TimeoutSec 3
+            $importedStudent = $studentsAfterImport | Where-Object { $_.student_no -eq 'SMOKE002' } | Select-Object -First 1
+            if (-not $importedStudent -or $importedStudent.face_count -ne 1 -or $importedStudent.class_name -ne 'Test-Renamed') { throw 'Imported student data is incorrect' }
+
+            Invoke-RestMethod -Method Put -Uri "http://127.0.0.1:18082/api/students/$($importedStudent.id)" -ContentType 'application/json' -Body '{"class_name":"Backup"}' | Out-Null
+            $studentsAfterEdit = Invoke-RestMethod -Uri 'http://127.0.0.1:18082/api/students' -TimeoutSec 3
+            $editedStudent = $studentsAfterEdit | Where-Object { $_.student_no -eq 'SMOKE002' } | Select-Object -First 1
+            if (-not $editedStudent -or $editedStudent.class_name -ne 'Backup') { throw 'Imported student class edit failed' }
+
+            $importRecognizeRaw = & curl.exe -fsS -F "file=@$bernadettePhoto" 'http://127.0.0.1:18082/api/recognize'
+            if ($LASTEXITCODE -ne 0) { throw 'Imported photo recognition failed' }
+            $importRecognize = $importRecognizeRaw | ConvertFrom-Json
+            if (-not $importRecognize.recognized -or $importRecognize.student.student_no -ne 'SMOKE002') { throw 'Imported face sample did not recognize correctly' }
+
             $sameSampleStatus = & curl.exe -sS -o NUL -w "%{http_code}" -F "file=@$photo" -F "label=左侧" "http://127.0.0.1:18082/api/students/$($student.id)/faces"
             if ($sameSampleStatus -ne '409') { throw "Near-identical supplemental sample should be rejected with 409, got $sameSampleStatus" }
 
@@ -185,8 +228,8 @@ jobs:
             $recognize = $recognizeRaw | ConvertFrom-Json
             if (-not $recognize.recognized -or $recognize.student.student_no -ne 'SMOKE001') { throw 'Recognition did not match enrolled student' }
 
-            $unknownPhoto = Join-Path $env:RUNNER_TEMP 'bernadette.jpg'
-            Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/leandroveronezi/go-onnxface/main/examples/fotos/bernadette.jpg' -OutFile $unknownPhoto -UseBasicParsing
+            $unknownPhoto = Join-Path $env:RUNNER_TEMP 'howard.jpg'
+            Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/leandroveronezi/go-onnxface/main/examples/fotos/howard.jpg' -OutFile $unknownPhoto -UseBasicParsing
             $groupPhoto = Join-Path $env:RUNNER_TEMP 'group.jpg'
             Add-Type -AssemblyName System.Drawing
             $knownImage = [System.Drawing.Image]::FromFile($photo)

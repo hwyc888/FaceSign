@@ -4,6 +4,7 @@ import (
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"sync"
 	"time"
 
 	"github.com/hwyc888/FaceSign/internal/face"
@@ -19,6 +20,8 @@ type Server struct {
 	version            string
 	home               []byte
 	static             http.Handler
+	photoImportMu      sync.Mutex
+	photoImports       map[string]*photoImportSession
 }
 
 func New(logger *slog.Logger, st *store.Store, engine *face.Engine, matchThreshold, detectionThreshold float64, version string) (*Server, error) {
@@ -39,6 +42,7 @@ func New(logger *slog.Logger, st *store.Store, engine *face.Engine, matchThresho
 		version:            version,
 		home:               home,
 		static:             http.FileServer(http.FS(sub)),
+		photoImports:       make(map[string]*photoImportSession),
 	}, nil
 }
 
@@ -54,6 +58,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/enrollment/create", s.createEnrollment)
 	mux.HandleFunc("/api/recognize", s.recognize)
 	mux.HandleFunc("/api/attendance", s.attendance)
+	mux.HandleFunc("/api/photo-import/analyze", s.photoImportAnalyze)
+	mux.HandleFunc("/api/photo-import/", s.photoImportAction)
 	mux.HandleFunc("/", s.root)
 	return s.logging(mux)
 }
