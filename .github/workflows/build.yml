@@ -105,6 +105,10 @@ jobs:
               } catch { Start-Sleep -Seconds 1 }
             }
             if (-not $ready) { throw 'FaceSign health check failed' }
+            $home = Invoke-WebRequest -Uri 'http://127.0.0.1:18082/' -UseBasicParsing -TimeoutSec 3
+            if ($home.StatusCode -ne 200 -or $home.Content -notmatch '<title>FaceSign</title>') { throw 'FaceSign home page check failed' }
+            $appJs = Invoke-WebRequest -Uri 'http://127.0.0.1:18082/app.js' -UseBasicParsing -TimeoutSec 3
+            if ($appJs.StatusCode -ne 200 -or $appJs.Content.Length -lt 100) { throw 'FaceSign app.js check failed' }
             $student = Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:18082/api/students' -ContentType 'application/json' -Body '{"student_no":"SMOKE001","name":"Amy","class_name":"Test"}'
             $photo = Join-Path $env:RUNNER_TEMP 'amy.jpg'
             Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/leandroveronezi/go-onnxface/main/examples/fotos/amy.jpg' -OutFile $photo -UseBasicParsing
