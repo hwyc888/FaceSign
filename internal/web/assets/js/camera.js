@@ -21,6 +21,20 @@ async function startCamera() {
     });
     await attachCameraViews();
     updateCameraControls();
+    const liveState = $('#enrollLiveState');
+    if (liveState) {
+      liveState.textContent = '摄像头已打开';
+      liveState.className = 'capture-state ready';
+    }
+    const faceHint = $('#enrollFaceHint');
+    if (faceHint) faceHint.textContent = '请将脸部完整放入引导框';
+    if (typeof setEnrollmentStatus === 'function') {
+      setEnrollmentStatus(
+        supplementStudent ? '准备补充样本' : '摄像头已就绪',
+        supplementStudent ? '调整到右侧选择的角度后拍照。' : '请正对摄像头，保持单人入镜。',
+        'neutral'
+      );
+    }
     toast('摄像头已打开');
   } catch (e) {
     stream = null;
@@ -45,6 +59,14 @@ function stopCamera() {
   if ($('#autoScan')) $('#autoScan').checked = false;
   drawFaceOverlay([]);
   updateCameraControls();
+  const liveState = $('#enrollLiveState');
+  if (liveState) {
+    liveState.textContent = '摄像头已关闭';
+    liveState.className = 'capture-state neutral';
+  }
+  if (typeof setEnrollmentStatus === 'function') {
+    setEnrollmentStatus('摄像头已关闭', '点击“打开摄像头”后再进行人脸采集。', 'neutral');
+  }
   toast('摄像头已关闭');
 }
 

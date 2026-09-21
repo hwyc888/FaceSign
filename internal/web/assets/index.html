@@ -52,44 +52,89 @@
       </section>
 
       <section class="page" id="page-students">
-        <div class="card enrollment-card">
+        <div class="card enrollment-card" id="enrollmentWorkbench">
           <div class="card-head">
             <div>
-              <h2>人脸录入</h2>
-              <p class="muted compact">首次录入直接拍照：系统先做人脸重复比对，通过后再弹出学生信息。已有学生请在下方“人脸样本”中补充多角度特征。</p>
+              <h2>人脸采集工作台</h2>
+              <p class="muted compact">左侧始终保留大画面看清人脸；右侧管理学生资料、已录入角度和补充样本。</p>
             </div>
             <div class="mode-pill" id="enrollMode">首次录入</div>
           </div>
 
-          <div class="enroll-layout">
-            <div class="enroll-video-wrap">
-              <video id="enrollCamera" autoplay playsinline muted></video>
-              <div class="face-guide"></div>
-            </div>
-            <div class="enroll-controls">
-              <div class="enroll-instruction" id="enrollInstruction">
-                <strong>录入步骤</strong>
-                <span>1. 正对摄像头并让脸部位于引导框内。</span>
-                <span>2. 点击“拍照并录入”，系统先检查是否已经录入。</span>
-                <span>3. 确认新面孔后，再填写学号、姓名和班级。</span>
+          <div class="capture-workbench">
+            <div class="capture-main">
+              <div class="enroll-video-wrap">
+                <video id="enrollCamera" autoplay playsinline muted></video>
+                <div class="capture-topbar">
+                  <span class="capture-state neutral" id="enrollLiveState">摄像头已关闭</span>
+                  <span class="capture-angle" id="enrollAngleState">当前角度：正面</span>
+                </div>
+                <div class="face-guide"></div>
+                <div class="capture-face-hint" id="enrollFaceHint">请将脸部完整放入引导框</div>
               </div>
-              <label id="supplementAngleWrap" class="angle-select hidden">
-                补充角度
-                <select id="supplementAngle">
-                  <option value="正面">正面</option>
-                  <option value="左侧">左侧</option>
-                  <option value="右侧">右侧</option>
-                  <option value="轻微抬头">轻微抬头</option>
-                  <option value="轻微低头">轻微低头</option>
-                  <option value="其他">其他</option>
-                </select>
-              </label>
-              <div class="enroll-actions">
+
+              <div class="capture-toolbar">
                 <button id="toggleEnrollCamera" type="button">打开摄像头</button>
-                <button class="primary" id="captureEnrollment" type="button" disabled>拍照并录入</button>
+                <button class="primary capture-primary" id="captureEnrollment" type="button" disabled>拍照并录入</button>
+                <button id="cancelSupplement" class="hidden" type="button">退出补充模式</button>
               </div>
-              <button id="cancelSupplement" class="link-button hidden" type="button">取消补充录入，返回首次录入</button>
+
+              <div class="capture-status neutral" id="enrollStatus">
+                <strong>准备采集</strong>
+                <span>打开摄像头后，请让学生单独站在镜头前，面部位于引导框内。</span>
+              </div>
             </div>
+
+            <aside class="sample-panel" id="samplePanel">
+              <div class="sample-panel-head">
+                <div>
+                  <h3 id="samplePanelTitle">人脸样本</h3>
+                  <p id="samplePanelMeta">选择下方学生即可在这里查看和补充样本。</p>
+                </div>
+                <button class="sample-panel-close hidden" id="clearSampleSelection" type="button">取消选择</button>
+              </div>
+
+              <div class="sample-student hidden" id="sampleStudentCard">
+                <div>
+                  <strong id="sampleStudentName">-</strong>
+                  <span id="sampleStudentNo">-</span>
+                </div>
+                <span class="sample-class" id="sampleStudentClass">-</span>
+              </div>
+
+              <div class="sample-section">
+                <div class="sample-section-title">建议采集角度</div>
+                <div class="sample-checklist" id="sampleChecklist">
+                  <span class="angle-chip pending">正面</span>
+                  <span class="angle-chip pending">左侧</span>
+                  <span class="angle-chip pending">右侧</span>
+                  <span class="angle-chip pending">轻微抬头</span>
+                  <span class="angle-chip pending">轻微低头</span>
+                </div>
+              </div>
+
+              <div class="sample-section">
+                <div class="sample-section-title">已录入样本 <span id="sampleCount">0</span></div>
+                <div class="sample-card-list" id="samplesList">
+                  <div class="sample-empty">还未选择学生。首次录入可直接在左侧拍照；已有学生可从下方列表进入样本管理。</div>
+                </div>
+              </div>
+
+              <div class="sample-controls hidden" id="sampleControls">
+                <label>
+                  补充角度
+                  <select id="sampleAngle">
+                    <option value="正面">正面</option>
+                    <option value="左侧">左侧</option>
+                    <option value="右侧">右侧</option>
+                    <option value="轻微抬头">轻微抬头</option>
+                    <option value="轻微低头">轻微低头</option>
+                    <option value="其他">其他</option>
+                  </select>
+                </label>
+                <button class="primary" id="startSupplement" type="button">开始补充该角度</button>
+              </div>
+            </aside>
           </div>
         </div>
 
@@ -97,7 +142,7 @@
           <div class="card-head">
             <div>
               <h2>学生列表</h2>
-              <p class="muted compact">“人脸样本”可查询已录入角度、继续补充或删除某个样本。</p>
+              <p class="muted compact">点击“人脸样本”后，样本信息会显示在上方右侧，不再遮挡摄像头。</p>
             </div>
             <button id="refreshStudents">刷新</button>
           </div>
@@ -198,37 +243,6 @@
       <div class="modal-actions">
         <button data-close="duplicateModal" type="button">关闭</button>
         <button class="primary" id="duplicateViewSamples" type="button">查看该学生人脸样本</button>
-      </div>
-    </div>
-  </div>
-
-  <div class="modal-backdrop hidden" id="samplesModal">
-    <div class="modal modal-wide">
-      <div class="modal-head">
-        <div>
-          <h2 id="samplesTitle">人脸样本</h2>
-          <p id="samplesHint">可查询、删除和补充多角度人脸样本。</p>
-        </div>
-        <button class="icon-button" data-close="samplesModal" type="button">×</button>
-      </div>
-      <div class="table-wrap">
-        <table>
-          <thead><tr><th>角度/说明</th><th>录入时间</th><th>操作</th></tr></thead>
-          <tbody id="samplesBody"></tbody>
-        </table>
-      </div>
-      <div class="sample-add-row">
-        <label>准备补充
-          <select id="sampleAngle">
-            <option value="正面">正面</option>
-            <option value="左侧">左侧</option>
-            <option value="右侧">右侧</option>
-            <option value="轻微抬头">轻微抬头</option>
-            <option value="轻微低头">轻微低头</option>
-            <option value="其他">其他</option>
-          </select>
-        </label>
-        <button class="primary" id="startSupplement" type="button">开始补充该角度</button>
       </div>
     </div>
   </div>

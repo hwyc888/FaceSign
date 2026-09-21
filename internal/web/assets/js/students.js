@@ -18,13 +18,15 @@ async function loadStudents() {
     `).join('') || '<tr><td colspan="5">暂无学生</td></tr>';
 
     $$('[data-faces]').forEach(button => {
-      button.onclick = () => openSamplesModal(Number(button.dataset.faces));
+      button.onclick = () => openSamplesPanel(Number(button.dataset.faces));
     });
     $$('[data-del]').forEach(button => {
       button.onclick = async () => {
         if (!confirm('确定删除该学生及其全部人脸样本、考勤数据？')) return;
         try {
-          await api(`/api/students/${button.dataset.del}`, {method: 'DELETE'});
+          const deletedID = Number(button.dataset.del);
+          await api(`/api/students/${deletedID}`, {method: 'DELETE'});
+          if (samplesStudent && Number(samplesStudent.id) === deletedID) clearSampleSelection();
           await loadStudents();
           await loadHealth();
         } catch (e) {
@@ -37,28 +39,57 @@ async function loadStudents() {
   }
 }
 
-async function openSamplesModal(studentID) {
+function renderSampleChecklist(samples) {
+  const expected = ['正面', '左侧', '右侧', '轻微抬头', '轻微低头'];
+  const labels = new Set(samples.map(sample => sample.label || '补充'));
+  $('#sampleChecklist').innerHTML = expected.map(label =>
+    `<span class="angle-chip ${labels.has(label) ? 'done' : 'pending'}">${esc(label)} ${labels.has(label) ? '✓' : ''}</span>`
+  ).join('');
+}
+
+function renderSamplePanelEmpty() {
+  samplesStudent = null;
+  $('#samplePanelTitle').textContent = '人脸样本';
+  $('#samplePanelMeta').textContent = '选择下方学生即可在这里查看和补充样本。';
+  $('#sampleStudentCard').classList.add('hidden');
+  $('#clearSampleSelection').classList.add('hidden');
+  $('#sampleControls').classList.add('hidden');
+  $('#sampleCount').textContent = '0';
+  renderSampleChecklist([]);
+  $('#samplesList').innerHTML = '<div class="sample-empty">还未选择学生。首次录入可直接在左侧拍照；已有学生可从下方列表进入样本管理。</div>';
+}
+
+async function openSamplesPanel(studentID, options = {}) {
   const student = studentsCache.find(s => Number(s.id) === Number(studentID)) ||
     (duplicateStudent && Number(duplicateStudent.id) === Number(studentID) ? duplicateStudent : null);
   if (!student) {
     await loadStudents();
-    return openSamplesModal(studentID);
+    return openSamplesPanel(studentID, options);
   }
 
   samplesStudent = student;
-  $('#samplesTitle').textContent = `${student.name} · 人脸样本`;
-  $('#samplesHint').textContent = `${student.student_no} | ${student.class_name || '-'} · 可查询、删除或继续补充多角度样本`;
-  openModal('samplesModal');
+  $('#samplePanelTitle').textContent = '学生人脸样本';
+  $('#samplePanelMeta').textContent = '可直接查看完成角度、删除单个样本或继续补充。';
+  $('#sampleStudentName').textContent = student.name;
+  $('#sampleStudentNo').textContent = student.student_no;
+  $('#sampleStudentClass').textContent = student.class_name || '-';
+  $('#sampleStudentCard').classList.remove('hidden');
+  $('#clearSampleSelection').classList.remove('hidden');
+  $('#sampleControls').classList.remove('hidden');
 
   try {
     const samples = await api(`/api/students/${student.id}/faces`);
-    $('#samplesBody').innerHTML = samples.map(sample => `
-      <tr>
-        <td>${esc(sample.label || '补充')}</td>
-        <td>${esc(sample.created_at)}</td>
-        <td><button class="danger" data-delete-sample="${sample.id}">删除样本</button></td>
-      </tr>
-    `).join('') || '<tr><td colspan="3">该学生还没有人脸样本</td></tr>';
+    $('#sampleCount').textContent = String(samples.length);
+    renderSampleChecklist(samples);
+    $('#samplesList').innerHTML = samples.map(sample => `
+      <div class="sample-card">
+        <div class="sample-card-main">
+          <strong>${esc(sample.label || '补充')}</strong>
+          <span>${esc(sample.created_at)}</span>
+        </div>
+        <button class="danger sample-delete" data-delete-sample="${sample.id}">删除</button>
+      </div>
+    `).join('') || '<div class="sample-empty">该学生还没有人脸样本，可以从下方选择角度开始补充。</div>';
 
     $$('[data-delete-sample]').forEach(button => {
       button.onclick = async () => {
@@ -66,12 +97,16 @@ async function openSamplesModal(studentID) {
         try {
           await api(`/api/students/${student.id}/faces/${button.dataset.deleteSample}`, {method: 'DELETE'});
           await loadStudents();
-          await openSamplesModal(student.id);
+          await openSamplesPanel(student.id, {scroll: false});
         } catch (e) {
           toast(e.message);
         }
       };
     });
+
+    if (options.scroll !== false) {
+      $('#enrollmentWorkbench').scrollIntoView({behavior: 'smooth', block: 'start'});
+    }
   } catch (e) {
     toast(e.message);
   }
@@ -80,34 +115,49 @@ async function openSamplesModal(studentID) {
 $('#startSupplement').addEventListener('click', async () => {
   if (!samplesStudent) return;
   supplementStudent = samplesStudent;
-  $('#supplementAngle').value = $('#sampleAngle').value;
-  closeModal('samplesModal');
+  const angle = $('#sampleAngle').value;
   $('#enrollMode').textContent = `补充：${supplementStudent.name}`;
-  $('#supplementAngleWrap').classList.remove('hidden');
   $('#cancelSupplement').classList.remove('hidden');
-  $('#captureEnrollment').textContent = '拍照补充';
-  $('#enrollInstruction').innerHTML = `
-    <strong>正在补充 ${esc(supplementStudent.name)} 的人脸样本</strong>
-    <span>请选择角度，并确保镜头前只有该学生。</span>
-    <span>系统会先与该学生已有样本做身份连续性校验，同时检查是否误录成其他学生。</span>
-    <span>过于相似的重复角度会被拒绝，请适当改变朝向。</span>
-  `;
+  $('#captureEnrollment').textContent = '拍照补充样本';
+  setEnrollmentAngle(angle);
+  setEnrollmentStatus(
+    `正在补充 ${supplementStudent.name}`,
+    `请调整为“${angle}”角度，并确保镜头前只有该学生。`,
+    'working'
+  );
   await startCamera();
+  $('#enrollmentWorkbench').scrollIntoView({behavior: 'smooth', block: 'start'});
 });
 
-function cancelSupplementMode() {
+$('#sampleAngle').addEventListener('change', () => {
+  if (!supplementStudent) return;
+  const angle = $('#sampleAngle').value;
+  setEnrollmentAngle(angle);
+  setEnrollmentStatus(
+    `正在补充 ${supplementStudent.name}`,
+    `请调整为“${angle}”角度，再点击拍照补充样本。`,
+    'working'
+  );
+});
+
+function cancelSupplementMode(resetStatus = true) {
   supplementStudent = null;
   $('#enrollMode').textContent = '首次录入';
-  $('#supplementAngleWrap').classList.add('hidden');
   $('#cancelSupplement').classList.add('hidden');
   $('#captureEnrollment').textContent = '拍照并录入';
-  $('#enrollInstruction').innerHTML = `
-    <strong>录入步骤</strong>
-    <span>1. 正对摄像头并让脸部位于引导框内。</span>
-    <span>2. 点击“拍照并录入”，系统先检查是否已经录入。</span>
-    <span>3. 确认新面孔后，再填写学号、姓名和班级。</span>
-  `;
+  setEnrollmentAngle('正面');
+  if (resetStatus) {
+    setEnrollmentStatus('准备采集', '首次录入请正对摄像头；已有学生可从右侧选择角度继续补充。', 'neutral');
+  }
 }
 
-$('#cancelSupplement').addEventListener('click', cancelSupplementMode);
+function clearSampleSelection() {
+  cancelSupplementMode();
+  renderSamplePanelEmpty();
+}
+
+$('#clearSampleSelection').addEventListener('click', clearSampleSelection);
+$('#cancelSupplement').addEventListener('click', () => cancelSupplementMode());
 $('#refreshStudents').addEventListener('click', loadStudents);
+
+renderSamplePanelEmpty();

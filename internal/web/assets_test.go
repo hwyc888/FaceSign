@@ -35,3 +35,21 @@ func TestClassActionSelectorsUseQuerySelectorAll(t *testing.T) {
 		}
 	}
 }
+
+
+func TestEnrollmentWorkbenchKeepsCameraVisible(t *testing.T) {
+	data, err := assets.ReadFile("assets/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	html := string(data)
+	if !strings.Contains(html, `id="samplePanel"`) {
+		t.Fatal("student enrollment must include the side sample panel")
+	}
+	if !strings.Contains(html, `class="capture-workbench"`) {
+		t.Fatal("student enrollment must use the camera-first capture workbench")
+	}
+	if strings.Contains(html, `id="samplesModal"`) {
+		t.Fatal("face samples must not use a modal that covers the camera")
+	}
+}
