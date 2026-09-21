@@ -26,11 +26,17 @@ type Server struct {
 	engine             *face.Engine
 	matchThreshold     float64
 	detectionThreshold float64
+	version            string
+	home               []byte
 	static             http.Handler
 }
 
-func New(logger *slog.Logger, st *store.Store, engine *face.Engine, matchThreshold, detectionThreshold float64) (*Server, error) {
+func New(logger *slog.Logger, st *store.Store, engine *face.Engine, matchThreshold, detectionThreshold float64, version string) (*Server, error) {
 	sub, err := fs.Sub(assets, "assets")
+	if err != nil {
+		return nil, err
+	}
+	home, err := assets.ReadFile("assets/index.html")
 	if err != nil {
 		return nil, err
 	}
@@ -40,6 +46,8 @@ func New(logger *slog.Logger, st *store.Store, engine *face.Engine, matchThresho
 		engine:             engine,
 		matchThreshold:     matchThreshold,
 		detectionThreshold: detectionThreshold,
+		version:            version,
+		home:               home,
 		static:             http.FileServer(http.FS(sub)),
 	}, nil
 }
@@ -47,11 +55,12 @@ func New(logger *slog.Logger, st *store.Store, engine *face.Engine, matchThresho
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/health", s.health)
+	mux.HandleFunc("/api/version", s.versionInfo)
 	mux.HandleFunc("/api/students", s.students)
 	mux.HandleFunc("/api/students/", s.studentAction)
 	mux.HandleFunc("/api/recognize", s.recognize)
 	mux.HandleFunc("/api/attendance", s.attendance)
-	mux.Handle("/", s.static)
+	mux.HandleFunc("/", s.root)
 	return s.logging(mux)
 }
 
@@ -82,7 +91,36 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 		"docker":          false,
 		"students":        count,
 		"match_threshold": s.matchThreshold,
+		"version":         s.version,
 	})
+}
+
+func (s *Server) versionInfo(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w)
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"version": s.version})
+}
+
+func (s *Server) root(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path != "/" {
+		w.Header().Set("Cache-Control", "no-store")
+		w.Header().Set("X-FaceSign-Version", s.version)
+		s.static.ServeHTTP(w, r)
+		return
+	}
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		methodNotAllowed(w)
+		return
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("X-FaceSign-Version", s.version)
+	w.WriteHeader(http.StatusOK)
+	if r.Method == http.MethodGet {
+		_, _ = w.Write(s.home)
+	}
 }
 
 func (s *Server) students(w http.ResponseWriter, r *http.Request) {

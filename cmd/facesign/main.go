@@ -23,6 +23,8 @@ import (
 
 const ortVersion = "1.26.0"
 
+var version = "dev"
+
 func main() {
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	if err := run(logger); err != nil {
@@ -72,7 +74,7 @@ func run(logger *slog.Logger) error {
 	}
 	defer engine.Close()
 
-	webServer, err := webapp.New(logger, st, engine, *matchThreshold, *detectionThreshold)
+	webServer, err := webapp.New(logger, st, engine, *matchThreshold, *detectionThreshold, version)
 	if err != nil {
 		return err
 	}
@@ -86,7 +88,7 @@ func run(logger *slog.Logger) error {
 
 	listener, err := net.Listen("tcp", *listen)
 	if err != nil {
-		return fmt.Errorf("listen on %s: %w", *listen, err)
+		return fmt.Errorf("listen on %s: %w; another FaceSign instance may still be running, so use scripts/install.ps1 as Administrator when upgrading", *listen, err)
 	}
 	defer listener.Close()
 
@@ -94,15 +96,16 @@ func run(logger *slog.Logger) error {
 	defer stop()
 	done := make(chan error, 1)
 	localURL := browserURL(*listen)
+	writeStartupInfo(filepath.Dir(*dataPath), listener.Addr().String(), localURL)
 	go func() {
-		logger.Info("FaceSign started", "listen", listener.Addr().String(), "browser", localURL, "database", *dataPath, "device", "cpu")
+		logger.Info("FaceSign started", "version", version, "listen", listener.Addr().String(), "browser", localURL, "database", *dataPath, "device", "cpu")
 		done <- server.Serve(listener)
 	}()
 
 	if *openBrowser {
 		go func() {
 			time.Sleep(250 * time.Millisecond)
-			if err := openURL(localURL); err != nil {
+			if err := openURL(localURL + "?v=" + version); err != nil {
 				logger.Warn("could not open browser automatically", "url", localURL, "error", err)
 			}
 		}()
@@ -151,6 +154,17 @@ func openURL(url string) error {
 		return fmt.Errorf("open browser is not supported on %s", runtime.GOOS)
 	}
 	return cmd.Start()
+}
+
+func writeStartupInfo(dir, listen, localURL string) {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return
+	}
+	message := fmt.Sprintf(
+		"started=%s\r\nversion=%s\r\npid=%d\r\nlisten=%s\r\nurl=%s\r\n",
+		time.Now().Format(time.RFC3339), version, os.Getpid(), listen, localURL,
+	)
+	_ = os.WriteFile(filepath.Join(dir, "facesign-startup.log"), []byte(message), 0o644)
 }
 
 func writeStartupError(startupErr error) {
