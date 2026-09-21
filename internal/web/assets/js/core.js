@@ -36,6 +36,7 @@ async function api(url, opt = {}) {
     throw err;
   }
   return data;
+}
 
 function openModal(id) {
   $('#' + id).classList.remove('hidden');
