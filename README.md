@@ -1,67 +1,74 @@
 # FaceSign
 
-FaceSign is a Go + SQLite student face-attendance server for school classrooms. Teachers use a browser dashboard, classroom devices use a browser camera kiosk, and attendance is evaluated against course schedules as **准时 / 迟到 / 请假 / 旷课**.
+FaceSign is a compact school face-attendance application written in Go for Windows.
 
-## Current capabilities
+## Design goals
 
-- Go server with embedded responsive web UI; no separate web server is required.
-- First-run administrator setup, teacher/admin accounts and server-side login sessions.
-- Classes, students, courses, course enrollment and weekly schedules.
-- Browser camera enrollment for student face samples.
-- Browser kiosk at `/kiosk` for classroom face attendance.
-- Built-in provider management with a recommended native Go CPU face engine (ONNX Runtime + YuNet + SFace) that does not require Python, GPU, CUDA or Docker; CompreFace remains optional.
-- Schedule-based `on_time` / `late` decision with configurable grace period.
-- Approved leave records and automatic `absent` finalization at course end.
-- Repeated face scans are idempotent per student/session.
-- Teacher real-time dashboard using Server-Sent Events (SSE).
-- Manual teacher correction of attendance status.
-- SQLite WAL mode, busy timeout and constrained writes for concurrent browser clients.
-- Argon2id password hashing and opaque cookie sessions.
-- Native Linux systemd deployment and native Windows Service execution.
-- Optional native HTTPS mode for browser camera secure-context requirements.
-- GitHub Actions builds Linux/amd64 and Windows/amd64 server binaries.
+- One application process: web UI, SQLite, face detection, face feature extraction, matching and attendance.
+- No Python runtime.
+- No Docker.
+- No GPU requirement; CPU inference is the default.
+- Browser camera UI is embedded in the Go executable.
+- Portable Windows release built by GitHub Actions.
 
-## Repository layout
+## Face recognition stack
 
-See [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md). The application is separated into configuration, database, repository, attendance, face provider, realtime, HTTP API and embedded UI packages; `cmd/facesign/main.go` only starts the application.
+- YuNet ONNX model for face detection.
+- SFace ONNX model for face embeddings.
+- ONNX Runtime CPU for inference.
+- `go-onnxface` Go API for YuNet/SFace integration.
 
-## Build locally
+ONNX Runtime is distributed as `onnxruntime.dll` beside `FaceSign.exe`. This is a native library, not a Python dependency.
 
-Requires Go 1.26+.
+## Features in this clean rewrite
+
+- Add and delete students.
+- Class and student number fields.
+- Browser camera enrollment.
+- One face template per student, replaceable by re-enrollment.
+- Face recognition and daily check-in.
+- One check-in record per student per day.
+- Attendance history by date.
+- Embedded responsive left-sidebar UI.
+- SQLite data stored locally.
+- Windows startup installation through Task Scheduler.
+
+## Windowws portable layout
+
+```text
+FaceSign.exe
+onnxruntime.dll
+models/
+  face_detection_yunet_2023mar.onnx
+  face_recognition_sface_2021dec.onnx
+install.ps1
+uninstall.ps1
+```
+
+Double-clicking the executable is enough for local testing. Open `http://127.0.0.1:8080/`.
+
+For startup installation, run PowerShell as Administrator:
+
+```powershell
+Set-ExecutionPolicy -Scope Process Bypass
+.\scripts\install.ps1
+```
+
+The installer copies the package to `C:\ProgramData\FaceSign`, creates a startup scheduled task, and keeps the SQLite database in `C:\ProgramData\FaceSign\data`.
+
+## Camera note
+
+Browser camera APIs work on `http://127.0.0.1` / `localhost`. Remote LAN browsers normally require HTTPS for camera access. The intended classroom kiosk is the Windows PC running FaceSign itself; LAN clients may still use the management pages over HTTP.
+
+## Local development
 
 ```sh
 go test ./...
-go build -o facesign ./cmd/facesign
+go vet ./...
 ```
 
-Cross compile:
+The runtime DLL and ONNX models are required only when starting the application, not for unit tests.
 
-```sh
-CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -o dist/facesign-linux-amd64 ./cmd/facesign
-CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -o dist/facesign-windows-amd64.exe ./cmd/facesign
-```
+## Data and privacy
 
-`modernc.org/sqlite` is used so the Windows/Linux builds do not require a C compiler or SQLite DLL.
-
-## Configuration
-
-Copy `config.example.env` to `facesign.env`. FaceSign automatically reads `facesign.env` beside the executable, or use `FACESIGN_ENV_FILE` to point to another file. Real environment variables take precedence.
-
-The server can start with `FACESIGN_FACE_PROVIDER=disabled` while you configure academic data. Face-engine settings are normally managed from **Administrator -> Face Recognition** and stored in SQLite, so `facesign.env` does not need to contain an API key. The recommended Windows/Linux engine is the native CPU service in `deploy/face-engine`; the release package already carries its ONNX Runtime CPU library and models, so the target machine does not install Python, Docker or GPU tooling. CompreFace is still supported as an optional external provider. See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md).
-
-## Quick development run
-
-```sh
-cp config.example.env facesign.env
-# Leave face provider disabled for initial UI setup.
-go run ./cmd/facesign
-```
-
-Open `http://127.0.0.1:8080/` for the teacher/admin platform. The first run asks you to create the initial administrator.
-
-## Production notes
-
-- Use HTTPS for classroom camera devices; browser camera APIs generally require a secure context outside localhost.
-- The native CPU face engine binds to `127.0.0.1:18081` by default and should remain server-local. If you use CompreFace instead, keep its API on a protected server-side network; the browser never receives the CompreFace API key.
-- Back up both `facesign.db` and the face-engine `faces.db` while respecting WAL semantics (stop the corresponding service or use SQLite's online backup tooling).
-- Treat face data as sensitive biometric data and apply your organization's consent, retention and access-control requirements.
+Face embeddings are biometric data. Protect the Windows host and database, restrict access to the management UI, and follow the school's consent, retention and deletion requirements.

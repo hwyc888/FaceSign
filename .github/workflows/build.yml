@@ -1,4 +1,4 @@
-name: Build FaceSign Servers
+name: Build FaceSign Windows
 
 on:
   push:
@@ -13,133 +13,7 @@ env:
   ORT_VERSION: '1.26.0'
 
 jobs:
-  server:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Set up Go
-        uses: actions/setup-go@v7
-        with:
-          go-version: '1.26.6'
-          cache: true
-          cache-dependency-path: go.sum
-
-      - name: Verify module files are tidy
-        shell: bash
-        run: |
-          set -euo pipefail
-          go mod tidy
-          git diff --exit-code -- go.mod go.sum
-
-      - name: Test
-        run: go test ./...
-
-      - name: Vet
-        run: go vet ./...
-
-      - name: Validate deployment scripts
-        shell: bash
-        run: |
-          set -euo pipefail
-          bash -n deploy/face-engine/linux/install.sh
-          node --check internal/webui/assets/app.js
-          node --check internal/webui/assets/admin-ui.js
-
-      - name: Validate Windows deployment scripts
-        shell: pwsh
-        run: |
-          foreach ($path in @('deploy/face-engine/windows/install.ps1', 'deploy/face-engine/windows/uninstall.ps1')) {
-            $errors = $null
-            [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $path), [ref]$null, [ref]$errors) | Out-Null
-            if ($errors.Count -gt 0) {
-              $errors | ForEach-Object { Write-Error $_.Message }
-              exit 1
-            }
-          }
-
-      - name: Build FaceSign servers
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p out
-          CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o out/facesign-linux-amd64 ./cmd/facesign
-          CGO_ENABLED=0 GOOS=windows GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o out/facesign-windows-amd64.exe ./cmd/facesign
-          cp config.example.env out/config.example.env
-
-      - name: Upload FaceSign servers
-        uses: actions/upload-artifact@v7
-        with:
-          name: server-binaries
-          path: out/
-          if-no-files-found: error
-          retention-days: 1
-
-  face-engine-linux:
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Set up Go
-        uses: actions/setup-go@v7
-        with:
-          go-version: '1.26.6'
-          cache: true
-          cache-dependency-path: go.sum
-
-      - name: Build native Linux face engine
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p out/models
-          CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o out/facesign-face-engine ./cmd/faceengine
-
-      - name: Bundle ONNX Runtime CPU and models
-        shell: bash
-        run: |
-          set -euo pipefail
-          curl -fL --retry 3 -o "$RUNNER_TEMP/ort.tgz" "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-${ORT_VERSION}.tgz"
-          tar xzf "$RUNNER_TEMP/ort.tgz" -C "$RUNNER_TEMP"
-          cp "$RUNNER_TEMP/onnxruntime-linux-x64-${ORT_VERSION}/lib/libonnxruntime.so.${ORT_VERSION}" out/
-          curl -fL --retry 3 -o out/models/face_detection_yunet_2023mar.onnx "https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx"
-          curl -fL --retry 3 -o out/models/face_recognition_sface_2021dec.onnx "https://github.com/opencv/opencv_zoo/raw/main/models/face_recognition_sface/face_recognition_sface_2021dec.onnx"
-          cp deploy/face-engine/linux/install.sh out/install.sh
-          chmod +x out/install.sh out/facesign-face-engine
-
-      - name: Smoke test native Linux engine
-        shell: bash
-        run: |
-          set -euo pipefail
-          ./out/facesign-face-engine --listen 127.0.0.1:18082 --assets "$PWD/out" --data "$RUNNER_TEMP/faces.db" >"$RUNNER_TEMP/face-engine.log" 2>&1 &
-          pid=$!
-          trap 'kill "$pid" >/dev/null 2>&1 || true' EXIT
-          ready=0
-          for i in $(seq 1 30); do
-            if curl -fsS http://127.0.0.1:18082/health | grep -q '"gpu_required":false'; then
-              ready=1
-              break
-            fi
-            sleep 1
-          done
-          if [ "$ready" -ne 1 ]; then
-            cat "$RUNNER_TEMP/face-engine.log"
-            exit 1
-          fi
-          curl -fL --retry 3 -o "$RUNNER_TEMP/amy.jpg" "https://raw.githubusercontent.com/leandroveronezi/go-onnxface/main/examples/fotos/amy.jpg"
-          curl -fsS -F "file=@$RUNNER_TEMP/amy.jpg" "http://127.0.0.1:18082/api/v1/recognition/faces/?subject=smoke-student&det_prob_threshold=0.60" | grep -q '"subject":"smoke-student"'
-          curl -fsS -F "file=@$RUNNER_TEMP/amy.jpg" "http://127.0.0.1:18082/api/v1/recognition/recognize?det_prob_threshold=0.60" | grep -q '"subject":"smoke-student"'
-
-      - name: Upload Linux face engine
-        uses: actions/upload-artifact@v7
-        with:
-          name: face-engine-linux
-          path: out/
-          if-no-files-found: error
-          retention-days: 1
-
-  face-engine-windows:
+  build-windows:
     runs-on: windows-latest
     steps:
       - name: Checkout
@@ -150,19 +24,26 @@ jobs:
         with:
           go-version: '1.26.6'
           cache: true
-          cache-dependency-path: go.sum
 
-      - name: Set up MinGW for cgo build
+      - name: Set up MinGW
         uses: msys2/setup-msys2@v2
         with:
           msystem: MINGW64
           update: false
           install: mingw-w64-x86_64-gcc
 
-      - name: Build native Windows face engine
+      - name: Test and vet
         shell: pwsh
         run: |
-          New-Item -ItemType Directory -Force -Path out, out/models | Out-Null
+          go test ./...
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          go vet ./...
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Build FaceSign
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist, dist\models, dist\scripts | Out-Null
           $gccCommand = Get-Command gcc.exe -ErrorAction SilentlyContinue
           if ($gccCommand) {
             $gcc = $gccCommand.Source
@@ -170,156 +51,88 @@ jobs:
             $gccFile = Get-ChildItem -Path $env:RUNNER_TEMP -Filter gcc.exe -File -Recurse -ErrorAction SilentlyContinue |
               Where-Object { $_.FullName -match '[\\/]mingw64[\\/]bin[\\/]gcc\.exe$' } |
               Select-Object -First 1
-            if (-not $gccFile) { throw 'MinGW gcc.exe was not found after msys2/setup-msys2' }
+            if (-not $gccFile) { throw 'MinGW gcc.exe was not found' }
             $gcc = $gccFile.FullName
           }
           $mingwBin = Split-Path $gcc -Parent
-          Write-Host "Using MinGW compiler: $gcc"
           "MINGW_BIN=$mingwBin" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           $env:CGO_ENABLED = '1'
           $env:GOOS = 'windows'
           $env:GOARCH = 'amd64'
           $env:CC = $gcc
           $env:CGO_LDFLAGS = '-static-libgcc'
-          & go build -trimpath -ldflags '-s -w' -o out/facesign-face-engine.exe ./cmd/faceengine
+          go build -trimpath -ldflags '-s -w' -o dist\FaceSign.exe ./cmd/facesign
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-      - name: Bundle ONNX Runtime CPU, VC runtime and models
+      - name: Bundle ONNX Runtime and models
         shell: pwsh
         run: |
           $ortZip = Join-Path $env:RUNNER_TEMP 'ort.zip'
           Invoke-WebRequest -Uri "https://github.com/microsoft/onnxruntime/releases/download/v$env:ORT_VERSION/onnxruntime-win-x64-$env:ORT_VERSION.zip" -OutFile $ortZip -UseBasicParsing
           $ortDir = Join-Path $env:RUNNER_TEMP 'ort'
           Expand-Archive -Path $ortZip -DestinationPath $ortDir -Force
-          Copy-Item (Join-Path $ortDir "onnxruntime-win-x64-$env:ORT_VERSION\lib\onnxruntime.dll") out\onnxruntime.dll -Force
-
-          foreach ($dll in @('msvcp140.dll', 'msvcp140_1.dll', 'vcruntime140.dll', 'vcruntime140_1.dll')) {
+          Copy-Item (Join-Path $ortDir "onnxruntime-win-x64-$env:ORT_VERSION\lib\onnxruntime.dll") dist\onnxruntime.dll -Force
+          foreach ($dll in @('msvcp140.dll','msvcp140_1.dll','vcruntime140.dll','vcruntime140_1.dll')) {
             $source = Join-Path $env:WINDIR "System32\$dll"
-            if (-not (Test-Path $source)) { throw "Required VC runtime DLL missing on build runner: $source" }
-            Copy-Item $source (Join-Path 'out' $dll) -Force
+            if (Test-Path $source) { Copy-Item $source (Join-Path 'dist' $dll) -Force }
           }
-
           $objdump = Join-Path $env:MINGW_BIN 'objdump.exe'
-          if (-not (Test-Path $objdump)) { throw "objdump.exe was not found: $objdump" }
-          $dependencyText = & $objdump -p out\facesign-face-engine.exe
-          Write-Host ($dependencyText | Select-String 'DLL Name:')
-          foreach ($dll in @('libgcc_s_seh-1.dll', 'libwinpthread-1.dll')) {
+          $dependencyText = & $objdump -p dist\FaceSign.exe
+          foreach ($dll in @('libgcc_s_seh-1.dll','libwinpthread-1.dll')) {
             if (($dependencyText -join "`n") -match [regex]::Escape($dll)) {
-              $source = Join-Path $env:MINGW_BIN $dll
-              if (-not (Test-Path $source)) { throw "Required MinGW runtime DLL missing: $source" }
-              Copy-Item $source (Join-Path 'out' $dll) -Force
+              Copy-Item (Join-Path $env:MINGW_BIN $dll) (Join-Path 'dist' $dll) -Force
             }
           }
+          Invoke-WebRequest -Uri 'https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx' -OutFile 'dist\models\face_detection_yunet_2023mar.onnx' -UseBasicParsing
+          Invoke-WebRequest -Uri 'https://github.com/opencv/opencv_zoo/raw/main/models/face_recognition_sface/face_recognition_sface_2021dec.onnx' -OutFile 'dist\models\face_recognition_sface_2021dec.onnx' -UseBasicParsing
+          Copy-Item scripts\install.ps1 dist\scripts\install.ps1 -Force
+          Copy-Item scripts\uninstall.ps1 dist\scripts\uninstall.ps1 -Force
+          Copy-Item README.md dist\README.md -Force
 
-          Invoke-WebRequest -Uri 'https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx' -OutFile 'out\models\face_detection_yunet_2023mar.onnx' -UseBasicParsing
-          Invoke-WebRequest -Uri 'https://github.com/opencv/opencv_zoo/raw/main/models/face_recognition_sface/face_recognition_sface_2021dec.onnx' -OutFile 'out\models\face_recognition_sface_2021dec.onnx' -UseBasicParsing
-          Copy-Item deploy\face-engine\windows\install.ps1 out\install.ps1 -Force
-          Copy-Item deploy\face-engine\windows\uninstall.ps1 out\uninstall.ps1 -Force
-
-      - name: Smoke test native Windows engine
+      - name: Smoke test recognition
         shell: pwsh
         run: |
-          $db = Join-Path $env:RUNNER_TEMP 'faces.db'
+          $db = Join-Path $env:RUNNER_TEMP 'facesign.db'
           $originalPath = $env:PATH
-          $env:PATH = (Resolve-Path 'out').Path + ';' + (Join-Path $env:WINDIR 'System32') + ';' + $env:WINDIR
-          $process = Start-Process -FilePath (Resolve-Path 'out\facesign-face-engine.exe') -ArgumentList @('--listen','127.0.0.1:18082','--assets',(Resolve-Path 'out').Path,'--data',$db) -PassThru -WindowStyle Hidden
+          $env:PATH = (Resolve-Path 'dist').Path + ';' + (Join-Path $env:WINDIR 'System32') + ';' + $env:WINDIR
+          $process = Start-Process -FilePath (Resolve-Path 'dist\FaceSign.exe') -ArgumentList @('--listen','127.0.0.1:18082','--assets',(Resolve-Path 'dist').Path,'--data',$db,'--detection-threshold','0.60') -PassThru -WindowStyle Hidden
           try {
             $ready = $false
             for ($i = 0; $i -lt 30; $i++) {
               try {
-                $health = Invoke-RestMethod -Uri 'http://127.0.0.1:18082/health' -TimeoutSec 3
-                if ($health.ok -and $health.device -eq 'cpu' -and -not $health.gpu_required) {
-                  $ready = $true
-                  break
-                }
-              } catch {
-                Start-Sleep -Seconds 1
-              }
+                $health = Invoke-RestMethod -Uri 'http://127.0.0.1:18082/api/health' -TimeoutSec 3
+                if ($health.ok -and $health.device -eq 'cpu' -and -not $health.python -and -not $health.docker) { $ready = $true; break }
+              } catch { Start-Sleep -Seconds 1 }
             }
-            if (-not $ready) { throw 'Native Windows face engine health check failed' }
-
+            if (-not $ready) { throw 'FaceSign health check failed' }
+            $student = Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:18082/api/students' -ContentType 'application/json' -Body '{"student_no":"SMOKE001","name":"Amy","class_name":"Test"}'
             $photo = Join-Path $env:RUNNER_TEMP 'amy.jpg'
             Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/leandroveronezi/go-onnxface/main/examples/fotos/amy.jpg' -OutFile $photo -UseBasicParsing
-            $enrollRaw = & curl.exe -fsS -F "file=@$photo" 'http://127.0.0.1:18082/api/v1/recognition/faces/?subject=smoke-student&det_prob_threshold=0.60'
-            if ($LASTEXITCODE -ne 0) { throw 'Native Windows face enrollment smoke test failed' }
-            $enroll = $enrollRaw | ConvertFrom-Json
-            if ($enroll.subject -ne 'smoke-student') { throw 'Unexpected enrollment response' }
-
-            $recognizeRaw = & curl.exe -fsS -F "file=@$photo" 'http://127.0.0.1:18082/api/v1/recognition/recognize?det_prob_threshold=0.60'
-            if ($LASTEXITCODE -ne 0) { throw 'Native Windows face recognition smoke test failed' }
+            $enrollRaw = & curl.exe -fsS -F "file=@$photo" "http://127.0.0.1:18082/api/students/$($student.id)/face"
+            if ($LASTEXITCODE -ne 0) { throw 'Enrollment smoke test failed' }
+            $recognizeRaw = & curl.exe -fsS -F "file=@$photo" 'http://127.0.0.1:18082/api/recognize'
+            if ($LASTEXITCODE -ne 0) { throw 'Recognition smoke test failed' }
             $recognize = $recognizeRaw | ConvertFrom-Json
-            if ($recognize.result[0].subjects[0].subject -ne 'smoke-student') { throw 'Native Windows recognition did not return the enrolled subject' }
+            if (-not $recognize.recognized -or $recognize.student.student_no -ne 'SMOKE001') { throw 'Recognition did not match enrolled student' }
           } finally {
             Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
             $env:PATH = $originalPath
           }
 
-      - name: Upload Windows face engine
+      - name: Upload Windows release
         uses: actions/upload-artifact@v7
         with:
-          name: face-engine-windows
-          path: out/
-          if-no-files-found: error
-          retention-days: 1
-
-  package:
-    needs: [server, face-engine-linux, face-engine-windows]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v7
-
-      - name: Download FaceSign servers
-        uses: actions/download-artifact@v8
-        with:
-          name: server-binaries
-          path: final/
-
-      - name: Download Windows face engine
-        uses: actions/download-artifact@v8
-        with:
-          name: face-engine-windows
-          path: final/face-engine/windows/
-
-      - name: Download Linux face engine
-        uses: actions/download-artifact@v8
-        with:
-          name: face-engine-linux
-          path: final/face-engine/linux/
-
-      - name: Add deployment documentation
-        shell: bash
-        run: cp deploy/face-engine/README.txt final/face-engine/README.txt
-
-      - name: Verify portable package has no Python or Docker runtime
-        shell: bash
-        run: |
-          set -euo pipefail
-          test -f final/facesign-windows-amd64.exe
-          test -f final/facesign-linux-amd64
-          test -f final/face-engine/windows/facesign-face-engine.exe
-          test -f final/face-engine/windows/onnxruntime.dll
-          test -f final/face-engine/linux/facesign-face-engine
-          test -f final/face-engine/linux/libonnxruntime.so.${ORT_VERSION}
-          if find final -type f \( -iname 'python.exe' -o -iname 'python3' -o -iname 'pip*' -o -iname 'docker-compose*' \) | grep -q .; then
-            echo 'Unexpected Python/pip/Docker runtime found in release package.' >&2
-            exit 1
-          fi
-
-      - name: Upload portable FaceSign release
-        uses: actions/upload-artifact@v7
-        with:
-          name: facesign-server-amd64
-          path: final/
+          name: facesign-windows-amd64
+          path: dist/
           if-no-files-found: error
           retention-days: 30
 
   cleanup-old-runs:
-    needs: package
+    needs: build-windows
     if: success()
     runs-on: ubuntu-latest
     steps:
-      - name: Keep only current and previous successful build run
+      - name: Keep current and previous successful run
         uses: actions/github-script@v9
         env:
           GITHUB_WORKFLOW_REF: ${{ github.workflow_ref }}
@@ -331,28 +144,18 @@ jobs:
             const workflowPath = process.env.GITHUB_WORKFLOW_REF.split('@')[0];
             const workflowFile = workflowPath.substring(workflowPath.lastIndexOf('/') + 1);
             const runs = await github.paginate(github.rest.actions.listWorkflowRuns, {
-              owner,
-              repo,
-              workflow_id: workflowFile,
-              per_page: 100,
+              owner, repo, workflow_id: workflowFile, per_page: 100,
             });
-
             const keep = new Set([currentRun]);
             const previousSuccess = runs
               .filter(run => run.id !== currentRun && run.status === 'completed' && run.conclusion === 'success')
-              .sort((a, b) => new Date(b.created_at) - new Date(a.created_at))[0];
+              .sort((a,b) => new Date(b.created_at) - new Date(a.created_at))[0];
             if (previousSuccess) keep.add(previousSuccess.id);
-
             for (const run of runs) {
               if (run.status !== 'completed' || keep.has(run.id)) continue;
               try {
-                await github.rest.actions.deleteWorkflowRun({ owner, repo, run_id: run.id });
-                core.info(`Deleted old completed run ${run.id} (${run.conclusion})`);
+                await github.rest.actions.deleteWorkflowRun({owner, repo, run_id: run.id});
               } catch (error) {
-                if (error.status === 404) {
-                  core.info(`Run ${run.id} was already deleted`);
-                  continue;
-                }
-                throw error;
+                if (error.status !== 404) throw error;
               }
             }

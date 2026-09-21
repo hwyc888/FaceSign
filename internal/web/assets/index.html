@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>FaceSign</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="shell">
+    <aside class="sidebar">
+      <div class="brand">FaceSign</div>
+      <div class="brand-sub">&#26657;&#22253;&#20154;&#33080;&#32771;&#21220;</div>
+      <nav>
+        <button class="nav active" data-page="checkin">&#20154;&#33080;&#31614;&#21040;</button>
+        <button class="nav" data-page="students">&#23398;&#29983;&#31649;&#29702;</button>
+        <button class="nav" data-page="attendance">&#32771;&#21220;&#35760;&#24405;</button>
+        <button class="nav" data-page="status">&#31995;&#32479;&#29366;&#24577;</button>
+      </nav>
+    </aside>
+    <main class="main">
+      <header class="topbar">
+        <div>
+          <h1 id="pageTitle">&#20154;&#33080;&#31614;&#21040;</h1>
+          <p id="pageHint">&#26412;&#26426;&#25668;&#20687;&#22836;&#25293;&#29031;&#21518;&#30452;&#25509;&#22312; Go &#31243;&#24207;&#20869;&#35782;&#21035;</p>
+        </div>
+        <div class="pill" id="healthPill">&#27491;&#22312;&#26816;&#27979;...</div>
+      </header>
+
+      <section class="page active" id="page-checkin">
+        <div class="grid two">
+          <div class="card camera-card">
+            <div class="video-wrap">
+              <video id="camera" autoplay playsinline muted></video>
+              <canvas id="canvas" hidden></canvas>
+            </div>
+            <div class="actions">
+              <button class="primary" id="startCamera">&#25171;&#24320;&#25668;&#20687;&#22836;</button>
+              <button id="recognize" disabled>&#35782;&#21035;&#24182;&#31614;&#21040;</button>
+              <label class="switch"><input id="autoScan" type="checkbox"> &#33258;&#21160;&#35782;&#21035;</label>
+            </div>
+          </div>
+          <div class="card result-card">
+            <h2>&#35782;&#21035;&#32467;&#26524;</h2>
+            <div id="result" class="result empty">&#23578;&#26410;&#35782;&#21035;</div>
+            <div class="mini-list" id="todaySummary"></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="page" id="page-students">
+        <div class="grid two">
+          <div class="card">
+            <h2>&#26032;&#22686;&#23398;&#29983;</h2>
+            <form id="studentForm" class="form">
+              <label>&#23398;&#21495;<input id="studentNo" required></label>
+              <label>&#22995;&#21517;<input id="studentName" required></label>
+              <label>&#29677;&#32423;<input id="className"></label>
+              <button class="primary" type="submit">&#20445;&#23384;&#23398;&#29983;</button>
+            </form>
+          </div>
+          <div class="card">
+            <h2>&#24405;&#20837;&#20154;&#33080;</h2>
+            <p class="muted">&#20808;&#25171;&#24320;&#25668;&#20687;&#22836;&#65292;&#36873;&#25321;&#23398;&#29983;&#21518;&#25293;&#29031;&#24405;&#20837;&#12290;&#27599;&#20010;&#23398;&#29983;&#20445;&#30041;&#26368;&#26032;&#19968;&#27425;&#20154;&#33080;&#29305;&#24449;&#12290;</p>
+            <div class="form">
+              <label>&#36873;&#25321;&#23398;&#29983;<select id="enrollStudent"></select></label>
+              <button id="enrollFace">&#25293;&#29031;&#24182;&#24405;&#20837;</button>
+            </div>
+          </div>
+        </div>
+        <div class="card table-card">
+          <div class="card-head"><h2>&#23398;&#29983;&#21015;&#34920;</h2><button id="refreshStudents">&#21047;&#26032;</button></div>
+          <div class="table-wrap"><table><thead><tr><th>&#23398;&#21495;</th><th>&#22995;&#21517;</th><th>&#29677;&#32423;</th><th>&#20154;&#33080;</th><th>&#25805;&#20316;</th></tr></thead><tbody id="studentsBody"></tbody></table></div>
+        </div>
+      </section>
+
+      <section class="page" id="page-attendance">
+        <div class="card table-card">
+          <div class="card-head">
+            <h2>&#32771;&#21220;&#35760;&#24405;</h2>
+            <div class="inline"><input id="attendanceDay" type="date"><button id="refreshAttendance">&#26597;&#35810;</button></div>
+          </div>
+          <div class="table-wrap"><table><thead><tr><th>&#26102;&#38388;</th><th>&#23398;&#21495;</th><th>&#22995;&#21517;</th><th>&#29677;&#32423;</th><th>&#30456;&#20284;&#24230;</th></tr></thead><tbody id="attendanceBody"></tbody></table></div>
+        </div>
+      </section>
+
+      <section class="page" id="page-status">
+        <div class="card">
+          <h2>&#31995;&#32479;&#29366;&#24577;</h2>
+          <pre id="statusJson">loading...</pre>
+          <p class="muted">Windows &#21457;&#24067;&#21253;&#21482;&#38656; FaceSign.exe&#12289;ONNX Runtime DLL &#21644;&#27169;&#22411;&#25991;&#20214;&#12290;&#19981;&#20351;&#29992; Python&#12289;Docker &#25110; GPU&#12290;</p>
+        </div>
+      </section>
+    </main>
+  </div>
+  <div class="toast" id="toast"></div>
+  <script src="/app.js"></script>
+</body>
+</html>
