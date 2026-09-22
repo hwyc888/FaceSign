@@ -321,3 +321,38 @@ func TestDuplicateEnrollmentSupportsProfileUpdateReview(t *testing.T) {
 		}
 	}
 }
+
+
+func TestSeatEditorVisualStatesAreSessionOnly(t *testing.T) {
+	jsData, err := assets.ReadFile("assets/js/seat_editor.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(jsData)
+	for _, want := range []string{
+		"classSeatEditorAdjustedSeats = new Set()",
+		"classSeatEditorAdjustedSeats.has(seatNo)",
+		"classSeatEditorAdjustedSeats.add(sourceSeatNo)",
+		"classSeatEditorAdjustedSeats.add(Number(targetSeatNo))",
+		"preserveAdjustments: true",
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("seat editor transient adjustment tracking missing %q", want)
+		}
+	}
+
+	cssData, err := assets.ReadFile("assets/style.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	css := string(cssData)
+	for _, want := range []string{
+		".seat-editor-cell.occupied{background:#e6f0ff",
+		".seat-editor-cell.empty{background:#fff",
+		".seat-editor-cell.adjusted{background:#fff0f0",
+	} {
+		if !strings.Contains(css, want) {
+			t.Fatalf("seat editor visual state missing %q", want)
+		}
+	}
+}

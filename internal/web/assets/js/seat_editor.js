@@ -2,12 +2,13 @@ window.classSeatEditorID = 0;
 let classSeatEditorStudents = [];
 let classSeatEditorSelectedStudentID = 0;
 let classSeatEditorDraggingStudentID = 0;
+let classSeatEditorAdjustedSeats = new Set();
 
 function classSeatEditorClass() {
   return classesCache.find(item => Number(item.id) === Number(window.classSeatEditorID)) || null;
 }
 
-async function openClassSeatEditor(classID) {
+async function openClassSeatEditor(classID, options = {}) {
   const item = classesCache.find(row => Number(row.id) === Number(classID));
   if (!item) {
     toast('班级不存在，请刷新后重试');
@@ -15,6 +16,9 @@ async function openClassSeatEditor(classID) {
   }
   window.classSeatEditorID = Number(classID);
   classSeatEditorSelectedStudentID = 0;
+  if (!options.preserveAdjustments) {
+    classSeatEditorAdjustedSeats = new Set();
+  }
   $('#classSeatEditor').classList.remove('hidden');
   $('#seatEditorTitle').textContent = item.name + ' · 座位编排';
   $('#seatEditorName').value = item.name;
@@ -30,6 +34,7 @@ function closeClassSeatEditor() {
   window.classSeatEditorID = 0;
   classSeatEditorStudents = [];
   classSeatEditorSelectedStudentID = 0;
+  classSeatEditorAdjustedSeats = new Set();
   $('#classSeatEditor').classList.add('hidden');
 }
 
@@ -80,8 +85,9 @@ function renderClassSeatEditor() {
       const seatNo = row * perRow + col + 1;
       const student = bySeat.get(seatNo);
       const selectedClass = student && selected && Number(student.id) === Number(selected.id) ? ' selected' : '';
+      const adjustedClass = classSeatEditorAdjustedSeats.has(seatNo) ? ' adjusted' : '';
       if (student) {
-        seats.push(`<button class="seat-editor-cell occupied${selectedClass}" type="button"
+        seats.push(`<button class="seat-editor-cell occupied${selectedClass}${adjustedClass}" type="button"
           draggable="true" data-editor-seat="${seatNo}" data-editor-student-id="${student.id}">
           <span class="seat-no">${seatNo}号</span>
           <strong>${esc(student.name)}</strong>
@@ -89,7 +95,7 @@ function renderClassSeatEditor() {
           <span class="drag-hint">拖动调整位置</span>
         </button>`);
       } else {
-        seats.push(`<button class="seat-editor-cell empty" type="button" data-editor-seat="${seatNo}">
+        seats.push(`<button class="seat-editor-cell empty${adjustedClass}" type="button" data-editor-seat="${seatNo}">
           <span class="seat-no">${seatNo}号</span>
           <strong>空位</strong>
           <span>点击作为目标座位</span>
@@ -220,6 +226,8 @@ async function moveSeatEditorStudent(studentID, targetSeatNo, options = {}) {
   const item = classSeatEditorClass();
   if (!item) return;
   try {
+    const movingStudent = classSeatEditorStudents.find(student => Number(student.id) === Number(studentID));
+    const sourceSeatNo = Number(movingStudent?.seat_no || 0);
     const targetStudent = classSeatEditorStudents.find(student => Number(student.seat_no) === Number(targetSeatNo));
     if (targetStudent && Number(targetStudent.id) !== Number(studentID) && options.confirmSwap !== false) {
       const moving = classSeatEditorStudents.find(student => Number(student.id) === Number(studentID));
@@ -232,6 +240,8 @@ async function moveSeatEditorStudent(studentID, targetSeatNo, options = {}) {
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({student_id: Number(studentID), target_seat_no: Number(targetSeatNo)})
     });
+    if (sourceSeatNo > 0) classSeatEditorAdjustedSeats.add(sourceSeatNo);
+    if (Number(targetSeatNo) > 0) classSeatEditorAdjustedSeats.add(Number(targetSeatNo));
     classSeatEditorSelectedStudentID = 0;
     await reloadClassSeatEditor();
     if (typeof loadStudents === 'function') await loadStudents();
@@ -256,10 +266,22 @@ $('#seatEditorAutoArrange').addEventListener('click', async () => {
   if (!item) return;
   if (!confirm(`将“${item.name}”按学号顺序重新编排座位？现有座位调整会被覆盖。`)) return;
   try {
+    const beforeSeats = new Map(classSeatEditorStudents.map(student => [
+      Number(student.id),
+      Number(student.seat_no || 0)
+    ]));
     const result = await api(`/api/classes/${item.id}/arrange`, {method: 'POST'});
     classSeatEditorSelectedStudentID = 0;
     toast(`已重新编排 ${result.arranged} 名学生`);
     await reloadClassSeatEditor();
+    classSeatEditorStudents.forEach(student => {
+      const oldSeat = Number(beforeSeats.get(Number(student.id)) || 0);
+      const newSeat = Number(student.seat_no || 0);
+      if (oldSeat === newSeat) return;
+      if (oldSeat > 0) classSeatEditorAdjustedSeats.add(oldSeat);
+      if (newSeat > 0) classSeatEditorAdjustedSeats.add(newSeat);
+    });
+    renderClassSeatEditor();
     if (typeof loadStudents === 'function') await loadStudents();
     if (typeof loadCheckinSeatBoard === 'function') await loadCheckinSeatBoard();
   } catch (e) {
@@ -286,7 +308,7 @@ $('#seatEditorSettingsForm').addEventListener('submit', async e => {
     });
     toast('班级与考勤时间设置已保存');
     await loadClasses();
-    await openClassSeatEditor(updated.id);
+    await openClassSeatEditor(updated.id, {preserveAdjustments: true});
     if (typeof loadStudents === 'function') await loadStudents();
     if (typeof loadCheckinSeatBoard === 'function') await loadCheckinSeatBoard();
   } catch (e) {
