@@ -1,0 +1,432 @@
+package web
+
+import (
+	"bytes"
+	"context"
+	"crypto/md5"
+	"crypto/rand"
+	"crypto/tls"
+	"database/sql"
+	"encoding/hex"
+	"errors"
+	"fmt"
+	"image"
+	"image/jpeg"
+	"io"
+	"net/http"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/hwyc888/FaceSign/internal/store"
+)
+
+type cameraRequest struct {
+	Name          string  `json:"name"`
+	Kind          string  `json:"kind"`
+	DeviceID      string  `json:"device_id"`
+	Protocol      string  `json:"protocol"`
+	StreamURL     string  `json:"stream_url"`
+	SnapshotURL   string  `json:"snapshot_url"`
+	Username      string  `json:"username"`
+	Password      *string `json:"password"`
+	ClearPassword bool    `json:"clear_password"`
+	AuthMode      string  `json:"auth_mode"`
+	Width         int     `json:"width"`
+	Height        int     `json:"height"`
+	FPS           int     `json:"fps"`
+	TimeoutMS     int     `json:"timeout_ms"`
+	TLSInsecure   bool    `json:"tls_insecure"`
+	IsDefault     bool    `json:"is_default"`
+}
+
+func (in cameraRequest) storeInput(password string) store.CameraInput {
+	return store.CameraInput{
+		Name: in.Name, Kind: in.Kind, DeviceID: in.DeviceID, Protocol: in.Protocol,
+		StreamURL: in.StreamURL, SnapshotURL: in.SnapshotURL, Username: in.Username,
+		Password: password, AuthMode: in.AuthMode, Width: in.Width, Height: in.Height,
+		FPS: in.FPS, TimeoutMS: in.TimeoutMS, TLSInsecure: in.TLSInsecure, IsDefault: in.IsDefault,
+	}
+}
+
+func (s *Server) cameras(w http.ResponseWriter, r *http.Request) {
+	switch r.Method {
+	case http.MethodGet:
+		items, err := s.store.ListCameras(r.Context())
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, items)
+	case http.MethodPost:
+		var in cameraRequest
+		if err := decodeJSON(r, &in); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		password := ""
+		if in.Password != nil {
+			password = *in.Password
+		}
+		item, err := s.store.CreateCamera(r.Context(), in.storeInput(password))
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		writeJSON(w, http.StatusCreated, item)
+	default:
+		methodNotAllowed(w)
+	}
+}
+
+func (s *Server) cameraAction(w http.ResponseWriter, r *http.Request) {
+	rest := strings.TrimPrefix(r.URL.Path, "/api/cameras/")
+	parts := strings.Split(strings.Trim(rest, "/"), "/")
+	if len(parts) == 0 || parts[0] == "" {
+		writeError(w, http.StatusNotFound, errors.New("摄像头不存在"))
+		return
+	}
+	id, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil || id <= 0 {
+		writeError(w, http.StatusBadRequest, errors.New("摄像头ID不正确"))
+		return
+	}
+
+	if len(parts) == 1 {
+		switch r.Method {
+		case http.MethodPut:
+			current, err := s.store.CameraByID(r.Context(), id)
+			if err != nil {
+				writeCameraStoreError(w, err)
+				return
+			}
+			var in cameraRequest
+			if err := decodeJSON(r, &in); err != nil {
+				writeError(w, http.StatusBadRequest, err)
+				return
+			}
+			password := current.Password
+			if in.ClearPassword {
+				password = ""
+			} else if in.Password != nil && *in.Password != "" {
+				password = *in.Password
+			}
+			item, err := s.store.UpdateCamera(r.Context(), id, in.storeInput(password))
+			if err != nil {
+				writeCameraStoreError(w, err)
+				return
+			}
+			writeJSON(w, http.StatusOK, item)
+		case http.MethodDelete:
+			if err := s.store.DeleteCamera(r.Context(), id); err != nil {
+				writeCameraStoreError(w, err)
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+		default:
+			methodNotAllowed(w)
+		}
+		return
+	}
+
+	if len(parts) == 2 && parts[1] == "default" && r.Method == http.MethodPost {
+		item, err := s.store.SetDefaultCamera(r.Context(), id)
+		if err != nil {
+			writeCameraStoreError(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, item)
+		return
+	}
+
+	if len(parts) == 2 && parts[1] == "frame" && r.Method == http.MethodGet {
+		item, err := s.store.CameraByID(r.Context(), id)
+		if err != nil {
+			writeCameraStoreError(w, err)
+			return
+		}
+		if item.Kind != "network" {
+			writeError(w, http.StatusBadRequest, errors.New("本机摄像头画面由浏览器直接读取"))
+			return
+		}
+		frame, width, height, err := fetchNetworkCameraFrame(r.Context(), item)
+		if err != nil {
+			writeError(w, http.StatusBadGateway, fmt.Errorf("读取网络摄像头失败: %w", err))
+			return
+		}
+		w.Header().Set("Content-Type", "image/jpeg")
+		w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
+		w.Header().Set("X-Camera-Width", strconv.Itoa(width))
+		w.Header().Set("X-Camera-Height", strconv.Itoa(height))
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(frame)
+		return
+	}
+
+	methodNotAllowed(w)
+}
+
+func writeCameraStoreError(w http.ResponseWriter, err error) {
+	if errors.Is(err, sql.ErrNoRows) {
+		writeError(w, http.StatusNotFound, errors.New("摄像头不存在"))
+		return
+	}
+	writeError(w, http.StatusBadRequest, err)
+}
+
+func fetchNetworkCameraFrame(ctx context.Context, camera store.Camera) ([]byte, int, int, error) {
+	rawURL := camera.SnapshotURL
+	mjpeg := false
+	if rawURL == "" && camera.Protocol == "mjpeg" {
+		rawURL = camera.StreamURL
+		mjpeg = true
+	}
+	if rawURL == "" {
+		return nil, 0, 0, errors.New("没有可用于识别的HTTP/HTTPS抓图地址")
+	}
+
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	if camera.TLSInsecure {
+		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+	}
+	client := &http.Client{
+		Transport: transport,
+		Timeout: time.Duration(camera.TimeoutMS) * time.Millisecond,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			if len(via) >= 5 {
+				return errors.New("摄像头重定向次数过多")
+			}
+			if req.URL.Scheme != "http" && req.URL.Scheme != "https" {
+				return errors.New("摄像头重定向到了不支持的协议")
+			}
+			return nil
+		},
+	}
+
+	response, err := doCameraRequest(ctx, client, camera, rawURL)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return nil, 0, 0, fmt.Errorf("摄像头返回 HTTP %d", response.StatusCode)
+	}
+
+	var data []byte
+	if mjpeg || strings.Contains(strings.ToLower(response.Header.Get("Content-Type")), "multipart/x-mixed-replace") {
+		data, err = readFirstJPEG(response.Body, 16<<20)
+		if err != nil {
+			return nil, 0, 0, err
+		}
+	} else {
+		img, _, err := image.Decode(io.LimitReader(response.Body, 16<<20))
+		if err != nil {
+			return nil, 0, 0, fmt.Errorf("摄像头返回的不是可识别图片: %w", err)
+		}
+		return encodeJPEG(img)
+	}
+
+	img, _, err := image.Decode(bytes.NewReader(data))
+	if err != nil {
+		return nil, 0, 0, fmt.Errorf("MJPEG帧解码失败: %w", err)
+	}
+	return encodeJPEG(img)
+}
+
+func encodeJPEG(img image.Image) ([]byte, int, int, error) {
+	var buf bytes.Buffer
+	if err := jpeg.Encode(&buf, img, &jpeg.Options{Quality: 90}); err != nil {
+		return nil, 0, 0, err
+	}
+	bounds := img.Bounds()
+	return buf.Bytes(), bounds.Dx(), bounds.Dy(), nil
+}
+
+func doCameraRequest(ctx context.Context, client *http.Client, camera store.Camera, rawURL string) (*http.Response, error) {
+	build := func(authorization string) (*http.Request, error) {
+		req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Accept", "image/jpeg,image/png,multipart/x-mixed-replace,*/*")
+		req.Header.Set("User-Agent", "FaceSign/Camera")
+		if camera.AuthMode == "basic" {
+			req.SetBasicAuth(camera.Username, camera.Password)
+		}
+		if authorization != "" {
+			req.Header.Set("Authorization", authorization)
+		}
+		return req, nil
+	}
+
+	req, err := build("")
+	if err != nil {
+		return nil, err
+	}
+	response, err := client.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	if camera.AuthMode != "digest" || response.StatusCode != http.StatusUnauthorized {
+		return response, nil
+	}
+	challenge := response.Header.Get("WWW-Authenticate")
+	_ = response.Body.Close()
+	authorization, err := digestAuthorization(challenge, camera.Username, camera.Password, http.MethodGet, req.URL.RequestURI())
+	if err != nil {
+		return nil, err
+	}
+	req, err = build(authorization)
+	if err != nil {
+		return nil, err
+	}
+	return client.Do(req)
+}
+
+func digestAuthorization(challenge, username, password, method, uri string) (string, error) {
+	if !strings.HasPrefix(strings.ToLower(strings.TrimSpace(challenge)), "digest ") {
+		return "", errors.New("摄像头没有返回Digest认证参数")
+	}
+	params := parseDigestParams(strings.TrimSpace(challenge)[7:])
+	realm := params["realm"]
+	nonce := params["nonce"]
+	if realm == "" || nonce == "" {
+		return "", errors.New("Digest认证缺少realm或nonce")
+	}
+	algorithm := strings.ToLower(params["algorithm"])
+	if algorithm == "" {
+		algorithm = "md5"
+	}
+	if algorithm != "md5" && algorithm != "md5-sess" {
+		return "", fmt.Errorf("暂不支持Digest算法 %s", params["algorithm"])
+	}
+	cnonceBytes := make([]byte, 8)
+	if _, err := rand.Read(cnonceBytes); err != nil {
+		return "", err
+	}
+	cnonce := hex.EncodeToString(cnonceBytes)
+	ha1 := md5Hex(username + ":" + realm + ":" + password)
+	if algorithm == "md5-sess" {
+		ha1 = md5Hex(ha1 + ":" + nonce + ":" + cnonce)
+	}
+	ha2 := md5Hex(method + ":" + uri)
+	qop := ""
+	for _, candidate := range strings.Split(params["qop"], ",") {
+		if strings.EqualFold(strings.TrimSpace(candidate), "auth") {
+			qop = "auth"
+			break
+		}
+	}
+	nc := "00000001"
+	var response string
+	if qop == "auth" {
+		response = md5Hex(ha1 + ":" + nonce + ":" + nc + ":" + cnonce + ":" + qop + ":" + ha2)
+	} else {
+		response = md5Hex(ha1 + ":" + nonce + ":" + ha2)
+	}
+	parts := []string{
+		`username="` + escapeDigest(username) + `"`,
+		`realm="` + escapeDigest(realm) + `"`,
+		`nonce="` + escapeDigest(nonce) + `"`,
+		`uri="` + escapeDigest(uri) + `"`,
+		`response="` + response + `"`,
+	}
+	if params["algorithm"] != "" {
+		parts = append(parts, "algorithm="+params["algorithm"])
+	}
+	if opaque := params["opaque"]; opaque != "" {
+		parts = append(parts, `opaque="`+escapeDigest(opaque)+`"`)
+	}
+	if qop == "auth" {
+		parts = append(parts, "qop=auth", "nc="+nc, `cnonce="`+cnonce+`"`)
+	}
+	return "Digest " + strings.Join(parts, ", "), nil
+}
+
+func parseDigestParams(value string) map[string]string {
+	out := make(map[string]string)
+	start := 0
+	quoted := false
+	escaped := false
+	parts := make([]string, 0)
+	for i := 0; i < len(value); i++ {
+		switch value[i] {
+		case '\\':
+			if quoted {
+				escaped = !escaped
+			}
+		case '"':
+			if !escaped {
+				quoted = !quoted
+			}
+			escaped = false
+		case ',':
+			if !quoted {
+				parts = append(parts, value[start:i])
+				start = i + 1
+			}
+			escaped = false
+		default:
+			escaped = false
+		}
+	}
+	parts = append(parts, value[start:])
+	for _, part := range parts {
+		pair := strings.SplitN(strings.TrimSpace(part), "=", 2)
+		if len(pair) != 2 {
+			continue
+		}
+		key := strings.ToLower(strings.TrimSpace(pair[0]))
+		val := strings.TrimSpace(pair[1])
+		if len(val) >= 2 && val[0] == '"' && val[len(val)-1] == '"' {
+			val = val[1 : len(val)-1]
+		}
+		out[key] = val
+	}
+	return out
+}
+
+func md5Hex(value string) string {
+	sum := md5.Sum([]byte(value))
+	return hex.EncodeToString(sum[:])
+}
+
+func escapeDigest(value string) string {
+	value = strings.ReplaceAll(value, "\\", "\\\\")
+	return strings.ReplaceAll(value, `"`, `\\"`)
+}
+
+func readFirstJPEG(reader io.Reader, limit int) ([]byte, error) {
+	buf := make([]byte, 32*1024)
+	out := make([]byte, 0, 512*1024)
+	started := false
+	var previous byte
+	total := 0
+	for total < limit {
+		n, err := reader.Read(buf)
+		if n > 0 {
+			total += n
+			for _, current := range buf[:n] {
+				if !started {
+					if previous == 0xff && current == 0xd8 {
+						started = true
+						out = append(out, 0xff, 0xd8)
+					}
+				} else {
+					out = append(out, current)
+					if previous == 0xff && current == 0xd9 {
+						return out, nil
+					}
+				}
+				previous = current
+			}
+		}
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+			return nil, err
+		}
+	}
+	return nil, errors.New("MJPEG数据中没有读取到完整JPEG帧")
+}

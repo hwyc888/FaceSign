@@ -364,3 +364,72 @@ func TestClassAttendanceColumnsMigrate(t *testing.T) {
 		t.Fatalf("legacy class time columns were not migrated safely: %#v", classes)
 	}
 }
+
+
+func TestCameraManagementAndDefaultSelection(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "cameras.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+
+	local, err := s.CreateCamera(ctx, CameraInput{
+		Name: "教室USB",
+		Kind: "local",
+		DeviceID: "device-1",
+		Width: 1280,
+		Height: 720,
+		FPS: 30,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !local.IsDefault || local.Protocol != "browser" {
+		t.Fatalf("first camera should become default: %#v", local)
+	}
+
+	network, err := s.CreateCamera(ctx, CameraInput{
+		Name: "前门网络摄像头",
+		Kind: "network",
+		Protocol: "rtsp",
+		StreamURL: "rtsp://192.168.1.64/Streaming/Channels/101",
+		SnapshotURL: "http://192.168.1.64/ISAPI/Streaming/channels/101/picture",
+		Username: "admin",
+		Password: "secret",
+		AuthMode: "digest",
+		Width: 1920,
+		Height: 1080,
+		FPS: 5,
+		TimeoutMS: 3500,
+		IsDefault: true,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !network.IsDefault || !network.HasPassword || network.Password != "secret" {
+		t.Fatalf("network camera settings not persisted: %#v", network)
+	}
+	refreshedLocal, err := s.CameraByID(ctx, local.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if refreshedLocal.IsDefault {
+		t.Fatal("old camera remained default")
+	}
+
+	if _, err := s.SetDefaultCamera(ctx, local.ID); err != nil {
+		t.Fatal(err)
+	}
+	defaultCamera, err := s.DefaultCamera(ctx)
+	if err != nil || defaultCamera.ID != local.ID {
+		t.Fatalf("unexpected default camera: %#v err=%v", defaultCamera, err)
+	}
+	if err := s.DeleteCamera(ctx, local.ID); err != nil {
+		t.Fatal(err)
+	}
+	defaultCamera, err = s.DefaultCamera(ctx)
+	if err != nil || defaultCamera.ID != network.ID {
+		t.Fatalf("default camera was not promoted after delete: %#v err=%v", defaultCamera, err)
+	}
+}

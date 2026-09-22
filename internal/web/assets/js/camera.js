@@ -1,26 +1,139 @@
 function updateCameraControls() {
-  const opened = !!stream;
+  const opened = cameraOpen;
   const checkinButton = $('#startCamera');
   const enrollButton = $('#toggleEnrollCamera');
   if (checkinButton) checkinButton.textContent = opened ? '关闭摄像头' : '打开摄像头';
   if (enrollButton) enrollButton.textContent = opened ? '关闭摄像头' : '打开摄像头';
   if ($('#recognize')) $('#recognize').disabled = !opened;
   if ($('#captureEnrollment')) $('#captureEnrollment').disabled = !opened;
+
+  const configuredDefault = camerasCache.find(camera => camera.is_default) || null;
+  const selected = activeCamera || configuredDefault;
+  const label = selected ? selected.name : '浏览器默认摄像头';
+  if ($('#checkinCameraName')) $('#checkinCameraName').textContent = label;
+  if ($('#enrollCameraName')) $('#enrollCameraName').textContent = label;
+}
+
+async function loadCameraConfigs(force = false) {
+  if (camerasLoaded && !force) return camerasCache;
+  camerasCache = await api('/api/cameras');
+  camerasLoaded = true;
+  updateCameraControls();
+  return camerasCache;
+}
+
+async function preferredCamera() {
+  try {
+    await loadCameraConfigs();
+  } catch (e) {
+    console.warn('load camera settings failed', e);
+  }
+  return camerasCache.find(camera => camera.is_default) || {
+    id: 0,
+    name: '浏览器默认摄像头',
+    kind: 'local',
+    device_id: '',
+    protocol: 'browser',
+    width: 1280,
+    height: 720,
+    fps: 30
+  };
+}
+
+function switchCameraViews(network) {
+  ['#camera', '#enrollCamera'].map($).filter(Boolean).forEach(video => {
+    video.classList.toggle('hidden', network);
+  });
+  ['#cameraNetwork', '#enrollCameraNetwork'].map($).filter(Boolean).forEach(image => {
+    image.classList.toggle('hidden', !network);
+  });
+}
+
+async function fetchCameraFrameBlob(cameraID) {
+  const response = await fetch(`/api/cameras/${cameraID}/frame?t=${Date.now()}`, {cache: 'no-store'});
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || `摄像头返回 HTTP ${response.status}`);
+  }
+  return await response.blob();
+}
+
+async function refreshNetworkPreview() {
+  if (!cameraOpen || !activeCamera || activeCamera.kind !== 'network' || networkPreviewBusy) return;
+  networkPreviewBusy = true;
+  try {
+    const blob = await fetchCameraFrameBlob(activeCamera.id);
+    const nextURL = URL.createObjectURL(blob);
+    const oldURL = networkPreviewObjectURL;
+    networkPreviewObjectURL = nextURL;
+    ['#cameraNetwork', '#enrollCameraNetwork'].map($).filter(Boolean).forEach(image => {
+      image.src = nextURL;
+    });
+    if (oldURL) setTimeout(() => URL.revokeObjectURL(oldURL), 1200);
+  } finally {
+    networkPreviewBusy = false;
+  }
+}
+
+function startNetworkPreview() {
+  clearInterval(networkPreviewTimer);
+  networkPreviewTimer = null;
+  const fps = Math.max(1, Math.min(Number(activeCamera?.fps || 4), 4));
+  networkPreviewTimer = setInterval(() => {
+    refreshNetworkPreview().catch(e => console.warn('network camera preview', e));
+  }, Math.max(250, Math.round(1000 / fps)));
+}
+
+function localVideoConstraints(camera) {
+  const video = {
+    width: {ideal: Number(camera.width || 1280)},
+    height: {ideal: Number(camera.height || 720)},
+    frameRate: {ideal: Number(camera.fps || 30)}
+  };
+  if (camera.device_id) video.deviceId = {exact: camera.device_id};
+  else video.facingMode = 'user';
+  return {video, audio: false};
 }
 
 async function startCamera() {
-  if (stream) {
-    await attachCameraViews();
+  if (cameraOpen) {
+    if (activeCamera?.kind === 'network') {
+      switchCameraViews(true);
+      await refreshNetworkPreview();
+    } else {
+      await attachCameraViews();
+    }
     updateCameraControls();
     return;
   }
+
   try {
     resetRecognitionSession();
-    stream = await navigator.mediaDevices.getUserMedia({
-      video: {width: {ideal: 1280}, height: {ideal: 720}, facingMode: 'user'},
-      audio: false
-    });
-    await attachCameraViews();
+    activeCamera = await preferredCamera();
+
+    if (activeCamera.kind === 'network') {
+      stream = null;
+      cameraOpen = true;
+      switchCameraViews(true);
+      await refreshNetworkPreview();
+      startNetworkPreview();
+    } else {
+      switchCameraViews(false);
+      try {
+        stream = await navigator.mediaDevices.getUserMedia(localVideoConstraints(activeCamera));
+      } catch (e) {
+        if (activeCamera.device_id && (e.name === 'NotFoundError' || e.name === 'OverconstrainedError')) {
+          const fallback = {...activeCamera, device_id: ''};
+          stream = await navigator.mediaDevices.getUserMedia(localVideoConstraints(fallback));
+          toast('默认本机摄像头未找到，已临时使用系统默认摄像头');
+        } else {
+          throw e;
+        }
+      }
+      cameraOpen = true;
+      await attachCameraViews();
+    }
+
     updateCameraControls();
     const liveState = $('#enrollLiveState');
     if (liveState) {
@@ -36,9 +149,14 @@ async function startCamera() {
         'neutral'
       );
     }
-    toast('摄像头已打开');
+    toast(`${activeCamera.name || '摄像头'}已打开`);
   } catch (e) {
     stream = null;
+    cameraOpen = false;
+    clearInterval(networkPreviewTimer);
+    networkPreviewTimer = null;
+    activeCamera = null;
+    switchCameraViews(false);
     updateCameraControls();
     toast('无法打开摄像头：' + e.message);
     throw e;
@@ -50,6 +168,19 @@ function stopCamera() {
     stream.getTracks().forEach(track => track.stop());
     stream = null;
   }
+  cameraOpen = false;
+  clearInterval(networkPreviewTimer);
+  networkPreviewTimer = null;
+  networkPreviewBusy = false;
+  if (networkPreviewObjectURL) {
+    URL.revokeObjectURL(networkPreviewObjectURL);
+    networkPreviewObjectURL = null;
+  }
+  ['#cameraNetwork', '#enrollCameraNetwork'].map($).filter(Boolean).forEach(image => {
+    image.removeAttribute('src');
+  });
+  activeCamera = null;
+  switchCameraViews(false);
   resetRecognitionSession();
   ['#camera', '#enrollCamera'].map($).filter(Boolean).forEach(video => {
     video.srcObject = null;
@@ -73,11 +204,12 @@ function stopCamera() {
 }
 
 async function toggleCamera() {
-  if (stream) stopCamera();
+  if (cameraOpen) stopCamera();
   else await startCamera();
 }
 
 async function attachCameraViews() {
+  switchCameraViews(false);
   const views = ['#camera', '#enrollCamera'].map($).filter(Boolean);
   for (const video of views) {
     if (video.srcObject !== stream) video.srcObject = stream;
@@ -88,8 +220,28 @@ async function attachCameraViews() {
   }
 }
 
+function cameraFrameDimensions(selector = '#camera') {
+  if (activeCamera?.kind === 'network') {
+    const image = selector === '#enrollCamera' ? $('#enrollCameraNetwork') : $('#cameraNetwork');
+    return {
+      width: image?.naturalWidth || Number(activeCamera.width || 1280),
+      height: image?.naturalHeight || Number(activeCamera.height || 720)
+    };
+  }
+  const video = $(selector);
+  return {
+    width: video?.videoWidth || Number(activeCamera?.width || 1280),
+    height: video?.videoHeight || Number(activeCamera?.height || 720)
+  };
+}
+
 async function capture(selector = '#camera') {
-  if (!stream) throw new Error('请先打开摄像头');
+  if (!cameraOpen) throw new Error('请先打开摄像头');
+  if (activeCamera?.kind === 'network') {
+    return await fetchCameraFrameBlob(activeCamera.id);
+  }
+
+  if (!stream) throw new Error('本机摄像头画面尚未准备好');
   const video = $(selector);
   const canvas = $('#canvas');
   if (!video || !video.videoWidth || !video.videoHeight) {

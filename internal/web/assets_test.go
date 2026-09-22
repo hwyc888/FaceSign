@@ -10,6 +10,7 @@ func TestFrontendModulesAreEmbedded(t *testing.T) {
 		"assets/js/core.js",
 		"assets/js/navigation.js",
 		"assets/js/camera.js",
+		"assets/js/cameras.js",
 		"assets/js/seating.js",
 		"assets/js/recognition.js",
 		"assets/js/enrollment.js",
@@ -149,6 +150,49 @@ func TestSeatEditorSupportsNativeDragDrop(t *testing.T) {
 	} {
 		if !strings.Contains(script, want) {
 			t.Fatalf("seat editor drag/drop missing %q", want)
+		}
+	}
+}
+
+
+func TestCameraSettingsUI(t *testing.T) {
+	data, err := assets.ReadFile("assets/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	html := string(data)
+	for _, want := range []string{
+		`id="cameraForm"`,
+		`id="cameraDevice"`,
+		`id="cameraProtocol"`,
+		`id="cameraSnapshotURL"`,
+		`id="cameraStreamURL"`,
+		`id="camerasBody"`,
+		`/js/cameras.js`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("camera settings UI missing %s", want)
+		}
+	}
+}
+
+func TestCameraFrontendSupportsLocalAndNetworkSources(t *testing.T) {
+	data, err := assets.ReadFile("assets/js/cameras.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(data)
+	for _, want := range []string{
+		"enumerateDevices",
+		"deviceId",
+		"http_snapshot",
+		"mjpeg",
+		"rtsp",
+		"/api/cameras/",
+		"Digest",
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("camera frontend missing %q", want)
 		}
 	}
 }

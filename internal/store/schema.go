@@ -48,6 +48,26 @@ func (s *Store) init(ctx context.Context) error {
             FOREIGN KEY(student_id) REFERENCES students(id) ON DELETE CASCADE,
             UNIQUE(student_id, day)
         )`,
+		`CREATE TABLE IF NOT EXISTS cameras (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL UNIQUE,
+            kind TEXT NOT NULL,
+            device_id TEXT NOT NULL DEFAULT '',
+            protocol TEXT NOT NULL DEFAULT 'browser',
+            stream_url TEXT NOT NULL DEFAULT '',
+            snapshot_url TEXT NOT NULL DEFAULT '',
+            username TEXT NOT NULL DEFAULT '',
+            password TEXT NOT NULL DEFAULT '',
+            auth_mode TEXT NOT NULL DEFAULT 'none',
+            width INTEGER NOT NULL DEFAULT 1280,
+            height INTEGER NOT NULL DEFAULT 720,
+            fps INTEGER NOT NULL DEFAULT 30,
+            timeout_ms INTEGER NOT NULL DEFAULT 3000,
+            tls_insecure INTEGER NOT NULL DEFAULT 0,
+            is_default INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        )`,
 	}
 	for _, statement := range statements {
 		if _, err := s.db.ExecContext(ctx, statement); err != nil {
@@ -79,6 +99,7 @@ func (s *Store) init(ctx context.Context) error {
 		"CREATE INDEX IF NOT EXISTS idx_face_samples_student ON face_samples(student_id, created_at DESC)",
 		"CREATE INDEX IF NOT EXISTS idx_attendance_day ON attendance(day, checked_at DESC)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS idx_students_class_seat ON students(class_name,seat_no) WHERE seat_no > 0",
+		"CREATE UNIQUE INDEX IF NOT EXISTS idx_cameras_default ON cameras(is_default) WHERE is_default=1",
 	} {
 		if _, err := s.db.ExecContext(ctx, statement); err != nil {
 			return fmt.Errorf("initialize database index: %w", err)

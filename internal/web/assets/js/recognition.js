@@ -39,11 +39,13 @@ function renderRecognition(r) {
 }
 
 function drawFaceOverlay(faces) {
-  const video = $('#camera');
   const overlay = $('#faceOverlay');
-  if (!overlay || !video) return;
-  overlay.width = video.videoWidth || 1280;
-  overlay.height = video.videoHeight || 720;
+  if (!overlay) return;
+  const dimensions = typeof cameraFrameDimensions === 'function'
+    ? cameraFrameDimensions('#camera')
+    : {width: 1280, height: 720};
+  overlay.width = dimensions.width || 1280;
+  overlay.height = dimensions.height || 720;
   const ctx = overlay.getContext('2d');
   ctx.clearRect(0, 0, overlay.width, overlay.height);
   ctx.lineWidth = Math.max(2, overlay.width / 400);

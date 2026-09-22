@@ -83,3 +83,24 @@ type SeatMoveResult struct {
 	SwappedStudentID int64 `json:"swapped_student_id,omitempty"`
 	TargetSeatNo    int   `json:"target_seat_no"`
 }
+
+
+type Camera struct {
+	ID           int64  `json:"id"`
+	Name         string `json:"name"`
+	Kind         string `json:"kind"`
+	DeviceID     string `json:"device_id,omitempty"`
+	Protocol     string `json:"protocol"`
+	StreamURL    string `json:"stream_url,omitempty"`
+	SnapshotURL  string `json:"snapshot_url,omitempty"`
+	Username     string `json:"username,omitempty"`
+	Password     string `json:"-"`
+	HasPassword  bool   `json:"has_password"`
+	AuthMode     string `json:"auth_mode"`
+	Width        int    `json:"width"`
+	Height       int    `json:"height"`
+	FPS          int    `json:"fps"`
+	TimeoutMS    int    `json:"timeout_ms"`
+	TLSInsecure  bool   `json:"tls_insecure"`
+	IsDefault    bool   `json:"is_default"`
+}

@@ -10,7 +10,10 @@ async function showPage(name) {
     startCamera().catch(() => {});
   }
   if (name === 'attendance') loadAttendance();
-  if (name === 'settings') loadClasses();
+  if (name === 'settings') {
+    await Promise.all([loadClasses(), loadCameras()]);
+    refreshLocalCameraDevices(false).catch(() => {});
+  }
   if (name === 'status') loadHealth();
 }
 

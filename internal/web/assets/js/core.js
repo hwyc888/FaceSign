@@ -12,6 +12,13 @@ let classesCache = [];
 let duplicateStudent = null;
 let samplesStudent = null;
 let supplementStudent = null;
+let camerasCache = [];
+let camerasLoaded = false;
+let cameraOpen = false;
+let activeCamera = null;
+let networkPreviewTimer = null;
+let networkPreviewObjectURL = null;
+let networkPreviewBusy = false;
 
 function makeRecognitionSessionID() {
   if (window.crypto && typeof window.crypto.randomUUID === 'function') {
@@ -28,7 +35,7 @@ const titles = {
   checkin: ['人脸签到', '摄像头可同时识别多人并完成签到'],
   students: ['学生管理', '先拍人脸、自动查重，再录入学生信息；支持多角度样本'],
   attendance: ['考勤记录', '每名学生每天首次识别记为签到'],
-  settings: ['设置', '班级编排与基础数据设置'],
+  settings: ['设置', '摄像头管理、默认摄像头、班级编排与基础数据设置'],
   status: ['系统状态', '检查人脸引擎、数据库和部署状态']
 };
 

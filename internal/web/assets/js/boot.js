@@ -1,3 +1,4 @@
+loadCameraConfigs().catch(() => {});
 $('#attendanceDay').value = today();
 updateCameraControls();
 loadHealth();

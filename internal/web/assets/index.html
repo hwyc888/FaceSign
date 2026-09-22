@@ -34,6 +34,7 @@
           <div class="card camera-card">
             <div class="video-wrap">
               <video id="camera" autoplay playsinline muted></video>
+              <img id="cameraNetwork" class="network-camera-view hidden" alt="网络摄像头实时画面">
               <canvas id="faceOverlay" class="face-overlay"></canvas>
               <canvas id="canvas" hidden></canvas>
             </div>
@@ -41,6 +42,7 @@
               <button class="primary" id="startCamera">打开摄像头</button>
               <button id="recognize" disabled>识别并签到</button>
               <label class="switch"><input id="autoScan" type="checkbox"> 自动识别</label>
+              <span class="camera-active-name" id="checkinCameraName">浏览器默认摄像头</span>
             </div>
           </div>
           <div class="card result-card">
@@ -91,6 +93,7 @@
             <div class="capture-main">
               <div class="enroll-video-wrap">
                 <video id="enrollCamera" autoplay playsinline muted></video>
+                <img id="enrollCameraNetwork" class="network-camera-view hidden" alt="网络摄像头实时画面">
                 <div class="capture-topbar">
                   <span class="capture-state neutral" id="enrollLiveState">摄像头已关闭</span>
                   <span class="capture-angle" id="enrollAngleState">当前角度：正面</span>
@@ -103,6 +106,7 @@
                 <button id="toggleEnrollCamera" type="button">打开摄像头</button>
                 <button class="primary capture-primary" id="captureEnrollment" type="button" disabled>拍照并录入</button>
                 <button id="cancelSupplement" class="hidden" type="button">退出补充模式</button>
+                <span class="camera-active-name" id="enrollCameraName">浏览器默认摄像头</span>
               </div>
 
               <div class="capture-status neutral" id="enrollStatus">
@@ -247,7 +251,99 @@
       </section>
 
       <section class="page" id="page-settings">
-        <div class="card">
+        <div class="card camera-settings-card">
+          <div class="card-head">
+            <div>
+              <h2>摄像头管理</h2>
+              <p class="muted compact">可添加本机/USB摄像头和网络摄像头，并指定默认摄像头。签到和人脸采集会自动使用默认项。</p>
+            </div>
+            <button id="refreshLocalCameras" type="button">检测本机摄像头</button>
+          </div>
+
+          <form id="cameraForm" class="camera-form">
+            <input id="cameraEditID" type="hidden">
+            <div class="camera-form-title" id="cameraFormTitle">添加摄像头</div>
+            <label>摄像头名称
+              <input id="cameraName" maxlength="80" placeholder="例如：教室前门摄像头" required autocomplete="off">
+            </label>
+            <label>类型
+              <select id="cameraKind">
+                <option value="local">本机 / USB 摄像头</option>
+                <option value="network">网络摄像头</option>
+              </select>
+            </label>
+            <label data-camera-local>本机设备
+              <select id="cameraDevice"><option value="">系统默认摄像头</option></select>
+            </label>
+            <label data-camera-network class="hidden">网络协议
+              <select id="cameraProtocol">
+                <option value="http_snapshot">HTTP/HTTPS 单帧抓图</option>
+                <option value="mjpeg">MJPEG 视频流</option>
+                <option value="rtsp">RTSP + HTTP/HTTPS 抓图</option>
+              </select>
+            </label>
+            <label id="cameraStreamGroup" data-camera-network class="hidden">视频流地址
+              <input id="cameraStreamURL" placeholder="MJPEG 使用 http(s) 地址；RTSP 示例 rtsp://192.168.1.64/...">
+            </label>
+            <label id="cameraSnapshotGroup" data-camera-network class="hidden camera-wide">HTTP/HTTPS 抓图地址
+              <input id="cameraSnapshotURL" placeholder="例如：http://192.168.1.64/ISAPI/Streaming/channels/101/picture">
+              <small id="cameraSnapshotHelp">填写返回单张JPEG/PNG图片的HTTP/HTTPS地址。</small>
+            </label>
+            <label data-camera-network class="hidden">认证方式
+              <select id="cameraAuthMode">
+                <option value="none">无认证</option>
+                <option value="basic">Basic</option>
+                <option value="digest">Digest</option>
+              </select>
+            </label>
+            <label data-camera-network class="hidden">用户名
+              <input id="cameraUsername" autocomplete="off">
+            </label>
+            <label data-camera-network class="hidden">密码
+              <input id="cameraPassword" type="password" autocomplete="new-password" placeholder="网络摄像头密码">
+            </label>
+            <label id="cameraClearPasswordWrap" data-camera-network class="camera-check hidden">
+              <input id="cameraClearPassword" type="checkbox"> 清除已保存密码
+            </label>
+            <label>期望宽度
+              <input id="cameraWidth" type="number" min="320" max="7680" value="1280" required>
+            </label>
+            <label>期望高度
+              <input id="cameraHeight" type="number" min="240" max="4320" value="720" required>
+            </label>
+            <label>帧率
+              <input id="cameraFPS" type="number" min="1" max="60" value="30" required>
+            </label>
+            <label data-camera-network class="hidden">网络超时(ms)
+              <input id="cameraTimeout" type="number" min="500" max="30000" value="3000">
+            </label>
+            <label data-camera-network class="camera-check hidden">
+              <input id="cameraTLSInsecure" type="checkbox"> 允许自签名 HTTPS 证书
+            </label>
+            <label class="camera-check">
+              <input id="cameraDefault" type="checkbox"> 设为默认摄像头
+            </label>
+            <div class="camera-form-actions">
+              <button class="primary" id="saveCamera" type="submit">添加摄像头</button>
+              <button id="cancelCameraEdit" class="hidden" type="button">取消编辑</button>
+            </div>
+          </form>
+
+          <div class="camera-test-box">
+            <div id="cameraTestResult" class="muted">点击列表中的“测试”可验证本机设备或网络抓图。</div>
+            <img id="cameraTestPreview" class="camera-test-preview hidden" alt="摄像头测试画面">
+          </div>
+
+          <div class="table-wrap camera-table-wrap">
+            <table>
+              <thead><tr><th>名称</th><th>类型</th><th>设备 / 地址</th><th>分辨率 / 帧率</th><th>认证</th><th>操作</th></tr></thead>
+              <tbody id="camerasBody"><tr><td colspan="6" class="muted">正在读取摄像头设置...</td></tr></tbody>
+            </table>
+          </div>
+          <p class="muted camera-settings-help">网络摄像头密码只保存在 FaceSign 数据库中，接口不会把密码回传到页面。RTSP 模式用于保存码流参数，实际人脸识别通过同一摄像机的 HTTP/HTTPS 抓图接口取帧，因此不需要 Python、Docker 或 FFmpeg。</p>
+        </div>
+
+        <div class="card settings-secondary-card">
           <div class="card-head">
             <div>
               <h2>班级编排</h2>
@@ -367,6 +463,7 @@
   <script src="/js/core.js"></script>
   <script src="/js/navigation.js"></script>
   <script src="/js/camera.js"></script>
+  <script src="/js/cameras.js"></script>
   <script src="/js/seating.js"></script>
   <script src="/js/recognition.js"></script>
   <script src="/js/enrollment.js"></script>
