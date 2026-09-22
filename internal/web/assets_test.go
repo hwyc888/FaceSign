@@ -121,7 +121,7 @@ func TestStudentListSelectorsUseQuerySelectorAll(t *testing.T) {
 	}
 	script := string(data)
 	for _, selector := range []string{"data-student-seat", "data-faces"} {
-		good := "$('[" + selector + "]').forEach"
+		good := "$$('[" + selector + "]').forEach"
 		if !strings.Contains(script, good) {
 			t.Fatalf("%s querySelectorAll binding is missing", selector)
 		}
@@ -141,10 +141,10 @@ func TestSeatEditorCollectionSelectorsUseQuerySelectorAll(t *testing.T) {
 	}
 	script := string(data)
 	for _, want := range []string{
-		"$('[data-editor-seat]').forEach",
-		"$('[data-editor-student]').forEach",
-		"$('[data-editor-student-id]').forEach",
-		"$('.seat-editor-cell').forEach",
+		"$$('[data-editor-seat]').forEach",
+		"$$('[data-editor-student]').forEach",
+		"$$('[data-editor-student-id]').forEach",
+		"$$('.seat-editor-cell').forEach",
 	} {
 		if !strings.Contains(script, want) {
 			t.Fatalf("seat editor collection selector must use querySelectorAll: %s", want)

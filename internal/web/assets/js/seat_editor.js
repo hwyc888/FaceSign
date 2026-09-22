@@ -126,7 +126,7 @@ function renderClassSeatEditor() {
     clear.disabled = true;
   }
 
-  $('[data-editor-seat]').forEach(button => {
+  $$('[data-editor-seat]').forEach(button => {
     button.onclick = async () => {
       if (classSeatEditorDraggingStudentID) return;
       const targetSeatNo = Number(button.dataset.editorSeat);
@@ -211,7 +211,7 @@ function renderClassSeatEditor() {
     button.ondragend = () => {
       classSeatEditorDraggingStudentID = 0;
       button.classList.remove('dragging');
-      $('.seat-editor-cell').forEach(cell => cell.classList.remove('drag-over', 'swap-target'));
+      $$('.seat-editor-cell').forEach(cell => cell.classList.remove('drag-over', 'swap-target'));
     };
   });
 }
