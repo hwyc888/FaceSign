@@ -298,3 +298,69 @@ func TestSeatLayoutAndAttendanceBoard(t *testing.T) {
 		t.Fatalf("auto arrange count=%d err=%v", arranged, err)
 	}
 }
+
+
+func TestClassAttendanceColumnsMigrate(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "legacy-seat-class.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(`
+		CREATE TABLE students (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			student_no TEXT NOT NULL UNIQUE,
+			name TEXT NOT NULL,
+			class_name TEXT NOT NULL DEFAULT '',
+			seat_no INTEGER NOT NULL DEFAULT 0,
+			created_at INTEGER NOT NULL
+		);
+		CREATE TABLE classes (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			name TEXT NOT NULL UNIQUE,
+			sort_order INTEGER NOT NULL,
+			seat_rows INTEGER NOT NULL DEFAULT 6,
+			seats_per_row INTEGER NOT NULL DEFAULT 8,
+			created_at INTEGER NOT NULL
+		);
+		CREATE TABLE face_samples (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			student_id INTEGER NOT NULL,
+			embedding BLOB NOT NULL,
+			label TEXT NOT NULL DEFAULT '',
+			created_at INTEGER NOT NULL,
+			FOREIGN KEY(student_id) REFERENCES students(id) ON DELETE CASCADE
+		);
+		CREATE TABLE attendance (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			student_id INTEGER NOT NULL,
+			day TEXT NOT NULL,
+			checked_at INTEGER NOT NULL,
+			similarity REAL NOT NULL,
+			FOREIGN KEY(student_id) REFERENCES students(id) ON DELETE CASCADE,
+			UNIQUE(student_id, day)
+		);
+		INSERT INTO classes(name,sort_order,seat_rows,seats_per_row,created_at)
+		VALUES('旧班级',1,5,8,1);
+	`)
+	if err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	classes, err := s.ListClasses(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(classes) != 1 || classes[0].Name != "旧班级" || classes[0].LateAfter != "" || classes[0].Deadline != "" {
+		t.Fatalf("legacy class time columns were not migrated safely: %#v", classes)
+	}
+}

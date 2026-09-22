@@ -31,7 +31,7 @@ func (s *Store) MarkAttendance(ctx context.Context, student Student, similarity 
 	if err != nil {
 		return Attendance{}, false, err
 	}
-	record.CheckedAt = time.Unix(checkedAt, 0).Format("2006-01-02 15:04:05")
+	record.CheckedAt = time.Unix(checkedAt, 0).In(now.Location()).Format("2006-01-02 15:04:05")
 	return record, affected == 1, nil
 }
 
@@ -62,26 +62,33 @@ func (s *Store) ListAttendance(ctx context.Context, day string) ([]Attendance, e
 }
 
 func (s *Store) AttendanceSeatBoard(ctx context.Context, className, day string) (AttendanceBoard, error) {
+	return s.AttendanceSeatBoardAt(ctx, className, day, time.Now())
+}
+
+func (s *Store) AttendanceSeatBoardAt(ctx context.Context, className, day string, now time.Time) (AttendanceBoard, error) {
 	className = strings.TrimSpace(className)
 	if className == "" {
 		return AttendanceBoard{}, errors.New("请选择班级")
 	}
 	day = strings.TrimSpace(day)
 	if day == "" {
-		day = time.Now().Format("2006-01-02")
+		day = now.Format("2006-01-02")
 	}
-	if _, err := time.Parse("2006-01-02", day); err != nil {
+	if _, err := time.ParseInLocation("2006-01-02", day, now.Location()); err != nil {
 		return AttendanceBoard{}, errors.New("日期格式不正确")
 	}
 
 	var class Class
 	err := s.db.QueryRowContext(ctx, `
-		SELECT c.id,c.name,c.sort_order,c.seat_rows,c.seats_per_row,COUNT(s.id)
+		SELECT c.id,c.name,c.sort_order,c.seat_rows,c.seats_per_row,c.late_after,c.attendance_deadline,COUNT(s.id)
 		FROM classes c
 		LEFT JOIN students s ON TRIM(s.class_name)=c.name
 		WHERE c.name=?
-		GROUP BY c.id,c.name,c.sort_order,c.seat_rows,c.seats_per_row`, className,
-	).Scan(&class.ID, &class.Name, &class.SortOrder, &class.SeatRows, &class.SeatsPerRow, &class.StudentCount)
+		GROUP BY c.id,c.name,c.sort_order,c.seat_rows,c.seats_per_row,c.late_after,c.attendance_deadline`, className,
+	).Scan(
+		&class.ID, &class.Name, &class.SortOrder, &class.SeatRows, &class.SeatsPerRow,
+		&class.LateAfter, &class.Deadline, &class.StudentCount,
+	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return AttendanceBoard{}, errors.New("班级不存在")
 	}
@@ -89,6 +96,8 @@ func (s *Store) AttendanceSeatBoard(ctx context.Context, className, day string) 
 		return AttendanceBoard{}, err
 	}
 
+	lateTime, hasLate := classClock(day, class.LateAfter, now.Location())
+	deadlineTime, hasDeadline := classClock(day, class.Deadline, now.Location())
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT s.id,s.student_no,s.name,s.class_name,s.seat_no,
 		       CASE WHEN a.id IS NULL THEN 0 ELSE 1 END,
@@ -105,6 +114,7 @@ func (s *Store) AttendanceSeatBoard(ctx context.Context, className, day string) 
 	defer rows.Close()
 
 	board := AttendanceBoard{Day: day, Class: class, Students: make([]SeatAttendance, 0)}
+	assignedSeats := 0
 	for rows.Next() {
 		var item SeatAttendance
 		var signed int
@@ -116,12 +126,31 @@ func (s *Store) AttendanceSeatBoard(ctx context.Context, className, day string) 
 			return AttendanceBoard{}, err
 		}
 		item.Signed = signed == 1
+		if item.SeatNo > 0 {
+			assignedSeats++
+		} else {
+			board.Unassigned++
+		}
 		if item.Signed {
 			board.Signed++
-			item.CheckedAt = time.Unix(checkedAt, 0).Format("15:04:05")
-		}
-		if item.SeatNo <= 0 {
-			board.Unassigned++
+			checked := time.Unix(checkedAt, 0).In(now.Location())
+			item.CheckedAt = checked.Format("15:04:05")
+			if hasLate && checked.After(lateTime) {
+				item.Status = "late"
+				board.Late++
+			} else {
+				item.Status = "signed"
+				board.OnTime++
+			}
+		} else {
+			board.Unsigned++
+			if hasDeadline && !now.Before(deadlineTime) {
+				item.Status = "absent"
+				board.Absent++
+			} else {
+				item.Status = "waiting"
+				board.Waiting++
+			}
 		}
 		board.Students = append(board.Students, item)
 	}
@@ -129,8 +158,23 @@ func (s *Store) AttendanceSeatBoard(ctx context.Context, className, day string) 
 		return AttendanceBoard{}, err
 	}
 	board.Total = len(board.Students)
-	board.Unsigned = board.Total - board.Signed
+	capacity := class.SeatRows * class.SeatsPerRow
+	if capacity > assignedSeats {
+		board.EmptySeats = capacity - assignedSeats
+	}
 	return board, nil
+}
+
+func classClock(day, clock string, location *time.Location) (time.Time, bool) {
+	clock = strings.TrimSpace(clock)
+	if clock == "" {
+		return time.Time{}, false
+	}
+	value, err := time.ParseInLocation("2006-01-02 15:04", day+" "+clock, location)
+	if err != nil {
+		return time.Time{}, false
+	}
+	return value, true
 }
 
 func (s *Store) CountStudents(ctx context.Context) (int, error) {

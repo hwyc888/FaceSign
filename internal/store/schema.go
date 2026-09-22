@@ -27,6 +27,8 @@ func (s *Store) init(ctx context.Context) error {
             sort_order INTEGER NOT NULL,
             seat_rows INTEGER NOT NULL DEFAULT 6,
             seats_per_row INTEGER NOT NULL DEFAULT 8,
+            late_after TEXT NOT NULL DEFAULT '',
+            attendance_deadline TEXT NOT NULL DEFAULT '',
             created_at INTEGER NOT NULL
         )`,
 		`CREATE TABLE IF NOT EXISTS face_samples (
@@ -59,6 +61,12 @@ func (s *Store) init(ctx context.Context) error {
 		return err
 	}
 	if err := s.ensureColumn(ctx, "classes", "seats_per_row", "INTEGER NOT NULL DEFAULT 8"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn(ctx, "classes", "late_after", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn(ctx, "classes", "attendance_deadline", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
 	if err := s.migrateFaceSamples(ctx); err != nil {

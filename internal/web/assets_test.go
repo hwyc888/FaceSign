@@ -14,6 +14,7 @@ func TestFrontendModulesAreEmbedded(t *testing.T) {
 		"assets/js/recognition.js",
 		"assets/js/enrollment.js",
 		"assets/js/classes.js",
+		"assets/js/seat_editor.js",
 		"assets/js/students.js",
 		"assets/js/photo_import.js",
 		"assets/js/attendance.js",
@@ -30,7 +31,7 @@ func TestClassActionSelectorsUseQuerySelectorAll(t *testing.T) {
 	data, err := assets.ReadFile("assets/js/classes.js")
 	if err != nil { t.Fatal(err) }
 	script := string(data)
-	for _, selector := range []string{"up", "down", "rename", "delete"} {
+	for _, selector := range []string{"up", "down", "edit", "delete"} {
 		want := "$$('[data-class-" + selector + "]').forEach"
 		if !strings.Contains(script, want) {
 			t.Fatalf("class action selector %q must use querySelectorAll before forEach", selector)
@@ -77,9 +78,36 @@ func TestSeatBoardUI(t *testing.T) {
 		t.Fatal(err)
 	}
 	html := string(data)
-	for _, want := range []string{`id="checkinSeatBoard"`, `id="checkinSeatClass"`, `/js/seating.js`, `id="classSeatRows"`, `id="classSeatsPerRow"`} {
+	for _, want := range []string{`id="checkinSeatBoard"`, `id="checkinSeatClass"`, `/js/seating.js`, `/js/seat_editor.js`, `id="classSeatRows"`, `id="classSeatsPerRow"`, `id="classLateAfter"`, `id="classDeadline"`, `id="classSeatEditor"`, `id="seatEditorBoard"`} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("seat board UI missing %s", want)
+		}
+	}
+}
+
+
+func TestSeatBoardStatusFilters(t *testing.T) {
+	data, err := assets.ReadFile("assets/js/seating.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(data)
+	for _, want := range []string{"data-seat-filter", "signed", "late", "waiting", "absent", "empty", "filtered-out"} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("seat status filter missing %q", want)
+		}
+	}
+}
+
+func TestSeatEditorSupportsMoveAndSwap(t *testing.T) {
+	data, err := assets.ReadFile("assets/js/seat_editor.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(data)
+	for _, want := range []string{"openClassSeatEditor", "target_seat_no", "交换座位", "未编座位"} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("seat editor missing %q", want)
 		}
 	}
 }

@@ -181,6 +181,81 @@ func (s *Store) UpdateStudentSeat(ctx context.Context, id int64, seatNo int) err
 	return nil
 }
 
+
+func (s *Store) MoveStudentSeatInClass(ctx context.Context, classID, studentID int64, targetSeatNo int) (SeatMoveResult, error) {
+	if classID <= 0 || studentID <= 0 {
+		return SeatMoveResult{}, errors.New("无效的班级或学生")
+	}
+	if targetSeatNo < 0 {
+		return SeatMoveResult{}, errors.New("座位号不能小于0")
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return SeatMoveResult{}, err
+	}
+	defer tx.Rollback()
+
+	var className string
+	var seatRows, seatsPerRow int
+	if err := tx.QueryRowContext(ctx,
+		"SELECT name,seat_rows,seats_per_row FROM classes WHERE id=?", classID,
+	).Scan(&className, &seatRows, &seatsPerRow); err != nil {
+		return SeatMoveResult{}, err
+	}
+	if targetSeatNo > seatRows*seatsPerRow {
+		return SeatMoveResult{}, fmt.Errorf("目标座位号不能超过%d", seatRows*seatsPerRow)
+	}
+
+	var studentClass string
+	var sourceSeatNo int
+	if err := tx.QueryRowContext(ctx,
+		"SELECT class_name,seat_no FROM students WHERE id=?", studentID,
+	).Scan(&studentClass, &sourceSeatNo); err != nil {
+		return SeatMoveResult{}, err
+	}
+	if strings.TrimSpace(studentClass) != className {
+		return SeatMoveResult{}, errors.New("该学生不属于当前班级")
+	}
+	if sourceSeatNo == targetSeatNo {
+		return SeatMoveResult{MovedStudentID: studentID, TargetSeatNo: targetSeatNo}, tx.Commit()
+	}
+
+	var swappedStudentID int64
+	if targetSeatNo > 0 {
+		err = tx.QueryRowContext(ctx,
+			"SELECT id FROM students WHERE class_name=? AND seat_no=? AND id<>? LIMIT 1",
+			className, targetSeatNo, studentID,
+		).Scan(&swappedStudentID)
+		if err != nil && !errors.Is(err, sql.ErrNoRows) {
+			return SeatMoveResult{}, err
+		}
+		if swappedStudentID > 0 {
+			if _, err := tx.ExecContext(ctx, "UPDATE students SET seat_no=0 WHERE id=?", swappedStudentID); err != nil {
+				return SeatMoveResult{}, err
+			}
+		}
+	}
+
+	if _, err := tx.ExecContext(ctx, "UPDATE students SET seat_no=? WHERE id=?", targetSeatNo, studentID); err != nil {
+		return SeatMoveResult{}, err
+	}
+	if swappedStudentID > 0 && sourceSeatNo > 0 {
+		if _, err := tx.ExecContext(ctx, "UPDATE students SET seat_no=? WHERE id=?", sourceSeatNo, swappedStudentID); err != nil {
+			return SeatMoveResult{}, err
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return SeatMoveResult{}, err
+	}
+	return SeatMoveResult{
+		MovedStudentID:   studentID,
+		SwappedStudentID: swappedStudentID,
+		TargetSeatNo:     targetSeatNo,
+	}, nil
+}
+
 func (s *Store) DeleteStudent(ctx context.Context, id int64) error {
 	result, err := s.db.ExecContext(ctx, "DELETE FROM students WHERE id=?", id)
 	if err != nil {

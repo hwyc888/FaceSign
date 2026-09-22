@@ -1,3 +1,5 @@
+let seatBoardFilter = 'all';
+
 function renderCheckinSeatClassOptions() {
   const select = $('#checkinSeatClass');
   if (!select) return;
@@ -14,12 +16,23 @@ function renderCheckinSeatClassOptions() {
 function seatSummaryHTML(board) {
   const rate = board.total > 0 ? ((board.signed / board.total) * 100).toFixed(1) : '0.0';
   return [
-    `<span class="seat-stat"><strong>${esc(board.class.name)}</strong></span>`,
-    `<span class="seat-stat">总人数 <strong>${board.total}</strong></span>`,
-    `<span class="seat-stat signed">已签到 <strong>${board.signed}</strong></span>`,
-    `<span class="seat-stat unsigned">未签到 <strong>${board.unsigned}</strong></span>`,
-    `<span class="seat-stat">签到率 <strong>${rate}%</strong></span>`
+    `<button class="seat-stat filter ${seatBoardFilter === 'all' ? 'active' : ''}" data-seat-filter="all">全部学生 <strong>${board.total}</strong></button>`,
+    `<button class="seat-stat signed filter ${seatBoardFilter === 'signed' ? 'active' : ''}" data-seat-filter="signed">正常签到 <strong>${board.on_time || 0}</strong></button>`,
+    `<button class="seat-stat late filter ${seatBoardFilter === 'late' ? 'active' : ''}" data-seat-filter="late">迟到签到 <strong>${board.late || 0}</strong></button>`,
+    `<button class="seat-stat waiting filter ${seatBoardFilter === 'waiting' ? 'active' : ''}" data-seat-filter="waiting">待签到 <strong>${board.waiting || 0}</strong></button>`,
+    `<button class="seat-stat absent filter ${seatBoardFilter === 'absent' ? 'active' : ''}" data-seat-filter="absent">截止未签 <strong>${board.absent || 0}</strong></button>`,
+    `<button class="seat-stat empty filter ${seatBoardFilter === 'empty' ? 'active' : ''}" data-seat-filter="empty">空位 <strong>${board.empty_seats || 0}</strong></button>`,
+    `<span class="seat-stat rate">签到率 <strong>${rate}%</strong></span>`
   ].join('');
+}
+
+function attendanceStatusLabel(status, checkedAt) {
+  switch (status) {
+    case 'signed': return checkedAt ? ('正常签到 ' + checkedAt) : '正常签到';
+    case 'late': return checkedAt ? ('迟到签到 ' + checkedAt) : '迟到签到';
+    case 'absent': return '截止时间已到 · 未签到';
+    default: return '待签到';
+  }
 }
 
 function renderCheckinSeatBoard(board) {
@@ -27,6 +40,16 @@ function renderCheckinSeatBoard(board) {
   const summary = $('#checkinSeatSummary');
   const unassigned = $('#checkinSeatUnassigned');
   summary.innerHTML = seatSummaryHTML(board);
+
+  $$('[data-seat-filter]').forEach(button => {
+    button.onclick = () => {
+      seatBoardFilter = button.dataset.seatFilter || 'all';
+      applySeatBoardFilter();
+      $$('.seat-stat.filter').forEach(item =>
+        item.classList.toggle('active', item.dataset.seatFilter === seatBoardFilter)
+      );
+    };
+  });
 
   const rows = Number(board.class.seat_rows || 0);
   const perRow = Number(board.class.seats_per_row || 0);
@@ -50,16 +73,19 @@ function renderCheckinSeatBoard(board) {
       const seatNo = row * perRow + col + 1;
       const student = bySeat.get(seatNo);
       if (!student) {
-        cells.push(`<div class="seat-cell empty"><span class="seat-no">${seatNo}号</span><strong>空位</strong></div>`);
+        cells.push(`<div class="seat-cell empty" data-seat-status="empty">
+          <span class="seat-no">${seatNo}号</span>
+          <strong>空位</strong>
+          <span class="seat-status">暂无学生</span>
+        </div>`);
         continue;
       }
-      const state = student.signed ? 'signed' : 'unsigned';
-      const status = student.signed ? ('已签到 ' + esc(student.checked_at || '')) : '未签到';
-      cells.push(`<div class="seat-cell ${state}">
+      const state = student.status || (student.signed ? 'signed' : 'waiting');
+      cells.push(`<div class="seat-cell ${state}" data-seat-status="${state}">
         <span class="seat-no">${seatNo}号</span>
         <strong>${esc(student.name)}</strong>
         <span class="seat-student-no">${esc(student.student_no)}</span>
-        <span class="seat-status">${status}</span>
+        <span class="seat-status">${attendanceStatusLabel(state, esc(student.checked_at || ''))}</span>
       </div>`);
     }
     rowHTML.push(`<div class="seat-row">
@@ -67,17 +93,34 @@ function renderCheckinSeatBoard(board) {
       <div class="seat-row-cells" style="--seats-per-row:${perRow}">${cells.join('')}</div>
     </div>`);
   }
-  container.innerHTML = rowHTML.join('');
+
+  const ruleText = board.class.late_after || board.class.deadline
+    ? `迟到：${esc(board.class.late_after || '未设置')}　截止：${esc(board.class.deadline || '未设置')}`
+    : '尚未设置迟到时间和签到截止时间';
+  container.innerHTML =
+    `<div class="classroom-stage checkin-stage">讲台 / 黑板（前方）<span>${ruleText}</span></div>` +
+    rowHTML.join('');
 
   if (noSeat.length) {
-    unassigned.innerHTML = '<strong>未编座位：</strong>' + noSeat.map(student =>
-      `<span class="unassigned-chip ${student.signed ? 'signed' : 'unsigned'}">${esc(student.name)} · ${student.signed ? '已签到' : '未签到'}</span>`
-    ).join('');
+    unassigned.innerHTML = '<strong>未编座位：</strong>' + noSeat.map(student => {
+      const state = student.status || (student.signed ? 'signed' : 'waiting');
+      return `<span class="unassigned-chip ${state}" data-seat-status="${state}">
+        ${esc(student.name)} · ${attendanceStatusLabel(state, esc(student.checked_at || ''))}
+      </span>`;
+    }).join('');
     unassigned.classList.remove('hidden');
   } else {
     unassigned.classList.add('hidden');
     unassigned.innerHTML = '';
   }
+  applySeatBoardFilter();
+}
+
+function applySeatBoardFilter() {
+  $$('[data-seat-status]').forEach(item => {
+    const match = seatBoardFilter === 'all' || item.dataset.seatStatus === seatBoardFilter;
+    item.classList.toggle('filtered-out', !match);
+  });
 }
 
 async function loadCheckinSeatBoard() {
@@ -98,4 +141,12 @@ async function loadCheckinSeatBoard() {
   }
 }
 
-$('#checkinSeatClass').addEventListener('change', loadCheckinSeatBoard);
+$('#checkinSeatClass').addEventListener('change', () => {
+  seatBoardFilter = 'all';
+  loadCheckinSeatBoard();
+});
+
+setInterval(() => {
+  const select = $('#checkinSeatClass');
+  if (select && select.value) loadCheckinSeatBoard();
+}, 30000);

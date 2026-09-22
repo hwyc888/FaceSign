@@ -20,9 +20,9 @@ async function loadClasses() {
         <td>${index + 1}</td>
         <td><strong>${esc(item.name)}</strong></td>
         <td>${item.student_count} 人</td>
-        <td><input class="layout-number" data-class-rows="${item.id}" type="number" min="1" max="20" value="${item.seat_rows || 6}"></td>
-        <td><input class="layout-number" data-class-per-row="${item.id}" type="number" min="1" max="20" value="${item.seats_per_row || 8}"></td>
-        <td>${(item.seat_rows || 6) * (item.seats_per_row || 8)} 座</td>
+        <td>${item.seat_rows || 6} 排 × ${item.seats_per_row || 8} 人（${(item.seat_rows || 6) * (item.seats_per_row || 8)} 座）</td>
+        <td>${esc(item.late_after || '未设置')}</td>
+        <td>${esc(item.deadline || '未设置')}</td>
         <td>
           <div class="class-order-actions">
             <button data-class-up="${item.id}" ${index === 0 ? 'disabled' : ''}>上移</button>
@@ -30,19 +30,13 @@ async function loadClasses() {
           </div>
         </td>
         <td>
-          <div class="class-order-actions">
-            <button class="primary-soft" data-class-layout="${item.id}">保存布局</button>
-            <button data-class-arrange="${item.id}">自动顺排</button>
-          </div>
-        </td>
-        <td>
           <div class="student-actions">
-            <button data-class-rename="${item.id}">改名</button>
+            <button class="primary-soft" data-class-edit="${item.id}">编辑 / 编排</button>
             <button class="danger" data-class-delete="${item.id}">删除</button>
           </div>
         </td>
       </tr>
-    `).join('') || '<tr><td colspan="9">还没有班级，请先添加</td></tr>';
+    `).join('') || '<tr><td colspan="8">还没有班级，请先添加</td></tr>';
 
     $$('[data-class-up]').forEach(button => {
       button.onclick = () => moveClass(Number(button.dataset.classUp), 'up');
@@ -50,59 +44,10 @@ async function loadClasses() {
     $$('[data-class-down]').forEach(button => {
       button.onclick = () => moveClass(Number(button.dataset.classDown), 'down');
     });
-    $$('[data-class-layout]').forEach(button => {
-      button.onclick = async () => {
-        const id = Number(button.dataset.classLayout);
-        const rows = Number($(`[data-class-rows="${id}"]`).value);
-        const perRow = Number($(`[data-class-per-row="${id}"]`).value);
-        try {
-          await api(`/api/classes/${id}/layout`, {
-            method: 'PUT',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({seat_rows: rows, seats_per_row: perRow})
-          });
-          toast('座位布局已保存');
-          await loadClasses();
-          await loadStudents();
-          if (typeof loadCheckinSeatBoard === 'function') await loadCheckinSeatBoard();
-        } catch (e) {
-          toast(e.message);
-        }
-      };
-    });
-    $$('[data-class-arrange]').forEach(button => {
-      button.onclick = async () => {
-        const item = classesCache.find(c => Number(c.id) === Number(button.dataset.classArrange));
-        if (!item) return;
-        if (!confirm(`将“${item.name}”按学号顺序重新编为 1～${item.student_count} 号座位？现有座位号会被覆盖。`)) return;
-        try {
-          const result = await api(`/api/classes/${item.id}/arrange`, {method: 'POST'});
-          toast(`已自动编排 ${result.arranged} 名学生`);
-          await loadStudents();
-          if (typeof loadCheckinSeatBoard === 'function') await loadCheckinSeatBoard();
-        } catch (e) {
-          toast(e.message);
-        }
-      };
-    });
-    $$('[data-class-rename]').forEach(button => {
-      button.onclick = async () => {
-        const item = classesCache.find(c => Number(c.id) === Number(button.dataset.classRename));
-        if (!item) return;
-        const name = prompt('请输入新的班级名称', item.name);
-        if (name === null || name.trim() === item.name) return;
-        try {
-          await api(`/api/classes/${item.id}`, {
-            method: 'PUT',
-            headers: {'Content-Type': 'application/json'},
-            body: JSON.stringify({name: name.trim()})
-          });
-          toast('班级名称已修改，学生资料已同步更新');
-          await loadClasses();
-          await loadStudents();
-          if (typeof loadCheckinSeatBoard === 'function') await loadCheckinSeatBoard();
-        } catch (e) {
-          toast(e.message);
+    $$('[data-class-edit]').forEach(button => {
+      button.onclick = () => {
+        if (typeof openClassSeatEditor === 'function') {
+          openClassSeatEditor(Number(button.dataset.classEdit));
         }
       };
     });
@@ -114,6 +59,9 @@ async function loadClasses() {
         try {
           await api(`/api/classes/${item.id}`, {method: 'DELETE'});
           toast('班级已删除');
+          if (typeof closeClassSeatEditor === 'function' && Number(window.classSeatEditorID || 0) === Number(item.id)) {
+            closeClassSeatEditor();
+          }
           await loadClasses();
         } catch (e) {
           toast(e.message);
@@ -144,15 +92,25 @@ $('#classForm').addEventListener('submit', async e => {
   const name = input.value.trim();
   const seatRows = Number($('#classSeatRows').value);
   const seatsPerRow = Number($('#classSeatsPerRow').value);
+  const lateAfter = $('#classLateAfter').value;
+  const deadline = $('#classDeadline').value;
   if (!name) return;
   try {
     await api('/api/classes', {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({name, seat_rows: seatRows, seats_per_row: seatsPerRow})
+      body: JSON.stringify({
+        name,
+        seat_rows: seatRows,
+        seats_per_row: seatsPerRow,
+        late_after: lateAfter,
+        deadline
+      })
     });
     input.value = '';
-    toast('班级已添加');
+    $('#classLateAfter').value = '';
+    $('#classDeadline').value = '';
+    toast('班级已添加，可继续进入“编辑 / 编排”调整座位');
     await loadClasses();
   } catch (err) {
     toast(err.message);

@@ -238,3 +238,61 @@ pre{background:#0b1220;color:#d8e2f3;border-radius:12px;padding:16px;overflow:au
 .face-result.pending .face-title{color:#1d4ed8}
 .face-result.danger{border-color:#fecaca;background:#fef2f2}
 .face-result.danger .face-title{color:#b91c1c}
+
+/* Editable class seating and attendance-state filters */
+.seat-layout-form{grid-template-columns:minmax(210px,1fr) 92px 108px 132px 132px auto}
+.class-time-help{margin:-8px 0 14px}
+.seat-stat.filter{border:1px solid transparent;cursor:pointer;font-family:inherit}
+.seat-stat.filter:hover{transform:translateY(-1px)}
+.seat-stat.filter.active{box-shadow:0 0 0 2px #fff,0 0 0 4px #3b82f6;font-weight:800}
+.seat-stat.signed{background:#e8f7ee;color:#166534}
+.seat-stat.late{background:#fff1dc;color:#a54a00}
+.seat-stat.waiting{background:#eef1f5;color:#475467}
+.seat-stat.absent{background:#feeceb;color:#b42318}
+.seat-stat.empty{background:#fff;border-color:#cbd5e1;color:#667085}
+.seat-stat.rate{background:#eef4ff;color:#1d4ed8}
+.seat-dot.late{background:#f59e0b}
+.seat-dot.waiting{background:#98a2b3}
+.seat-dot.absent{background:#ef4444}
+.seat-cell.late{background:#fff4e5;border-color:#f6b94b}
+.seat-cell.waiting{background:#f3f5f7;border-color:#d0d5dd}
+.seat-cell.absent{background:#fff0ee;border-color:#f2a29a}
+.seat-cell.late .seat-status{color:#b45309}
+.seat-cell.waiting .seat-status{color:#667085}
+.seat-cell.absent .seat-status{color:#b42318}
+.seat-cell.filtered-out,.unassigned-chip.filtered-out{opacity:.13;filter:grayscale(1)}
+.unassigned-chip.late{background:#fff1dc;color:#a54a00}
+.unassigned-chip.waiting{background:#eef1f5;color:#475467}
+.unassigned-chip.absent{background:#feeceb;color:#b42318}
+.classroom-stage{display:flex;align-items:center;justify-content:center;gap:14px;padding:10px 14px;margin:4px 0 12px;border-radius:10px;background:#e8edf5;border:1px solid #cfd8e6;color:#344054;font-weight:800}
+.classroom-stage span{font-size:12px;font-weight:500;color:#667085}
+.checkin-stage{position:sticky;left:0;min-width:min(100%,760px)}
+
+.class-seat-editor{margin-top:20px;padding:18px;border:1px solid #d8e2f0;border-radius:14px;background:#fbfcfe}
+.seat-editor-settings{display:grid;grid-template-columns:minmax(180px,1fr) 90px 110px 128px 128px auto;gap:10px;align-items:end;margin:14px 0}
+.seat-editor-settings label{display:grid;gap:6px;color:#475467;font-size:13px}
+.seat-editor-toolbar{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:12px 0}
+.seat-editor-toolbar span{font-size:13px;color:#475467;padding:7px 10px;border-radius:9px;background:#eef4ff}
+.seat-editor-board{display:grid;gap:10px;overflow:auto;padding-bottom:5px}
+.seat-editor-row{display:grid;grid-template-columns:64px minmax(0,1fr);gap:10px;min-width:max-content}
+.seat-editor-row-cells{display:grid;grid-template-columns:repeat(var(--seats-per-row),minmax(112px,1fr));gap:8px;min-width:calc(var(--seats-per-row) * 112px)}
+.seat-editor-cell{min-height:86px;text-align:left;border:1px solid #d8e0ea;border-radius:11px;padding:9px;background:#fff;color:#344054;display:grid;align-content:start;gap:4px}
+.seat-editor-cell span{font-size:11px;color:#667085}
+.seat-editor-cell.occupied{background:#f5f8ff;border-color:#c9d8f5}
+.seat-editor-cell.occupied:hover{border-color:#5b8def;background:#eef4ff}
+.seat-editor-cell.empty{background:#fff;border-style:dashed;color:#98a2b3}
+.seat-editor-cell.selected{border-color:#2563eb;background:#dbeafe;box-shadow:0 0 0 2px rgba(37,99,235,.18)}
+.seat-editor-unassigned{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:12px;padding:12px;border-radius:10px;background:#f8fafc;border:1px solid #e4e9f0}
+.unassigned-student{padding:7px 10px;border-radius:999px;background:#fff}
+.unassigned-student.selected{background:#dbeafe;border-color:#2563eb;color:#1d4ed8;font-weight:700}
+
+@media(max-width:1180px){
+  .seat-layout-form,.seat-editor-settings{grid-template-columns:repeat(3,minmax(0,1fr))}
+}
+@media(max-width:760px){
+  .seat-layout-form,.seat-editor-settings{grid-template-columns:1fr 1fr}
+}
+@media(max-width:520px){
+  .seat-layout-form,.seat-editor-settings{grid-template-columns:1fr}
+  .seat-editor-row{grid-template-columns:52px minmax(0,1fr)}
+}

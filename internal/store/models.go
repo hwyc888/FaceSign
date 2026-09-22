@@ -18,6 +18,8 @@ type Class struct {
 	SortOrder    int    `json:"sort_order"`
 	SeatRows     int    `json:"seat_rows"`
 	SeatsPerRow  int    `json:"seats_per_row"`
+	LateAfter    string `json:"late_after"`
+	Deadline     string `json:"deadline"`
 	StudentCount int    `json:"student_count"`
 }
 
@@ -50,13 +52,14 @@ type Attendance struct {
 type Store struct { db *sql.DB }
 
 type SeatAttendance struct {
-	StudentID int64   `json:"student_id"`
-	StudentNo string  `json:"student_no"`
-	Name      string  `json:"name"`
-	ClassName string  `json:"class_name"`
-	SeatNo    int     `json:"seat_no"`
-	Signed    bool    `json:"signed"`
-	CheckedAt string  `json:"checked_at,omitempty"`
+	StudentID  int64   `json:"student_id"`
+	StudentNo  string  `json:"student_no"`
+	Name       string  `json:"name"`
+	ClassName  string  `json:"class_name"`
+	SeatNo     int     `json:"seat_no"`
+	Signed     bool    `json:"signed"`
+	Status     string  `json:"status"`
+	CheckedAt  string  `json:"checked_at,omitempty"`
 	Similarity float64 `json:"similarity,omitempty"`
 }
 
@@ -65,7 +68,18 @@ type AttendanceBoard struct {
 	Class      Class            `json:"class"`
 	Total      int              `json:"total"`
 	Signed     int              `json:"signed"`
+	OnTime     int              `json:"on_time"`
+	Late       int              `json:"late"`
 	Unsigned   int              `json:"unsigned"`
+	Waiting    int              `json:"waiting"`
+	Absent     int              `json:"absent"`
+	EmptySeats int              `json:"empty_seats"`
 	Unassigned int              `json:"unassigned"`
 	Students   []SeatAttendance `json:"students"`
+}
+
+type SeatMoveResult struct {
+	MovedStudentID  int64 `json:"moved_student_id"`
+	SwappedStudentID int64 `json:"swapped_student_id,omitempty"`
+	TargetSeatNo    int   `json:"target_seat_no"`
 }

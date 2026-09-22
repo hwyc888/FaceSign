@@ -16,7 +16,7 @@ FaceSign uses a small modular Go architecture. New functionality belongs in its 
 - store.go: SQLite connection lifecycle.
 - models.go: domain data structures.
 - schema.go: schema creation and migrations.
-- classes.go: class CRUD, seat layout and automatic seat arrangement.
+- classes.go: class CRUD, editable seat layout, late/deadline rules and automatic seat arrangement.
 - students.go: student operations and seat numbers.
 - faces.go: multi-angle face samples.
 - attendance.go: attendance records.
@@ -31,7 +31,7 @@ SQL stays in the store package; HTTP handlers do not execute SQL directly.
 - enrollment.go: enrollment, duplicate checking, supplemental face samples.
 - photo_import.go: ZIP photo analysis, quality gates, duplicate review and batch commit.
 - recognition.go: multi-face recognition and check-in.
-- attendance.go: attendance records and class seat-board status.
+- attendance.go: attendance records and class seat-board state classification (on-time, late, waiting, deadline-missed).
 - http_helpers.go: shared request/response helpers.
 - embed.go: embedded browser assets.
 
@@ -43,7 +43,8 @@ SQL stays in the store package; HTTP handlers do not execute SQL directly.
 - enrollment.js: first enrollment and duplicate flow.
 - classes.js: class arrangement and seat-layout UI.
 - students.js: students, editable class/seat number and face samples.
-- seating.js: real-time class seat check-in board.
+- seating.js: real-time class seat check-in board with on-time/late/waiting/absent/empty filters.
+- seat_editor.js: visual class seat editor; move students to empty seats or atomically swap occupied seats.
 - photo_import.js: ZIP photo import preview, class editing and confirmation.
 - attendance.js: attendance UI.
 - boot.js: startup.

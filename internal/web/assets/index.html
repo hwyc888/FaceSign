@@ -54,7 +54,7 @@
           <div class="card-head seat-board-head">
             <div>
               <h2>班级座位签到图</h2>
-              <p class="muted compact">按班级座位号实时显示：绿色为已签到，灰色为未签到。</p>
+              <p class="muted compact">按真实座位位置实时显示考勤状态；点击上方状态统计可直接筛选。</p>
             </div>
             <label class="seat-class-filter">班级
               <select id="checkinSeatClass"><option value="">请选择班级</option></select>
@@ -64,8 +64,10 @@
             <span class="seat-stat">请选择班级查看签到状态</span>
           </div>
           <div class="seat-legend">
-            <span><i class="seat-dot signed"></i>已签到</span>
-            <span><i class="seat-dot unsigned"></i>未签到</span>
+            <span><i class="seat-dot signed"></i>正常签到</span>
+            <span><i class="seat-dot late"></i>迟到签到</span>
+            <span><i class="seat-dot waiting"></i>待签到</span>
+            <span><i class="seat-dot absent"></i>截止未签</span>
             <span><i class="seat-dot empty"></i>空座位</span>
           </div>
           <div class="seat-board" id="checkinSeatBoard">
@@ -262,13 +264,49 @@
             <label>每排人数
               <input id="classSeatsPerRow" type="number" min="1" max="20" value="8" required>
             </label>
+            <label>迟到时间
+              <input id="classLateAfter" type="time">
+            </label>
+            <label>签到截止
+              <input id="classDeadline" type="time">
+            </label>
             <button class="primary" type="submit">添加班级</button>
           </form>
+          <p class="muted class-time-help">迟到时间、签到截止时间可以留空；设置后座位签到图才会自动区分“迟到签到”和“截止未签”。</p>
           <div class="table-wrap class-table-wrap">
             <table>
-              <thead><tr><th>顺序</th><th>班级名称</th><th>学生人数</th><th>排数</th><th>每排人数</th><th>容量</th><th>顺序</th><th>座位编排</th><th>操作</th></tr></thead>
+              <thead><tr><th>顺序</th><th>班级名称</th><th>学生人数</th><th>座位布局</th><th>迟到</th><th>截止</th><th>班级顺序</th><th>操作</th></tr></thead>
               <tbody id="classesBody"></tbody>
             </table>
+          </div>
+
+          <div class="class-seat-editor hidden" id="classSeatEditor">
+            <div class="card-head">
+              <div>
+                <h2 id="seatEditorTitle">座位编排</h2>
+                <p class="muted compact">上方是讲台。点击学生座位或“未编座位”学生，再点击目标座位即可移动；目标有人时自动交换。</p>
+              </div>
+              <button id="closeSeatEditor" type="button">关闭编排</button>
+            </div>
+
+            <form id="seatEditorSettingsForm" class="seat-editor-settings">
+              <label>班级名称<input id="seatEditorName" maxlength="40" required></label>
+              <label>排数<input id="seatEditorRows" type="number" min="1" max="20" required></label>
+              <label>每排人数<input id="seatEditorPerRow" type="number" min="1" max="20" required></label>
+              <label>迟到时间<input id="seatEditorLateAfter" type="time"></label>
+              <label>签到截止<input id="seatEditorDeadline" type="time"></label>
+              <button class="primary" type="submit">保存班级设置</button>
+            </form>
+
+            <div class="seat-editor-toolbar">
+              <button id="seatEditorAutoArrange" type="button">按学号自动顺排</button>
+              <button id="seatEditorClearSeat" type="button" disabled>清空所选学生座位</button>
+              <span id="seatEditorSelection">尚未选择学生</span>
+            </div>
+
+            <div class="classroom-stage">讲台 / 黑板（前方）</div>
+            <div class="seat-editor-board" id="seatEditorBoard"></div>
+            <div class="seat-editor-unassigned" id="seatEditorUnassigned"></div>
           </div>
         </div>
       </section>
@@ -333,6 +371,7 @@
   <script src="/js/recognition.js"></script>
   <script src="/js/enrollment.js"></script>
   <script src="/js/classes.js"></script>
+  <script src="/js/seat_editor.js"></script>
   <script src="/js/students.js"></script>
   <script src="/js/photo_import.js"></script>
   <script src="/js/attendance.js"></script>

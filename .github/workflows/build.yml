@@ -153,9 +153,10 @@ jobs:
             $classesJs = Invoke-WebRequest -Uri 'http://127.0.0.1:18082/js/classes.js' -UseBasicParsing -TimeoutSec 3
             $photoImportJs = Invoke-WebRequest -Uri 'http://127.0.0.1:18082/js/photo_import.js' -UseBasicParsing -TimeoutSec 3
             $seatingJs = Invoke-WebRequest -Uri 'http://127.0.0.1:18082/js/seating.js' -UseBasicParsing -TimeoutSec 3
-            if ($coreJs.StatusCode -ne 200 -or $enrollmentJs.Content -notmatch 'captureEnrollment' -or $classesJs.Content -notmatch 'loadClasses' -or $photoImportJs.Content -notmatch 'photoImportSessionID' -or $seatingJs.Content -notmatch 'loadCheckinSeatBoard') { throw 'FaceSign frontend module check failed' }
+            $seatEditorJs = Invoke-WebRequest -Uri 'http://127.0.0.1:18082/js/seat_editor.js' -UseBasicParsing -TimeoutSec 3
+            if ($coreJs.StatusCode -ne 200 -or $enrollmentJs.Content -notmatch 'captureEnrollment' -or $classesJs.Content -notmatch 'loadClasses' -or $photoImportJs.Content -notmatch 'photoImportSessionID' -or $seatingJs.Content -notmatch 'loadCheckinSeatBoard' -or $seatEditorJs.Content -notmatch 'openClassSeatEditor') { throw 'FaceSign frontend module check failed' }
 
-            $classOne = Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:18082/api/classes' -ContentType 'application/json' -Body '{"name":"Test","seat_rows":2,"seats_per_row":3}'
+            $classOne = Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:18082/api/classes' -ContentType 'application/json' -Body '{"name":"Test","seat_rows":2,"seats_per_row":3,"late_after":"08:05","deadline":"23:59"}'
             $classTwo = Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:18082/api/classes' -ContentType 'application/json' -Body '{"name":"Backup","seat_rows":2,"seats_per_row":3}'
             Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:18082/api/classes/$($classTwo.id)/move" -ContentType 'application/json' -Body '{"direction":"up"}' | Out-Null
             $classes = Invoke-RestMethod -Uri 'http://127.0.0.1:18082/api/classes' -TimeoutSec 3
@@ -250,7 +251,17 @@ jobs:
             $today = Get-Date -Format 'yyyy-MM-dd'
             $seatBoard = Invoke-RestMethod -Uri "http://127.0.0.1:18082/api/attendance/seats?day=$today&class_name=Test-Renamed" -TimeoutSec 3
             if ($seatBoard.total -ne 2 -or $seatBoard.signed -ne 0 -or $seatBoard.unsigned -ne 2) { throw 'Single-frame recognition must not mark attendance before liveness vote' }
-            if ($seatBoard.class.seat_rows -ne 2 -or $seatBoard.class.seats_per_row -ne 3) { throw 'Seat layout smoke test failed' }
+            if ($seatBoard.class.seat_rows -ne 2 -or $seatBoard.class.seats_per_row -ne 3 -or $seatBoard.class.late_after -ne '08:05' -or $seatBoard.class.deadline -ne '23:59') { throw 'Seat layout/rule smoke test failed' }
+
+            $swap = Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:18082/api/classes/$($classOne.id)/seats" -ContentType 'application/json' -Body (@{ student_id = $student.id; target_seat_no = 2 } | ConvertTo-Json)
+            if ($swap.swapped_student_id -ne $absentStudent.id) { throw 'Visual seat swap API did not swap occupied seats' }
+            $studentsAfterSwap = Invoke-RestMethod -Uri 'http://127.0.0.1:18082/api/students' -TimeoutSec 3
+            $amyAfterSwap = $studentsAfterSwap | Where-Object { $_.student_no -eq 'SMOKE001' } | Select-Object -First 1
+            $absentAfterSwap = $studentsAfterSwap | Where-Object { $_.student_no -eq 'SMOKE003' } | Select-Object -First 1
+            if ($amyAfterSwap.seat_no -ne 2 -or $absentAfterSwap.seat_no -ne 1) { throw 'Seat swap persistence smoke test failed' }
+
+            $settings = Invoke-RestMethod -Method Put -Uri "http://127.0.0.1:18082/api/classes/$($classOne.id)/settings" -ContentType 'application/json' -Body '{"name":"Test-Renamed","seat_rows":2,"seats_per_row":3,"late_after":"08:06","deadline":"23:58"}'
+            if ($settings.late_after -ne '08:06' -or $settings.deadline -ne '23:58') { throw 'Editable class attendance times smoke test failed' }
 
             $unknownPhoto = Join-Path $env:RUNNER_TEMP 'howard.jpg'
             Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/leandroveronezi/go-onnxface/main/examples/fotos/howard.jpg' -OutFile $unknownPhoto -UseBasicParsing

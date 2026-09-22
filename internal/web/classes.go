@@ -22,12 +22,16 @@ func (s *Server) classes(w http.ResponseWriter, r *http.Request) {
 			Name        string `json:"name"`
 			SeatRows    int    `json:"seat_rows"`
 			SeatsPerRow int    `json:"seats_per_row"`
+			LateAfter   string `json:"late_after"`
+			Deadline    string `json:"deadline"`
 		}
 		if err := decodeJSON(r, &in); err != nil {
 			writeError(w, http.StatusBadRequest, err)
 			return
 		}
-		item, err := s.store.CreateClassWithLayout(r.Context(), in.Name, in.SeatRows, in.SeatsPerRow)
+		item, err := s.store.CreateClassWithSettings(
+			r.Context(), in.Name, in.SeatRows, in.SeatsPerRow, in.LateAfter, in.Deadline,
+		)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err)
 			return
@@ -121,6 +125,29 @@ func (s *Server) classAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if len(parts) == 2 && parts[1] == "settings" && r.Method == http.MethodPut {
+		var in struct {
+			Name        string `json:"name"`
+			SeatRows    int    `json:"seat_rows"`
+			SeatsPerRow int    `json:"seats_per_row"`
+			LateAfter   string `json:"late_after"`
+			Deadline    string `json:"deadline"`
+		}
+		if err := decodeJSON(r, &in); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		item, err := s.store.UpdateClassSettings(
+			r.Context(), id, in.Name, in.SeatRows, in.SeatsPerRow, in.LateAfter, in.Deadline,
+		)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, item)
+		return
+	}
+
 	if len(parts) == 2 && parts[1] == "arrange" && r.Method == http.MethodPost {
 		count, err := s.store.AutoArrangeSeats(r.Context(), id)
 		if err != nil {
@@ -128,6 +155,24 @@ func (s *Server) classAction(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "arranged": count})
+		return
+	}
+
+	if len(parts) == 2 && parts[1] == "seats" && r.Method == http.MethodPost {
+		var in struct {
+			StudentID    int64 `json:"student_id"`
+			TargetSeatNo int   `json:"target_seat_no"`
+		}
+		if err := decodeJSON(r, &in); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		result, err := s.store.MoveStudentSeatInClass(r.Context(), id, in.StudentID, in.TargetSeatNo)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, result)
 		return
 	}
 
