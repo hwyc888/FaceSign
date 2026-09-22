@@ -467,7 +467,50 @@
       <div class="duplicate-card" id="duplicateInfo"></div>
       <div class="modal-actions">
         <button data-close="duplicateModal" type="button">关闭</button>
+        <button id="duplicateUpdateProfile" type="button">更新学生资料</button>
         <button class="primary" id="duplicateViewSamples" type="button">查看该学生人脸样本</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop hidden" id="duplicateUpdateModal">
+    <div class="modal">
+      <div class="modal-head">
+        <div>
+          <h2>更新学生资料</h2>
+          <p>修改后不会立即写入。下一步会先列出与原资料的差别，由你确认是否更新。</p>
+        </div>
+        <button class="icon-button" data-close="duplicateUpdateModal" type="button">×</button>
+      </div>
+      <form id="duplicateUpdateForm" class="form">
+        <label>学号<input id="duplicateUpdateStudentNo" required autocomplete="off"></label>
+        <label>姓名<input id="duplicateUpdateName" required autocomplete="off"></label>
+        <label>班级
+          <select id="duplicateUpdateClassName" required></select>
+        </label>
+        <div class="modal-actions">
+          <button data-close="duplicateUpdateModal" type="button">取消</button>
+          <button class="primary" type="submit">检查差异</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-backdrop hidden" id="duplicateDiffModal">
+    <div class="modal">
+      <div class="modal-head">
+        <div>
+          <h2>确认资料差异</h2>
+          <p>以下内容只有在点击“确认更新”后才会写入。</p>
+        </div>
+        <button class="icon-button" data-close="duplicateDiffModal" type="button">×</button>
+      </div>
+      <div class="profile-diff-list" id="duplicateDiffList"></div>
+      <div class="profile-diff-warning hidden" id="duplicateDiffWarning"></div>
+      <div class="modal-actions">
+        <button id="duplicateBackToEdit" type="button">返回修改</button>
+        <button id="duplicateKeepOriginal" type="button">不更新</button>
+        <button class="primary" id="duplicateConfirmUpdate" type="button">确认更新</button>
       </div>
     </div>
   </div>

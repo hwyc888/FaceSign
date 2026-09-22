@@ -21,6 +21,146 @@ $('#duplicateViewSamples').addEventListener('click', async () => {
   await openSamplesPanel(duplicateStudent.id);
 });
 
+let pendingDuplicateProfileUpdate = null;
+
+function duplicateProfileClassOptions(selected) {
+  return classesCache.map(item =>
+    '<option value="' + esc(item.name) + '" ' + (item.name === selected ? 'selected' : '') + '>' + esc(item.name) + '</option>'
+  ).join('');
+}
+
+function duplicateProfileChanges(next) {
+  if (!duplicateStudent) return [];
+  const fields = [
+    ['学号', duplicateStudent.student_no || '', next.student_no],
+    ['姓名', duplicateStudent.name || '', next.name],
+    ['班级', duplicateStudent.class_name || '', next.class_name]
+  ];
+  const changes = fields
+    .filter(([, oldValue, newValue]) => String(oldValue).trim() !== String(newValue).trim())
+    .map(([label, oldValue, newValue]) => ({label, oldValue: String(oldValue || '-'), newValue: String(newValue || '-')}));
+  if (
+    String(duplicateStudent.class_name || '').trim() !== String(next.class_name || '').trim() &&
+    Number(duplicateStudent.seat_no || 0) > 0
+  ) {
+    changes.push({
+      label: '座位号',
+      oldValue: String(duplicateStudent.seat_no),
+      newValue: '未编排（跨班自动清空）',
+      consequence: true
+    });
+  }
+  return changes;
+}
+
+$('#duplicateUpdateProfile').addEventListener('click', async () => {
+  if (!duplicateStudent) return;
+  try {
+    await loadClasses();
+    $('#duplicateUpdateStudentNo').value = duplicateStudent.student_no || '';
+    $('#duplicateUpdateName').value = duplicateStudent.name || '';
+    $('#duplicateUpdateClassName').innerHTML = duplicateProfileClassOptions(duplicateStudent.class_name || '');
+    pendingDuplicateProfileUpdate = null;
+    closeModal('duplicateModal');
+    openModal('duplicateUpdateModal');
+    setTimeout(() => $('#duplicateUpdateStudentNo').focus(), 50);
+  } catch (e) {
+    toast(e.message);
+  }
+});
+
+$('#duplicateUpdateForm').addEventListener('submit', e => {
+  e.preventDefault();
+  if (!duplicateStudent) return;
+  const next = {
+    student_no: $('#duplicateUpdateStudentNo').value.trim(),
+    name: $('#duplicateUpdateName').value.trim(),
+    class_name: $('#duplicateUpdateClassName').value.trim()
+  };
+  if (!next.student_no || !next.name || !next.class_name) {
+    toast('学号、姓名和班级都不能为空');
+    return;
+  }
+
+  const changes = duplicateProfileChanges(next);
+  if (!changes.length) {
+    pendingDuplicateProfileUpdate = null;
+    setEnrollmentStatus('资料无需更新', '本次填写内容与系统中原资料完全一致。', 'neutral');
+    toast('资料与原记录一致，无需更新');
+    closeModal('duplicateUpdateModal');
+    return;
+  }
+
+  pendingDuplicateProfileUpdate = {...next, changes};
+  $('#duplicateDiffList').innerHTML = changes.map(change => `
+    <div class="profile-diff-row ${change.consequence ? 'consequence' : ''}">
+      <strong>${esc(change.label)}</strong>
+      <span class="profile-diff-old">${esc(change.oldValue)}</span>
+      <span class="profile-diff-arrow">→</span>
+      <span class="profile-diff-new">${esc(change.newValue)}</span>
+    </div>
+  `).join('');
+  const classChanged = String(duplicateStudent.class_name || '').trim() !== next.class_name;
+  const warning = $('#duplicateDiffWarning');
+  warning.classList.toggle('hidden', !classChanged);
+  warning.textContent = classChanged ? '班级发生变化时，原座位号会自动清空，需要到班级编排中重新安排座位。' : '';
+  closeModal('duplicateUpdateModal');
+  openModal('duplicateDiffModal');
+});
+
+$('#duplicateBackToEdit').addEventListener('click', () => {
+  closeModal('duplicateDiffModal');
+  openModal('duplicateUpdateModal');
+});
+
+$('#duplicateKeepOriginal').addEventListener('click', () => {
+  pendingDuplicateProfileUpdate = null;
+  closeModal('duplicateDiffModal');
+  setEnrollmentStatus('资料保持不变', '已选择不更新，系统继续保留原学生资料。', 'neutral');
+  toast('已保留原学生资料');
+});
+
+$('#duplicateConfirmUpdate').addEventListener('click', async () => {
+  if (!duplicateStudent || !pendingDuplicateProfileUpdate) return;
+  const button = $('#duplicateConfirmUpdate');
+  button.disabled = true;
+  try {
+    const result = await api('/api/students/' + duplicateStudent.id, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        student_no: pendingDuplicateProfileUpdate.student_no,
+        name: pendingDuplicateProfileUpdate.name,
+        class_name: pendingDuplicateProfileUpdate.class_name
+      })
+    });
+    const updated = result.student || {
+      ...duplicateStudent,
+      student_no: pendingDuplicateProfileUpdate.student_no,
+      name: pendingDuplicateProfileUpdate.name,
+      class_name: pendingDuplicateProfileUpdate.class_name,
+      seat_no: duplicateStudent.class_name === pendingDuplicateProfileUpdate.class_name ? duplicateStudent.seat_no : 0
+    };
+    const changedCount = pendingDuplicateProfileUpdate.changes.filter(change => !change.consequence).length;
+    duplicateStudent = updated;
+    pendingDuplicateProfileUpdate = null;
+    closeModal('duplicateDiffModal');
+    setEnrollmentStatus('学生资料已更新', '已确认并保存 ' + changedCount + ' 项资料变更。', 'success');
+    toast('学生资料已更新');
+    await loadStudents();
+    if (samplesStudent && Number(samplesStudent.id) === Number(updated.id)) {
+      samplesStudent = updated;
+      $('#sampleStudentName').textContent = updated.name;
+      $('#sampleStudentNo').textContent = updated.student_no;
+      $('#sampleStudentClass').textContent = updated.class_name || '-';
+    }
+  } catch (e) {
+    toast(e.message);
+  } finally {
+    button.disabled = false;
+  }
+});
+
 function setEnrollmentStatus(title, detail, tone = 'neutral') {
   const box = $('#enrollStatus');
   if (!box) return;

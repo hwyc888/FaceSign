@@ -115,6 +115,66 @@ func (s *Store) ListStudents(ctx context.Context) ([]Student, error) {
 	return out, rows.Err()
 }
 
+func (s *Store) StudentByID(ctx context.Context, id int64) (Student, error) {
+	if id <= 0 {
+		return Student{}, errors.New("invalid student id")
+	}
+	var student Student
+	err := s.db.QueryRowContext(ctx, `
+		SELECT s.id,s.student_no,s.name,s.class_name,s.seat_no,COUNT(f.id)
+		FROM students s
+		LEFT JOIN face_samples f ON f.student_id=s.id
+		WHERE s.id=?
+		GROUP BY s.id,s.student_no,s.name,s.class_name,s.seat_no`, id).
+		Scan(&student.ID, &student.StudentNo, &student.Name, &student.ClassName, &student.SeatNo, &student.FaceCount)
+	if err != nil {
+		return Student{}, err
+	}
+	student.HasFace = student.FaceCount > 0
+	return student, nil
+}
+
+func (s *Store) UpdateStudentProfile(ctx context.Context, id int64, studentNo, name, className string) (Student, error) {
+	if id <= 0 {
+		return Student{}, errors.New("invalid student id")
+	}
+	studentNo = strings.TrimSpace(studentNo)
+	name = strings.TrimSpace(name)
+	className = strings.TrimSpace(className)
+	if studentNo == "" {
+		return Student{}, errors.New("学号不能为空")
+	}
+	if name == "" {
+		return Student{}, errors.New("姓名不能为空")
+	}
+	if className == "" {
+		return Student{}, errors.New("班级不能为空")
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return Student{}, err
+	}
+	defer tx.Rollback()
+
+	var currentClass string
+	if err := tx.QueryRowContext(ctx, "SELECT class_name FROM students WHERE id=?", id).Scan(&currentClass); err != nil {
+		return Student{}, err
+	}
+	seatExpr := "seat_no"
+	if strings.TrimSpace(currentClass) != className {
+		seatExpr = "0"
+	}
+	query := "UPDATE students SET student_no=?,name=?,class_name=?,seat_no=" + seatExpr + " WHERE id=?"
+	if _, err := tx.ExecContext(ctx, query, studentNo, name, className, id); err != nil {
+		return Student{}, fmt.Errorf("update student: %w", err)
+	}
+	if err := tx.Commit(); err != nil {
+		return Student{}, err
+	}
+	return s.StudentByID(ctx, id)
+}
+
 func (s *Store) UpdateStudentClass(ctx context.Context, id int64, className string) error {
 	if id <= 0 {
 		return errors.New("invalid student id")

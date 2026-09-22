@@ -60,6 +60,8 @@ func (s *Server) studentAction(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 		case http.MethodPut:
 			var in struct {
+				StudentNo *string `json:"student_no"`
+				Name      *string `json:"name"`
 				ClassName *string `json:"class_name"`
 				SeatNo    *int    `json:"seat_no"`
 			}
@@ -67,11 +69,46 @@ func (s *Server) studentAction(w http.ResponseWriter, r *http.Request) {
 				writeError(w, http.StatusBadRequest, err)
 				return
 			}
-			if in.ClassName == nil && in.SeatNo == nil {
+			if in.StudentNo == nil && in.Name == nil && in.ClassName == nil && in.SeatNo == nil {
 				writeError(w, http.StatusBadRequest, errors.New("没有需要修改的学生资料"))
 				return
 			}
-			if in.ClassName != nil {
+
+			var updated *store.Student
+			if in.StudentNo != nil || in.Name != nil {
+				current, err := s.store.StudentByID(r.Context(), studentID)
+				if err != nil {
+					writeError(w, http.StatusNotFound, err)
+					return
+				}
+				studentNo := current.StudentNo
+				name := current.Name
+				className := current.ClassName
+				if in.StudentNo != nil {
+					studentNo = strings.TrimSpace(*in.StudentNo)
+				}
+				if in.Name != nil {
+					name = strings.TrimSpace(*in.Name)
+				}
+				if in.ClassName != nil {
+					className = strings.TrimSpace(*in.ClassName)
+				}
+				exists, err := s.store.ClassExists(r.Context(), className)
+				if err != nil {
+					writeError(w, http.StatusInternalServerError, err)
+					return
+				}
+				if !exists {
+					writeError(w, http.StatusBadRequest, errors.New("请选择设置中已经建立的班级"))
+					return
+				}
+				student, err := s.store.UpdateStudentProfile(r.Context(), studentID, studentNo, name, className)
+				if err != nil {
+					writeError(w, http.StatusBadRequest, friendlyStudentError(err))
+					return
+				}
+				updated = &student
+			} else if in.ClassName != nil {
 				className := strings.TrimSpace(*in.ClassName)
 				exists, err := s.store.ClassExists(r.Context(), className)
 				if err != nil {
@@ -87,13 +124,25 @@ func (s *Server) studentAction(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 			}
+
 			if in.SeatNo != nil {
 				if err := s.store.UpdateStudentSeat(r.Context(), studentID, *in.SeatNo); err != nil {
 					writeError(w, http.StatusBadRequest, err)
 					return
 				}
 			}
-			writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+
+			response := map[string]any{"ok": true}
+			if updated != nil {
+				if in.SeatNo != nil {
+					refreshed, err := s.store.StudentByID(r.Context(), studentID)
+					if err == nil {
+						*updated = refreshed
+					}
+				}
+				response["student"] = *updated
+			}
+			writeJSON(w, http.StatusOK, response)
 		default:
 			methodNotAllowed(w)
 		}

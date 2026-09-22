@@ -281,3 +281,43 @@ func TestEnrollmentFaceGuideCanBeMoved(t *testing.T) {
 		}
 	}
 }
+
+
+func TestDuplicateEnrollmentSupportsProfileUpdateReview(t *testing.T) {
+	htmlData, err := assets.ReadFile("assets/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	html := string(htmlData)
+	for _, want := range []string{
+		`id="duplicateUpdateProfile"`,
+		`id="duplicateUpdateModal"`,
+		`id="duplicateUpdateForm"`,
+		`id="duplicateDiffModal"`,
+		`id="duplicateDiffList"`,
+		`id="duplicateConfirmUpdate"`,
+		`id="duplicateKeepOriginal"`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("duplicate profile update UI missing %s", want)
+		}
+	}
+
+	jsData, err := assets.ReadFile("assets/js/enrollment.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(jsData)
+	for _, want := range []string{
+		"duplicateProfileChanges",
+		"资料与原记录一致，无需更新",
+		"跨班自动清空",
+		"pendingDuplicateProfileUpdate",
+		"method: 'PUT'",
+		"确认并保存",
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("duplicate profile update flow missing %q", want)
+		}
+	}
+}

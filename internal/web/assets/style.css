@@ -339,3 +339,13 @@ pre{background:#0b1220;color:#d8e2f3;border-radius:12px;padding:16px;overflow:au
 .camera-agent-online,.camera-agent-offline{display:inline-block;padding:3px 8px;border-radius:999px;font-size:11px;font-weight:800}
 .camera-agent-online{background:#e8f7ee;color:#166534}
 .camera-agent-offline{background:#f2f4f7;color:#667085}
+
+.profile-diff-list{display:grid;gap:10px}
+.profile-diff-row{display:grid;grid-template-columns:72px minmax(0,1fr) 28px minmax(0,1fr);gap:8px;align-items:center;padding:12px;border:1px solid #e4e8f0;border-radius:10px;background:#fbfcfe}
+.profile-diff-row strong{color:#344054}
+.profile-diff-old{color:#667085;text-decoration:line-through;overflow-wrap:anywhere}
+.profile-diff-arrow{text-align:center;color:#98a2b3;font-weight:800}
+.profile-diff-new{color:#166534;font-weight:750;overflow-wrap:anywhere}
+.profile-diff-row.consequence{border-color:#f0c36a;background:#fff9eb}
+.profile-diff-warning{margin-top:12px;padding:11px 12px;border-radius:10px;border:1px solid #f0c36a;background:#fff9eb;color:#8a4b08;font-size:13px;line-height:1.5}
+@media(max-width:620px){.profile-diff-row{grid-template-columns:64px 1fr}.profile-diff-arrow{display:none}.profile-diff-new{grid-column:2}}

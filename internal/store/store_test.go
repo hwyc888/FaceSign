@@ -214,6 +214,45 @@ func TestExistingStudentClassesAreImported(t *testing.T) {
 }
 
 
+func TestUpdateStudentProfileAndDuplicateStudentNo(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "update-profile.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+
+	classA, err := s.CreateClassWithLayout(ctx, "原班级", 2, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateClassWithLayout(ctx, "新班级", 2, 3); err != nil {
+		t.Fatal(err)
+	}
+	first, err := s.CreateStudent(ctx, "P001", "原姓名", classA.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpdateStudentSeat(ctx, first.ID, 2); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := s.CreateStudent(ctx, "P002", "其他学生", classA.Name); err != nil {
+		t.Fatal(err)
+	}
+
+	updated, err := s.UpdateStudentProfile(ctx, first.ID, "P009", "新姓名", "新班级")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated.StudentNo != "P009" || updated.Name != "新姓名" || updated.ClassName != "新班级" || updated.SeatNo != 0 {
+		t.Fatalf("unexpected updated student: %#v", updated)
+	}
+
+	if _, err := s.UpdateStudentProfile(ctx, first.ID, "P002", "新姓名", "新班级"); err == nil {
+		t.Fatal("expected duplicate student number update to fail")
+	}
+}
+
 func TestUpdateStudentClass(t *testing.T) {
 	s, err := Open(filepath.Join(t.TempDir(), "update-class.db"))
 	if err != nil {
