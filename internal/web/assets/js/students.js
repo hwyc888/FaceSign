@@ -52,7 +52,7 @@ async function loadStudents() {
       };
     });
 
-    $('[data-student-seat]').forEach(input => {
+    $$('[data-student-seat]').forEach(input => {
       input.onchange = async () => {
         const studentID = Number(input.dataset.studentSeat);
         const student = studentsCache.find(s => Number(s.id) === studentID);
@@ -75,7 +75,7 @@ async function loadStudents() {
       };
     });
 
-    $('[data-faces]').forEach(button => {
+    $$('[data-faces]').forEach(button => {
       button.onclick = () => openSamplesPanel(Number(button.dataset.faces));
     });
     $$('[data-del]').forEach(button => {
