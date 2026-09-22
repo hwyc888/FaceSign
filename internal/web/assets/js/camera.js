@@ -144,7 +144,7 @@ async function startCamera() {
       liveState.className = 'capture-state ready';
     }
     const faceHint = $('#enrollFaceHint');
-    if (faceHint) faceHint.textContent = '请将脸部完整放入引导框';
+    if (faceHint) faceHint.textContent = '拖动圆圈调整位置，将脸部完整放入引导框；双击可恢复居中';
     if (typeof setEnrollmentStatus === 'function') {
       setEnrollmentStatus(
         supplementStudent ? '准备补充样本' : '摄像头已就绪',

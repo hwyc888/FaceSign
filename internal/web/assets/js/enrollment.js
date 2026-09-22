@@ -129,3 +129,120 @@ $('#studentInfoForm').addEventListener('submit', async e => {
     toast(e2.message);
   }
 });
+
+
+const enrollmentFaceGuidePosition = {x: 50, y: 50};
+
+function enrollmentFaceGuideBounds() {
+  const guide = $('#enrollFaceGuide');
+  const wrap = guide?.closest('.enroll-video-wrap');
+  if (!guide || !wrap) return null;
+  const wrapRect = wrap.getBoundingClientRect();
+  if (!wrapRect.width || !wrapRect.height) return null;
+  const guideRect = guide.getBoundingClientRect();
+  return {
+    minX: (guideRect.width / wrapRect.width) * 50,
+    maxX: 100 - (guideRect.width / wrapRect.width) * 50,
+    minY: (guideRect.height / wrapRect.height) * 50,
+    maxY: 100 - (guideRect.height / wrapRect.height) * 50,
+    width: wrapRect.width,
+    height: wrapRect.height
+  };
+}
+
+function setEnrollmentFaceGuidePosition(x, y) {
+  const guide = $('#enrollFaceGuide');
+  const bounds = enrollmentFaceGuideBounds();
+  if (!guide || !bounds) return;
+  enrollmentFaceGuidePosition.x = Math.max(bounds.minX, Math.min(bounds.maxX, Number(x) || 50));
+  enrollmentFaceGuidePosition.y = Math.max(bounds.minY, Math.min(bounds.maxY, Number(y) || 50));
+  guide.style.left = enrollmentFaceGuidePosition.x + '%';
+  guide.style.top = enrollmentFaceGuidePosition.y + '%';
+}
+
+function resetEnrollmentFaceGuide(showToast = false) {
+  setEnrollmentFaceGuidePosition(50, 50);
+  if (showToast) toast('人脸引导框已恢复居中');
+}
+
+function initializeEnrollmentFaceGuide() {
+  const guide = $('#enrollFaceGuide');
+  if (!guide || guide.dataset.dragReady === '1') return;
+  guide.dataset.dragReady = '1';
+
+  let drag = null;
+
+  guide.addEventListener('pointerdown', event => {
+    if (event.button !== undefined && event.button !== 0) return;
+    const bounds = enrollmentFaceGuideBounds();
+    if (!bounds) return;
+    drag = {
+      pointerId: event.pointerId,
+      startClientX: event.clientX,
+      startClientY: event.clientY,
+      startX: enrollmentFaceGuidePosition.x,
+      startY: enrollmentFaceGuidePosition.y,
+      width: bounds.width,
+      height: bounds.height
+    };
+    guide.classList.add('dragging');
+    guide.focus({preventScroll: true});
+    if (guide.setPointerCapture) guide.setPointerCapture(event.pointerId);
+    event.preventDefault();
+  });
+
+  guide.addEventListener('pointermove', event => {
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    const nextX = drag.startX + ((event.clientX - drag.startClientX) / drag.width) * 100;
+    const nextY = drag.startY + ((event.clientY - drag.startClientY) / drag.height) * 100;
+    setEnrollmentFaceGuidePosition(nextX, nextY);
+    event.preventDefault();
+  });
+
+  const finishDrag = event => {
+    if (!drag || (event.pointerId !== undefined && event.pointerId !== drag.pointerId)) return;
+    if (guide.releasePointerCapture && guide.hasPointerCapture?.(drag.pointerId)) {
+      guide.releasePointerCapture(drag.pointerId);
+    }
+    drag = null;
+    guide.classList.remove('dragging');
+  };
+
+  guide.addEventListener('pointerup', finishDrag);
+  guide.addEventListener('pointercancel', finishDrag);
+  guide.addEventListener('lostpointercapture', () => {
+    drag = null;
+    guide.classList.remove('dragging');
+  });
+
+  guide.addEventListener('dblclick', event => {
+    resetEnrollmentFaceGuide(true);
+    event.preventDefault();
+  });
+
+  guide.addEventListener('keydown', event => {
+    if (event.key === 'Home') {
+      resetEnrollmentFaceGuide(true);
+      event.preventDefault();
+      return;
+    }
+    const step = event.shiftKey ? 4 : 1;
+    let x = enrollmentFaceGuidePosition.x;
+    let y = enrollmentFaceGuidePosition.y;
+    if (event.key === 'ArrowLeft') x -= step;
+    else if (event.key === 'ArrowRight') x += step;
+    else if (event.key === 'ArrowUp') y -= step;
+    else if (event.key === 'ArrowDown') y += step;
+    else return;
+    setEnrollmentFaceGuidePosition(x, y);
+    event.preventDefault();
+  });
+
+  window.addEventListener('resize', () => {
+    setEnrollmentFaceGuidePosition(enrollmentFaceGuidePosition.x, enrollmentFaceGuidePosition.y);
+  });
+
+  resetEnrollmentFaceGuide(false);
+}
+
+initializeEnrollmentFaceGuide();

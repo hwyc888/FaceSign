@@ -225,3 +225,59 @@ func TestCameraFrontendSupportsLocalAndNetworkSources(t *testing.T) {
 		}
 	}
 }
+
+
+func TestEnrollmentFaceGuideCanBeMoved(t *testing.T) {
+	htmlData, err := assets.ReadFile("assets/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	html := string(htmlData)
+	for _, want := range []string{
+		`id="enrollFaceGuide"`,
+		`tabindex="0"`,
+		`Home键恢复居中`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("movable enrollment guide UI missing %s", want)
+		}
+	}
+
+	jsData, err := assets.ReadFile("assets/js/enrollment.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(jsData)
+	for _, want := range []string{
+		"pointerdown",
+		"pointermove",
+		"setPointerCapture",
+		"pointerup",
+		"dblclick",
+		"ArrowLeft",
+		"ArrowRight",
+		"ArrowUp",
+		"ArrowDown",
+		"resetEnrollmentFaceGuide",
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("movable enrollment guide logic missing %q", want)
+		}
+	}
+
+	cssData, err := assets.ReadFile("assets/style.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	css := string(cssData)
+	for _, want := range []string{
+		".face-guide.dragging",
+		"pointer-events:auto",
+		"touch-action:none",
+		"cursor:grab",
+	} {
+		if !strings.Contains(css, want) {
+			t.Fatalf("movable enrollment guide style missing %q", want)
+		}
+	}
+}
