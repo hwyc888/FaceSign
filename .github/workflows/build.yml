@@ -110,7 +110,16 @@ jobs:
           if ($onnxFiles.Count -ne 3) { throw "Program package must contain exactly 3 ONNX model files, got $($onnxFiles.Count)" }
           $checksums = Get-Content 'models\SHA256SUMS'
           foreach ($line in $checksums) {
-            if ($line -notmatch '^([0-9a-f]{64})\s+(.+)
+            if ($line -notmatch '^([0-9a-f]{64})\s+(.+)$') { throw "Invalid model checksum line: $line" }
+            $expected = $matches[1].ToUpperInvariant()
+            $sourcePath = Join-Path 'models' $matches[2]
+            $packagedPath = Join-Path 'dist\models' $matches[2]
+            $sourceActual = (Get-FileHash $sourcePath -Algorithm SHA256).Hash
+            $packagedActual = (Get-FileHash $packagedPath -Algorithm SHA256).Hash
+            if ($sourceActual -ne $expected) { throw "Source model checksum mismatch: $sourcePath" }
+            if ($packagedActual -ne $expected) { throw "Packaged model checksum mismatch: $packagedPath" }
+          }
+
       - name: Smoke test recognition
         shell: pwsh
         run: |
