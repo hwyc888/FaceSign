@@ -3,6 +3,7 @@
 package main
 
 import (
+	"context"
 	"crypto/x509"
 	"encoding/csv"
 	"encoding/pem"
@@ -15,6 +16,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 	"unsafe"
@@ -23,10 +25,11 @@ import (
 const (
 	taskName = "FaceSign"
 
-	wmCreate  = 0x0001
-	wmDestroy = 0x0002
-	wmCommand = 0x0111
-	wmSetFont = 0x0030
+	wmCreate     = 0x0001
+	wmDestroy    = 0x0002
+	wmCommand    = 0x0111
+	wmSetFont    = 0x0030
+	wmAsyncDone  = 0x8001
 
 	wsVisible      = 0x10000000
 	wsChild        = 0x40000000
@@ -61,6 +64,10 @@ var (
 	installDirFlag string
 	mainWindow     syscall.Handle
 	statusBox      syscall.Handle
+	actionButtons  = make(map[int]syscall.Handle)
+	asyncBusy      bool
+	asyncResultMu  sync.Mutex
+	asyncResult    *uiActionResult
 
 	user32   = syscall.NewLazyDLL("user32.dll")
 	kernel32 = syscall.NewLazyDLL("kernel32.dll")
@@ -82,6 +89,8 @@ var (
 	procLoadCursorW      = user32.NewProc("LoadCursorW")
 	procGetSystemMetrics = user32.NewProc("GetSystemMetrics")
 	procDestroyWindow    = user32.NewProc("DestroyWindow")
+	procPostMessageW     = user32.NewProc("PostMessageW")
+	procEnableWindow     = user32.NewProc("EnableWindow")
 
 	procGetModuleHandleW = kernel32.NewProc("GetModuleHandleW")
 	procGetStockObject   = gdi32.NewProc("GetStockObject")
@@ -124,6 +133,12 @@ type startupInfo struct {
 	HTTPSListen string
 	URL         string
 	RootCA      string
+}
+
+type uiActionResult struct {
+	Name   string
+	Status string
+	Err    error
 }
 
 func main() {
@@ -247,20 +262,20 @@ func windowProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 	switch message {
 	case wmCreate:
 		createControls(syscall.Handle(hwnd))
-		refreshStatus()
+		beginAsyncUIAction("读取服务状态", nil)
 		return 0
 	case wmCommand:
 		switch int(wParam & 0xffff) {
 		case idStart:
-			runUIAction("启动 FaceSign", startFaceSign)
+			beginAsyncUIAction("启动 FaceSign", startFaceSign)
 		case idStop:
-			runUIAction("停止 FaceSign", stopFaceSign)
+			beginAsyncUIAction("停止 FaceSign", stopFaceSign)
 		case idRestart:
-			runUIAction("重启 FaceSign", restartFaceSign)
+			beginAsyncUIAction("重启 FaceSign", restartFaceSign)
 		case idEnableStartup:
-			runUIAction("开启开机启动", enableStartup)
+			beginAsyncUIAction("开启开机启动", enableStartup)
 		case idDisableStartup:
-			runUIAction("关闭开机启动", disableStartup)
+			beginAsyncUIAction("关闭开机启动", disableStartup)
 		case idOpenWeb:
 			if err := openWeb(); err != nil {
 				showError(err)
@@ -274,10 +289,13 @@ func windowProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 				showError(err)
 			}
 		case idRefresh:
-			refreshStatus()
+			beginAsyncUIAction("刷新状态", nil)
 		case idExit:
 			procDestroyWindow.Call(hwnd)
 		}
+		return 0
+	case wmAsyncDone:
+		finishAsyncUIAction()
 		return 0
 	case wmDestroy:
 		procPostQuitMessage.Call(0)
@@ -314,6 +332,9 @@ func createControls(hwnd syscall.Handle) {
 	for _, b := range buttons {
 		h := createControl("BUTTON", b.text, uintptr(wsChild|wsVisible|wsTabStop|bsPushButton), b.x, b.y, b.w, 34, hwnd, b.id)
 		procSendMessageW.Call(uintptr(h), wmSetFont, font, 1)
+		if isAsyncActionButton(b.id) {
+			actionButtons[b.id] = h
+		}
 	}
 }
 
@@ -336,15 +357,76 @@ func createControl(class, text string, style uintptr, x, y, w, h int, parent sys
 	return syscall.Handle(hwnd)
 }
 
-func runUIAction(name string, action func() error) {
-	setStatusText(name + "，请稍候……")
-	if err := action(); err != nil {
-		showError(err)
+func isAsyncActionButton(id int) bool {
+	switch id {
+	case idStart, idStop, idRestart, idEnableStartup, idDisableStartup, idRefresh:
+		return true
+	default:
+		return false
 	}
-	refreshStatus()
 }
 
-func refreshStatus() {
+func setActionButtonsEnabled(enabled bool) {
+	value := uintptr(0)
+	if enabled {
+		value = 1
+	}
+	for _, button := range actionButtons {
+		procEnableWindow.Call(uintptr(button), value)
+	}
+}
+
+func launchAsync(action func() error, done func(error)) {
+	go func() {
+		done(action())
+	}()
+}
+
+func beginAsyncUIAction(name string, action func() error) {
+	if asyncBusy {
+		return
+	}
+	asyncBusy = true
+	setActionButtonsEnabled(false)
+	setStatusText(name + "，请稍候……\r\n\r\n管理窗口仍可正常移动、最小化或关闭。")
+
+	target := mainWindow
+	launchAsync(func() error {
+		if action == nil {
+			return nil
+		}
+		return action()
+	}, func(actionErr error) {
+		result := &uiActionResult{
+			Name:   name,
+			Status: buildStatusText(),
+			Err:    actionErr,
+		}
+		asyncResultMu.Lock()
+		asyncResult = result
+		asyncResultMu.Unlock()
+		procPostMessageW.Call(uintptr(target), wmAsyncDone, 0, 0)
+	})
+}
+
+func finishAsyncUIAction() {
+	asyncResultMu.Lock()
+	result := asyncResult
+	asyncResult = nil
+	asyncResultMu.Unlock()
+
+	asyncBusy = false
+	setActionButtonsEnabled(true)
+	if result == nil {
+		return
+	}
+	setStatusText(result.Status)
+	if result.Err != nil {
+		showError(fmt.Errorf("%s失败：%w", result.Name, result.Err))
+	}
+}
+
+func buildStatusText() string {
 	state, err := queryTaskState()
 	if err != nil {
 		state = "查询失败"
@@ -399,7 +481,7 @@ func refreshStatus() {
 		"服务状态：%s\r\n计划任务：%s\r\n开机启动：%s\r\nHTTP：%s\r\nHTTPS：%s\r\n运行版本：%s\r\n根证书：%s\r\n安装目录：%s\r\n管理工具版本：%s",
 		running, taskText, startupText, httpListen, httpsListen, v, certText, installDirFlag, version,
 	)
-	setStatusText(text)
+	return text
 }
 
 func queryTaskState() (string, error) {
@@ -435,19 +517,44 @@ func startFaceSign() error {
 	return nil
 }
 
-func stopFaceSign() error {
-	_, _ = execHidden("schtasks.exe", "/End", "/TN", taskName)
-	time.Sleep(300 * time.Millisecond)
-	if len(faceSignPIDs()) > 0 {
-		_, _ = execHidden("taskkill.exe", "/F", "/T", "/IM", "FaceSign.exe")
+func stopFaceSign() (retErr error) {
+	state, stateErr := queryTaskState()
+	taskExists := stateErr == nil && !strings.EqualFold(state, "missing")
+	wasDisabled := strings.EqualFold(state, "disabled")
+	temporarilyDisabled := false
+
+	if taskExists && !wasDisabled {
+		if _, err := execHidden("schtasks.exe", "/Change", "/TN", taskName, "/DISABLE"); err == nil {
+			temporarilyDisabled = true
+		}
 	}
-	for i := 0; i < 10; i++ {
+	if temporarilyDisabled {
+		defer func() {
+			if _, err := execHidden("schtasks.exe", "/Change", "/TN", taskName, "/ENABLE"); err != nil && retErr == nil {
+				retErr = fmt.Errorf("FaceSign 已停止，但恢复开机启动状态失败: %w", err)
+			}
+		}()
+	}
+
+	if taskExists {
+		_, _ = execHidden("schtasks.exe", "/End", "/TN", taskName)
+	}
+	time.Sleep(250 * time.Millisecond)
+
+	if len(faceSignPIDs()) > 0 {
+		if _, err := execHidden("taskkill.exe", "/F", "/T", "/IM", "FaceSign.exe"); err != nil && len(faceSignPIDs()) > 0 {
+			return fmt.Errorf("无法结束 FaceSign SYSTEM 进程: %w。请确认管理工具已允许管理员权限；若仍失败，请检查安全软件或还原保护软件", err)
+		}
+	}
+
+	deadline := time.Now().Add(5 * time.Second)
+	for time.Now().Before(deadline) {
 		if len(faceSignPIDs()) == 0 {
 			return nil
 		}
 		time.Sleep(200 * time.Millisecond)
 	}
-	return errors.New("FaceSign 进程仍未退出。请检查是否有安全软件拦截，或查看 Windows 事件日志")
+	return errors.New("FaceSign 进程在5秒内仍未退出。请查看启动日志或 Windows 事件日志")
 }
 
 func restartFaceSign() error {
@@ -533,9 +640,15 @@ func shellOpen(target string) error {
 }
 
 func execHidden(name string, args ...string) ([]byte, error) {
-	cmd := exec.Command(name, args...)
+	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, name, args...)
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	out, err := cmd.CombinedOutput()
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return out, fmt.Errorf("%s 执行超过8秒，已自动终止", filepath.Base(name))
+	}
 	if err != nil {
 		message := strings.TrimSpace(string(out))
 		if message == "" {
