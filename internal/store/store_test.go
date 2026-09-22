@@ -300,6 +300,80 @@ func TestSeatLayoutAndAttendanceBoard(t *testing.T) {
 }
 
 
+func TestMoveStudentSeatInClassToEmptySwapAndClear(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "seat-move.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	ctx := context.Background()
+
+	class, err := s.CreateClassWithLayout(ctx, "移动测试班", 2, 3)
+	if err != nil {
+		t.Fatal(err)
+	}
+	first, err := s.CreateStudent(ctx, "M001", "甲", class.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := s.CreateStudent(ctx, "M002", "乙", class.Name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpdateStudentSeat(ctx, first.ID, 1); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.UpdateStudentSeat(ctx, second.ID, 2); err != nil {
+		t.Fatal(err)
+	}
+
+	moved, err := s.MoveStudentSeatInClass(ctx, class.ID, first.ID, 4)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if moved.MovedStudentID != first.ID || moved.SwappedStudentID != 0 || moved.TargetSeatNo != 4 {
+		t.Fatalf("unexpected empty-seat move result: %#v", moved)
+	}
+
+	swapped, err := s.MoveStudentSeatInClass(ctx, class.ID, first.ID, 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if swapped.SwappedStudentID != second.ID {
+		t.Fatalf("expected second student to be swapped: %#v", swapped)
+	}
+	students, err := s.ListStudents(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var firstSeat, secondSeat int
+	for _, student := range students {
+		switch student.ID {
+		case first.ID:
+			firstSeat = student.SeatNo
+		case second.ID:
+			secondSeat = student.SeatNo
+		}
+	}
+	if firstSeat != 2 || secondSeat != 4 {
+		t.Fatalf("unexpected swapped seats: first=%d second=%d", firstSeat, secondSeat)
+	}
+
+	if _, err := s.MoveStudentSeatInClass(ctx, class.ID, first.ID, 0); err != nil {
+		t.Fatal(err)
+	}
+	students, err = s.ListStudents(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, student := range students {
+		if student.ID == first.ID && student.SeatNo != 0 {
+			t.Fatalf("cleared student still has seat %d", student.SeatNo)
+		}
+	}
+}
+
+
 func TestClassAttendanceColumnsMigrate(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "legacy-seat-class.db")
 	db, err := sql.Open("sqlite", path)

@@ -134,6 +134,30 @@ func TestStudentListSelectorsUseQuerySelectorAll(t *testing.T) {
 	}
 }
 
+func TestSeatEditorCollectionSelectorsUseQuerySelectorAll(t *testing.T) {
+	data, err := assets.ReadFile("assets/js/seat_editor.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(data)
+	for _, want := range []string{
+		"$('[data-editor-seat]').forEach",
+		"$('[data-editor-student]').forEach",
+		"$('[data-editor-student-id]').forEach",
+		"$('.seat-editor-cell').forEach",
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("seat editor collection selector must use querySelectorAll: %s", want)
+		}
+	}
+	for _, line := range strings.Split(script, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "$(") && strings.Contains(line, ").forEach") {
+			t.Fatalf("single-element selector cannot be iterated with forEach: %s", line)
+		}
+	}
+}
+
 func TestSeatEditorSupportsNativeDragDrop(t *testing.T) {
 	data, err := assets.ReadFile("assets/js/seat_editor.js")
 	if err != nil {
