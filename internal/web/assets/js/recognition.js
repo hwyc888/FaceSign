@@ -10,7 +10,7 @@ function renderRecognition(r) {
   }
 
   el.innerHTML =
-    `<div class="result-summary">检测 ${r.detected_count} 人，签到通过 ${r.verified_count || 0} 人，验证中 ${r.pending_count || 0} 人，疑似照片/屏幕 ${r.spoof_count || 0} 人，未录入 ${r.unregistered_count || 0} 人</div>` +
+    `<div class="result-summary">检测 ${r.detected_count} 人，签到通过 ${r.verified_count || 0} 人，验证中 ${r.pending_count || 0} 人，需重新对准 ${r.timeout_count || 0} 人，疑似照片/屏幕 ${r.spoof_count || 0} 人，未录入 ${r.unregistered_count || 0} 人</div>` +
     faces.map((f, i) => {
       if (f.recognized && f.student) {
         return `<div class="face-result known">
@@ -25,9 +25,10 @@ function renderRecognition(r) {
         </div>`;
       }
       if (f.matched && f.student) {
-        return `<div class="face-result pending">
+        const timeoutClass = f.liveness_timed_out ? ' warning' : '';
+        return `<div class="face-result pending${timeoutClass}">
           <div class="face-title">${esc(f.student.name)} · ${esc(f.status || '活体验证中')}</div>
-          <div class="face-meta">身份 ${(f.similarity * 100).toFixed(1)}% | 活体 ${(Number(f.liveness_score || 0) * 100).toFixed(1)}% | 连续帧 ${f.liveness_frames || 0}/${f.required_frames || r.liveness_min_frames || 5}</div>
+          <div class="face-meta">身份 ${(f.similarity * 100).toFixed(1)}% | 活体 ${(Number(f.liveness_score || 0) * 100).toFixed(1)}% | 连续帧 ${f.liveness_frames || 0}/${f.required_frames || r.liveness_fast_frames || 3}</div>
         </div>`;
       }
       return `<div class="face-result unknown">
@@ -60,6 +61,9 @@ function drawFaceOverlay(faces) {
     } else if (f.matched && f.status === '疑似照片/屏幕') {
       color = '#ef4444';
       label = (f.student ? f.student.name + ' · ' : '') + '疑似攻击';
+    } else if (f.matched && f.liveness_timed_out) {
+      color = '#f59e0b';
+      label = (f.student ? f.student.name + ' · ' : '') + '请重新对准';
     } else if (f.matched && f.student) {
       color = '#3b82f6';
       label = f.student.name + ' · 活体验证中';
@@ -103,33 +107,53 @@ async function recognizeFrame(options = {}) {
 async function recognizeBurst() {
   if (manualRecognitionBurst) return;
   manualRecognitionBurst = true;
+  const startedAt = performance.now();
+  let maxFrames = 6;
   try {
-    let required = 5;
-    for (let i = 0; i < required + 1; i++) {
+    for (let i = 0; i < maxFrames && performance.now() - startedAt < 2100; i++) {
       const result = await recognizeFrame({silent: true});
       if (!result) break;
-      required = Number(result.liveness_min_frames || required);
+      maxFrames = Math.max(3, Number(result.liveness_max_frames || maxFrames));
       const faces = Array.isArray(result.faces) ? result.faces : [];
-      if (faces.length && faces.every(face => face.recognized || face.status === '疑似照片/屏幕' || !face.matched)) {
+      if (faces.length && faces.every(face =>
+        face.recognized ||
+        face.status === '疑似照片/屏幕' ||
+        face.liveness_timed_out ||
+        !face.matched
+      )) {
         break;
       }
-      if (i < required) await new Promise(resolve => setTimeout(resolve, 220));
+      if (i + 1 < maxFrames && performance.now() - startedAt < 1980) {
+        await new Promise(resolve => setTimeout(resolve, 120));
+      }
     }
   } finally {
     manualRecognitionBurst = false;
   }
 }
 
+async function runAutoRecognitionLoop() {
+  if (!$('#autoScan')?.checked || !cameraOpen) {
+    autoTimer = null;
+    return;
+  }
+  await recognizeFrame({silent: true});
+  if ($('#autoScan')?.checked && cameraOpen) {
+    autoTimer = setTimeout(runAutoRecognitionLoop, 120);
+  } else {
+    autoTimer = null;
+  }
+}
+
 $('#startCamera').addEventListener('click', toggleCamera);
 $('#recognize').addEventListener('click', recognizeBurst);
 $('#autoScan').addEventListener('change', async e => {
-  clearInterval(autoTimer);
+  clearTimeout(autoTimer);
   autoTimer = null;
   if (e.target.checked) {
     try {
       await startCamera();
-      await recognizeFrame({silent: true});
-      autoTimer = setInterval(() => recognizeFrame({silent: true}), 500);
+      autoTimer = setTimeout(runAutoRecognitionLoop, 0);
     } catch {
       e.target.checked = false;
     }

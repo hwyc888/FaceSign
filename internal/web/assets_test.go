@@ -356,3 +356,27 @@ func TestSeatEditorVisualStatesAreSessionOnly(t *testing.T) {
 		}
 	}
 }
+
+
+func TestRecognitionClientUsesFastLivenessCadence(t *testing.T) {
+	data, err := assets.ReadFile("assets/js/recognition.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(data)
+	for _, want := range []string{
+		"performance.now() - startedAt < 2100",
+		"result.liveness_max_frames",
+		"face.liveness_timed_out",
+		"setTimeout(resolve, 120)",
+		"runAutoRecognitionLoop",
+		"setTimeout(runAutoRecognitionLoop, 120)",
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("fast liveness client flow missing %q", want)
+		}
+	}
+	if strings.Contains(script, "setInterval(() => recognizeFrame") {
+		t.Fatal("auto recognition must use a sequential timeout loop instead of overlapping interval scans")
+	}
+}

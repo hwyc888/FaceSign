@@ -31,6 +31,7 @@ type recognitionFace struct {
 	LivenessStatus    string            `json:"liveness_status,omitempty"`
 	LivenessFrames    int               `json:"liveness_frames,omitempty"`
 	RequiredFrames    int               `json:"required_frames,omitempty"`
+	LivenessTimedOut  bool              `json:"liveness_timed_out,omitempty"`
 }
 
 type decodedFaceSample struct {
@@ -159,6 +160,7 @@ func (s *Server) recognize(w http.ResponseWriter, r *http.Request) {
 	decisions := s.tracker.Observe(sessionID, observations, time.Now())
 	verifiedCount := 0
 	pendingCount := 0
+	timeoutCount := 0
 	spoofCount := 0
 	matchedCount := 0
 	for i, decision := range decisions {
@@ -170,6 +172,7 @@ func (s *Server) recognize(w http.ResponseWriter, r *http.Request) {
 		result.LivenessStatus = decision.LivenessStatus
 		result.LivenessFrames = decision.Frames
 		result.RequiredFrames = decision.RequiredFrames
+		result.LivenessTimedOut = decision.TimedOut
 
 		switch {
 		case decision.Rejected:
@@ -189,6 +192,9 @@ func (s *Server) recognize(w http.ResponseWriter, r *http.Request) {
 				result.FirstCheckinToday = created
 				s.tracker.Commit(sessionID, decision.TrackID)
 			}
+		case decision.TimedOut:
+			result.Status = decision.LivenessStatus
+			timeoutCount++
 		default:
 			result.Status = decision.LivenessStatus
 			pendingCount++
@@ -208,12 +214,17 @@ func (s *Server) recognize(w http.ResponseWriter, r *http.Request) {
 		"matched_count":       matchedCount,
 		"recognized_count":    verifiedCount,
 		"verified_count":      verifiedCount,
-		"pending_count":       pendingCount,
-		"spoof_count":         spoofCount,
-		"unregistered_count":  unregisteredCount,
-		"threshold":           s.matchThreshold,
-		"liveness_threshold":  livenessPassThreshold,
-		"liveness_min_frames": livenessMinFrames,
+		"pending_count":          pendingCount,
+		"timeout_count":          timeoutCount,
+		"spoof_count":            spoofCount,
+		"unregistered_count":     unregisteredCount,
+		"threshold":              s.matchThreshold,
+		"liveness_threshold":     livenessPassThreshold,
+		"liveness_fast_threshold": livenessFastPassThreshold,
+		"liveness_fast_frames":   livenessFastFrames,
+		"liveness_min_frames":    livenessMinFrames,
+		"liveness_max_frames":    livenessMaxFrames,
+		"liveness_timeout_ms":    livenessDecisionTimeout.Milliseconds(),
 	}
 
 	if len(results) == 1 {
@@ -224,6 +235,8 @@ func (s *Server) recognize(w http.ResponseWriter, r *http.Request) {
 		response["liveness_score"] = results[0].LivenessScore
 		response["liveness_status"] = results[0].LivenessStatus
 		response["liveness_frames"] = results[0].LivenessFrames
+		response["required_frames"] = results[0].RequiredFrames
+		response["liveness_timed_out"] = results[0].LivenessTimedOut
 		if results[0].Student != nil {
 			response["student"] = results[0].Student
 			if results[0].Attendance != nil {
