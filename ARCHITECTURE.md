@@ -63,3 +63,11 @@ The store and face packages do not depend on the web layer.
 
 ## Future features
 Add course, timetable, leave, report/export and similar features as separate store/web/UI files. Do not add generic repository/service abstractions until a second implementation actually requires them.
+
+
+## Passive liveness: internal/liveness
+
+- `engine.go`: anti-spoof-mn3 ONNX preprocessing and CPU inference.
+- `internal/web/recognition_track.go`: per-camera multi-frame voting and short-lived identity tracks.
+
+Attendance is written only after the same recognized identity accumulates enough frames and the passive liveness vote passes. A high SFace identity score alone is not sufficient to check in.

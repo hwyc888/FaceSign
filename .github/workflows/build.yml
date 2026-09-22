@@ -116,6 +116,7 @@ jobs:
           Copy-Item 'dist\onnxruntime.dll' (Join-Path $smokeAssets 'onnxruntime.dll') -Force
           Copy-Item 'models\face_detection_yunet_2023mar.onnx' (Join-Path $smokeAssets 'models\face_detection_yunet_2023mar.onnx') -Force
           Copy-Item 'models\face_recognition_sface_2021dec.onnx' (Join-Path $smokeAssets 'models\face_recognition_sface_2021dec.onnx') -Force
+          Copy-Item 'models\anti-spoof-mn3.onnx' (Join-Path $smokeAssets 'models\anti-spoof-mn3.onnx') -Force
           $originalPath = $env:PATH
           $env:PATH = (Resolve-Path 'dist').Path + ';' + (Join-Path $env:WINDIR 'System32') + ';' + $env:WINDIR
           $process = Start-Process -FilePath (Resolve-Path 'dist\FaceSign.exe') -ArgumentList @('--listen','127.0.0.1:18082','--open-browser=false','--assets',$smokeAssets,'--data',$db,'--detection-threshold','0.60') -PassThru -WindowStyle Hidden
@@ -124,7 +125,7 @@ jobs:
             for ($i = 0; $i -lt 30; $i++) {
               try {
                 $health = Invoke-RestMethod -Uri 'http://127.0.0.1:18082/api/health' -TimeoutSec 3
-                if ($health.ok -and $health.device -eq 'cpu' -and -not $health.python -and -not $health.docker) { $ready = $true; break }
+                if ($health.ok -and $health.device -eq 'cpu' -and -not $health.python -and -not $health.docker -and $health.liveness -match 'anti-spoof') { $ready = $true; break }
               } catch { Start-Sleep -Seconds 1 }
             }
             if (-not $ready) { throw 'FaceSign health check failed' }
@@ -216,29 +217,31 @@ jobs:
             $editedStudent = $studentsAfterEdit | Where-Object { $_.student_no -eq 'SMOKE002' } | Select-Object -First 1
             if (-not $editedStudent -or $editedStudent.class_name -ne 'Backup') { throw 'Imported student class edit failed' }
 
-            $importRecognizeRaw = & curl.exe -fsS -F "file=@$importPhoto" 'http://127.0.0.1:18082/api/recognize'
+            $importRecognizeRaw = & curl.exe -fsS -H 'X-FaceSign-Session: smoke-import' -F "file=@$importPhoto" 'http://127.0.0.1:18082/api/recognize'
             if ($LASTEXITCODE -ne 0) { throw 'Imported photo recognition failed' }
             $importRecognize = $importRecognizeRaw | ConvertFrom-Json
-            if (-not $importRecognize.recognized -or $importRecognize.student.student_no -ne 'SMOKE002') { throw 'Imported face sample did not recognize correctly' }
+            if (-not $importRecognize.matched -or $importRecognize.student.student_no -ne 'SMOKE002') { throw 'Imported face sample identity did not match correctly' }
+            if ($importRecognize.recognized) { throw 'Single recognition frame must not bypass multi-frame liveness voting' }
+            if (-not $importRecognize.liveness_status) { throw 'Passive liveness status was not returned' }
+            Write-Host "Passive liveness score (import smoke): $($importRecognize.liveness_score) status=$($importRecognize.liveness_status)"
 
             $sameSampleStatus = & curl.exe -sS -o NUL -w "%{http_code}" -F "file=@$photo" -F "label=左侧" "http://127.0.0.1:18082/api/students/$($student.id)/faces"
             if ($sameSampleStatus -ne '409') { throw "Near-identical supplemental sample should be rejected with 409, got $sameSampleStatus" }
 
-            $recognizeRaw = & curl.exe -fsS -F "file=@$photo" 'http://127.0.0.1:18082/api/recognize'
+            $recognizeRaw = & curl.exe -fsS -H 'X-FaceSign-Session: smoke-amy' -F "file=@$photo" 'http://127.0.0.1:18082/api/recognize'
             if ($LASTEXITCODE -ne 0) { throw 'Recognition smoke test failed' }
             $recognize = $recognizeRaw | ConvertFrom-Json
-            if (-not $recognize.recognized -or $recognize.student.student_no -ne 'SMOKE001') { throw 'Recognition did not match enrolled student' }
+            if (-not $recognize.matched -or $recognize.student.student_no -ne 'SMOKE001') { throw 'Recognition identity did not match enrolled student' }
+            if ($recognize.recognized) { throw 'One frame unexpectedly created an attendance decision' }
+            if ($recognize.liveness_frames -ne 1) { throw "Expected first liveness frame, got $($recognize.liveness_frames)" }
 
             Invoke-RestMethod -Method Put -Uri "http://127.0.0.1:18082/api/students/$($student.id)" -ContentType 'application/json' -Body '{"seat_no":1}' | Out-Null
             $absentStudent = Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:18082/api/students' -ContentType 'application/json' -Body '{"student_no":"SMOKE003","name":"Absent","class_name":"Test-Renamed"}'
             Invoke-RestMethod -Method Put -Uri "http://127.0.0.1:18082/api/students/$($absentStudent.id)" -ContentType 'application/json' -Body '{"seat_no":2}' | Out-Null
             $today = Get-Date -Format 'yyyy-MM-dd'
             $seatBoard = Invoke-RestMethod -Uri "http://127.0.0.1:18082/api/attendance/seats?day=$today&class_name=Test-Renamed" -TimeoutSec 3
-            if ($seatBoard.total -ne 2 -or $seatBoard.signed -ne 1 -or $seatBoard.unsigned -ne 1) { throw 'Seat attendance summary smoke test failed' }
+            if ($seatBoard.total -ne 2 -or $seatBoard.signed -ne 0 -or $seatBoard.unsigned -ne 2) { throw 'Single-frame recognition must not mark attendance before liveness vote' }
             if ($seatBoard.class.seat_rows -ne 2 -or $seatBoard.class.seats_per_row -ne 3) { throw 'Seat layout smoke test failed' }
-            $signedSeat = $seatBoard.students | Where-Object { $_.seat_no -eq 1 -and $_.signed } | Select-Object -First 1
-            $unsignedSeat = $seatBoard.students | Where-Object { $_.seat_no -eq 2 -and -not $_.signed } | Select-Object -First 1
-            if (-not $signedSeat -or -not $unsignedSeat) { throw 'Seat attendance state smoke test failed' }
 
             $unknownPhoto = Join-Path $env:RUNNER_TEMP 'howard.jpg'
             Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/leandroveronezi/go-onnxface/main/examples/fotos/howard.jpg' -OutFile $unknownPhoto -UseBasicParsing
@@ -263,15 +266,15 @@ jobs:
             $groupEnrollStatus = & curl.exe -sS -o NUL -w "%{http_code}" -F "file=@$groupPhoto" "http://127.0.0.1:18082/api/students/$($student.id)/face"
             if ($groupEnrollStatus -ne '422') { throw "Multi-face enrollment should be rejected with 422, got $groupEnrollStatus" }
 
-            $groupRecognizeRaw = & curl.exe -fsS -F "file=@$groupPhoto" 'http://127.0.0.1:18082/api/recognize'
+            $groupRecognizeRaw = & curl.exe -fsS -H 'X-FaceSign-Session: smoke-group' -F "file=@$groupPhoto" 'http://127.0.0.1:18082/api/recognize'
             if ($LASTEXITCODE -ne 0) { throw 'Multi-face recognition smoke test failed' }
             $groupRecognize = $groupRecognizeRaw | ConvertFrom-Json
             if ($groupRecognize.detected_count -lt 2) { throw "Expected at least 2 detected faces, got $($groupRecognize.detected_count)" }
-            if ($groupRecognize.recognized_count -lt 1) { throw 'Expected at least one enrolled face in group recognition' }
+            if ($groupRecognize.matched_count -lt 1) { throw 'Expected at least one enrolled identity match in group recognition' }
             if ($groupRecognize.unregistered_count -lt 1) { throw 'Expected at least one unregistered face in group recognition' }
-            $knownResult = $groupRecognize.faces | Where-Object { $_.recognized -and $_.student.student_no -eq 'SMOKE001' } | Select-Object -First 1
-            if (-not $knownResult) { throw 'Enrolled student was not identified in group recognition' }
-            $unknownResult = $groupRecognize.faces | Where-Object { -not $_.recognized -and $_.status -eq '未录入' } | Select-Object -First 1
+            $knownResult = $groupRecognize.faces | Where-Object { $_.matched -and $_.student.student_no -eq 'SMOKE001' } | Select-Object -First 1
+            if (-not $knownResult -or -not $knownResult.liveness_status) { throw 'Enrolled student was not tracked with liveness in group recognition' }
+            $unknownResult = $groupRecognize.faces | Where-Object { -not $_.matched -and $_.status -eq '未录入' } | Select-Object -First 1
             if (-not $unknownResult) { throw 'Unregistered face was not reported as 未录入' }
           } finally {
             Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue

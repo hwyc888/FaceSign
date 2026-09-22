@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/hwyc888/FaceSign/internal/face"
+	"github.com/hwyc888/FaceSign/internal/liveness"
 	"github.com/hwyc888/FaceSign/internal/store"
 )
 
@@ -15,6 +16,8 @@ type Server struct {
 	logger             *slog.Logger
 	store              *store.Store
 	engine             *face.Engine
+	liveness           *liveness.Engine
+	tracker            *recognitionTracker
 	matchThreshold     float64
 	detectionThreshold float64
 	version            string
@@ -24,7 +27,7 @@ type Server struct {
 	photoImports       map[string]*photoImportSession
 }
 
-func New(logger *slog.Logger, st *store.Store, engine *face.Engine, matchThreshold, detectionThreshold float64, version string) (*Server, error) {
+func New(logger *slog.Logger, st *store.Store, engine *face.Engine, live *liveness.Engine, matchThreshold, detectionThreshold float64, version string) (*Server, error) {
 	sub, err := fs.Sub(assets, "assets")
 	if err != nil {
 		return nil, err
@@ -37,6 +40,8 @@ func New(logger *slog.Logger, st *store.Store, engine *face.Engine, matchThresho
 		logger:             logger,
 		store:              st,
 		engine:             engine,
+		liveness:           live,
+		tracker:            newRecognitionTracker(),
 		matchThreshold:     matchThreshold,
 		detectionThreshold: detectionThreshold,
 		version:            version,

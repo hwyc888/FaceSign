@@ -233,3 +233,8 @@ pre{background:#0b1220;color:#d8e2f3;border-radius:12px;padding:16px;overflow:au
 @media(max-width:620px){
   .seat-layout-form{grid-template-columns:1fr}
 }
+
+.face-result.pending{border-color:#bfdbfe;background:#eff6ff}
+.face-result.pending .face-title{color:#1d4ed8}
+.face-result.danger{border-color:#fecaca;background:#fef2f2}
+.face-result.danger .face-title{color:#b91c1c}

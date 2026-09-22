@@ -19,6 +19,8 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":              true,
 		"engine":          "YuNet + SFace",
+		"liveness":        "anti-spoof-mn3 passive multi-frame",
+		"liveness_frames": livenessMinFrames,
 		"runtime":         face.RuntimeVersion(),
 		"device":          "cpu",
 		"python":          false,

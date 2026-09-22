@@ -5,7 +5,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $source = Split-Path -Parent $PSScriptRoot
 
-$ModelCommit = '5f4dbed1d5e78b95b9af95f492f363d654bb01d9'
+$ModelCommit = 'de5287c66e9e37e9f804686bf63f5a0974f68f72'
 $ModelBaseUrl = "https://raw.githubusercontent.com/hwyc888/FaceSign/$ModelCommit/models"
 $Models = @(
   @{
@@ -15,6 +15,10 @@ $Models = @(
   @{
     Name = 'face_recognition_sface_2021dec.onnx'
     SHA256 = '0BA9FBFA01B5270C96627C4EF784DA859931E02F04419C829E83484087C34E79'
+  },
+  @{
+    Name = 'anti-spoof-mn3.onnx'
+    SHA256 = 'C4C99AF04603B62D7E44F6F4DAEB33E0DAECCC696008C0B1D62F6F5CEBBB3262'
   }
 )
 

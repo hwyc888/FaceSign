@@ -15,6 +15,7 @@ async function startCamera() {
     return;
   }
   try {
+    resetRecognitionSession();
     stream = await navigator.mediaDevices.getUserMedia({
       video: {width: {ideal: 1280}, height: {ideal: 720}, facingMode: 'user'},
       audio: false
@@ -49,6 +50,7 @@ function stopCamera() {
     stream.getTracks().forEach(track => track.stop());
     stream = null;
   }
+  resetRecognitionSession();
   ['#camera', '#enrollCamera'].map($).filter(Boolean).forEach(video => {
     video.srcObject = null;
   });

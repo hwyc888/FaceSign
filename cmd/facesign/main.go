@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/hwyc888/FaceSign/internal/face"
+	"github.com/hwyc888/FaceSign/internal/liveness"
 	"github.com/hwyc888/FaceSign/internal/store"
 	webapp "github.com/hwyc888/FaceSign/internal/web"
 )
@@ -41,6 +42,7 @@ func run(logger *slog.Logger) error {
 	}
 	detectorModel := filepath.Join(cfg.AssetsPath, "models", "face_detection_yunet_2023mar.onnx")
 	recognizerModel := filepath.Join(cfg.AssetsPath, "models", "face_recognition_sface_2021dec.onnx")
+	livenessModel := filepath.Join(cfg.AssetsPath, "models", "anti-spoof-mn3.onnx")
 
 	st, err := store.Open(cfg.DataPath)
 	if err != nil {
@@ -54,7 +56,13 @@ func run(logger *slog.Logger) error {
 	}
 	defer engine.Close()
 
-	webServer, err := webapp.New(logger, st, engine, cfg.MatchThreshold, cfg.DetectionThreshold, version)
+	livenessEngine, err := liveness.New(livenessModel)
+	if err != nil {
+		return fmt.Errorf("start passive liveness engine: %w", err)
+	}
+	defer livenessEngine.Close()
+
+	webServer, err := webapp.New(logger, st, engine, livenessEngine, cfg.MatchThreshold, cfg.DetectionThreshold, version)
 	if err != nil {
 		return err
 	}

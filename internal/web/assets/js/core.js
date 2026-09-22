@@ -4,12 +4,25 @@ const $$ = s => document.querySelectorAll(s);
 let stream = null;
 let autoTimer = null;
 let recognizing = false;
+let manualRecognitionBurst = false;
+let recognitionSessionID = makeRecognitionSessionID();
 let pendingEnrollmentBlob = null;
 let studentsCache = [];
 let classesCache = [];
 let duplicateStudent = null;
 let samplesStudent = null;
 let supplementStudent = null;
+
+function makeRecognitionSessionID() {
+  if (window.crypto && typeof window.crypto.randomUUID === 'function') {
+    return window.crypto.randomUUID();
+  }
+  return 'cam-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
+}
+
+function resetRecognitionSession() {
+  recognitionSessionID = makeRecognitionSessionID();
+}
 
 const titles = {
   checkin: ['人脸签到', '摄像头可同时识别多人并完成签到'],
