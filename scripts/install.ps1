@@ -86,6 +86,7 @@ if ($remaining) {
 
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 Copy-Item (Join-Path $source 'FaceSign.exe') $InstallDir -Force
+Copy-Item (Join-Path $source 'FaceSignManager.exe') $InstallDir -Force
 Copy-Item (Join-Path $source 'onnxruntime.dll') $InstallDir -Force
 foreach ($dll in @('msvcp140.dll','msvcp140_1.dll','vcruntime140.dll','vcruntime140_1.dll','libgcc_s_seh-1.dll','libwinpthread-1.dll')) {
   $p = Join-Path $source $dll
@@ -185,4 +186,20 @@ foreach ($ip in $lanIPs) {
 if ($TLSHosts) {
   Write-Host "Extra TLS SAN: $TLSHosts"
 }
+
+$commonPrograms = [Environment]::GetFolderPath('CommonPrograms')
+$faceSignMenu = Join-Path $commonPrograms 'FaceSign'
+New-Item -ItemType Directory -Force -Path $faceSignMenu | Out-Null
+$shortcutPath = Join-Path $faceSignMenu 'FaceSign 管理工具.lnk'
+$managerPath = Join-Path $InstallDir 'FaceSignManager.exe'
+$wsh = New-Object -ComObject WScript.Shell
+$shortcut = $wsh.CreateShortcut($shortcutPath)
+$shortcut.TargetPath = $managerPath
+$shortcut.Arguments = '--install-dir "{0}"' -f $InstallDir
+$shortcut.WorkingDirectory = $InstallDir
+$shortcut.Description = 'FaceSign 服务管理工具'
+$shortcut.Save()
+
+Write-Host "Manager:       $managerPath"
+Write-Host "Start Menu:    FaceSign\FaceSign 管理工具"
 Start-Process $url

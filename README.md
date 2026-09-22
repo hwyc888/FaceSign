@@ -9,10 +9,12 @@ Both packages contain the same program and native runtime:
 
 ```text
 FaceSign.exe
+FaceSignManager.exe
 onnxruntime.dll
 scripts/
   install.ps1
   uninstall.ps1
+  install-client-ca.ps1
 README.md
 ```
 
@@ -41,7 +43,22 @@ FaceSign now listens on HTTP `0.0.0.0:8080` and HTTPS `0.0.0.0:8443`. The Window
 
 If startup fails, check `facesign-error.log` beside the executable. If that directory is not writable, the fallback log is `%TEMP%\\facesign-error.log`.
 
-## Windows startup installation\n\nRun PowerShell as Administrator from the extracted release directory:\n\n```powershell\nSet-ExecutionPolicy -Scope Process Bypass\n.\\scripts\\install.ps1\n```\n\nThe installer copies the package to `C:\\ProgramData\\FaceSign`, creates a startup scheduled task, and adds a Windows Firewall rule for Domain/Private networks on the configured port. Data is kept in `C:\\ProgramData\\FaceSign\\data`.\n\n## HTTPS and browser camera access
+## Windows startup installation\n\nRun PowerShell as Administrator from the extracted release directory:\n\n```powershell\nSet-ExecutionPolicy -Scope Process Bypass\n.\\scripts\\install.ps1\n```\n\nThe installer copies the package to `C:\\ProgramData\\FaceSign`, creates a startup scheduled task, and adds a Windows Firewall rule for Domain/Private networks on the configured port. Data is kept in `C:\\ProgramData\\FaceSign\\data`.\n\n## FaceSign management tool
+
+The Windows package includes `FaceSignManager.exe`. During installation it is copied to the FaceSign installation directory and a **FaceSign 管理工具** shortcut is added to the Windows Start menu.
+
+The manager automatically requests administrator rights because the installed FaceSign task runs as `SYSTEM`. It provides:
+
+- Start, stop and restart FaceSign.
+- Stop the scheduled task first, then terminate any remaining `FaceSign.exe` process, so Task Manager "Access denied" is no longer required for normal shutdown.
+- Enable or disable startup without deleting the task.
+- Open the FaceSign management webpage.
+- Show the current PID, HTTP/HTTPS listen addresses, running build version and persistent root-CA expiry.
+- Open the startup log and installation directory.
+
+Stopping FaceSign does **not** disable startup. Use **关闭开机启动** separately if FaceSign should also stay stopped after the next reboot.
+
+## HTTPS and browser camera access
 
 FaceSign now creates a persistent private root CA the first time it starts. The root CA is valid for 50 years and is preserved across normal upgrades and uninstall/reinstall. Server certificates are renewed automatically from the same root CA before expiry or whenever the server hostname/IP SAN set changes, so clients keep trusting the server without reinstalling the CA.
 
