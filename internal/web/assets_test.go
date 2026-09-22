@@ -380,3 +380,39 @@ func TestRecognitionClientUsesFastLivenessCadence(t *testing.T) {
 		t.Fatal("auto recognition must use a sequential timeout loop instead of overlapping interval scans")
 	}
 }
+
+
+func TestAttendanceShowsFirstLatestAndRecognitionCount(t *testing.T) {
+	htmlData, err := assets.ReadFile("assets/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	html := string(htmlData)
+	for _, want := range []string{"首次签到", "最近识别", "识别次数"} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("attendance table missing %q", want)
+		}
+	}
+
+	attendanceData, err := assets.ReadFile("assets/js/attendance.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	attendanceScript := string(attendanceData)
+	for _, want := range []string{"a.last_seen_at || a.checked_at", "a.recognition_count || 1", "colspan=\"7\""} {
+		if !strings.Contains(attendanceScript, want) {
+			t.Fatalf("attendance list missing %q", want)
+		}
+	}
+
+	seatingData, err := assets.ReadFile("assets/js/seating.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	seatingScript := string(seatingData)
+	for _, want := range []string{"最近识别", "student.last_seen_at", "student.recognition_count"} {
+		if !strings.Contains(seatingScript, want) {
+			t.Fatalf("seat board latest recognition display missing %q", want)
+		}
+	}
+}

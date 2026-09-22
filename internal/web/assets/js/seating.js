@@ -26,13 +26,18 @@ function seatSummaryHTML(board) {
   ].join('');
 }
 
-function attendanceStatusLabel(status, checkedAt) {
-  switch (status) {
-    case 'signed': return checkedAt ? ('正常签到 ' + checkedAt) : '正常签到';
-    case 'late': return checkedAt ? ('迟到签到 ' + checkedAt) : '迟到签到';
-    case 'absent': return '截止时间已到 · 未签到';
-    default: return '待签到';
+function attendanceStatusLabel(status, checkedAt, lastSeenAt, recognitionCount) {
+  let label = '待签到';
+  if (status === 'signed') label = checkedAt ? ('正常签到 ' + checkedAt) : '正常签到';
+  else if (status === 'late') label = checkedAt ? ('迟到签到 ' + checkedAt) : '迟到签到';
+  else if (status === 'absent') return '截止时间已到 · 未签到';
+
+  const count = Number(recognitionCount || 0);
+  if (count > 1) {
+    label += ' · 最近识别 ' + (lastSeenAt || checkedAt || '-');
+    label += ' · ' + count + '次';
   }
+  return label;
 }
 
 function renderCheckinSeatBoard(board) {
@@ -85,7 +90,7 @@ function renderCheckinSeatBoard(board) {
         <span class="seat-no">${seatNo}号</span>
         <strong>${esc(student.name)}</strong>
         <span class="seat-student-no">${esc(student.student_no)}</span>
-        <span class="seat-status">${attendanceStatusLabel(state, esc(student.checked_at || ''))}</span>
+        <span class="seat-status">${attendanceStatusLabel(state, esc(student.checked_at || ''), esc(student.last_seen_at || ''), student.recognition_count)}</span>
       </div>`);
     }
     rowHTML.push(`<div class="seat-row">
@@ -105,7 +110,7 @@ function renderCheckinSeatBoard(board) {
     unassigned.innerHTML = '<strong>未编座位：</strong>' + noSeat.map(student => {
       const state = student.status || (student.signed ? 'signed' : 'waiting');
       return `<span class="unassigned-chip ${state}" data-seat-status="${state}">
-        ${esc(student.name)} · ${attendanceStatusLabel(state, esc(student.checked_at || ''))}
+        ${esc(student.name)} · ${attendanceStatusLabel(state, esc(student.checked_at || ''), esc(student.last_seen_at || ''), student.recognition_count)}
       </span>`;
     }).join('');
     unassigned.classList.remove('hidden');

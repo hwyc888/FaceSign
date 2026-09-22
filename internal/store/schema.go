@@ -44,6 +44,8 @@ func (s *Store) init(ctx context.Context) error {
             student_id INTEGER NOT NULL,
             day TEXT NOT NULL,
             checked_at INTEGER NOT NULL,
+            last_seen_at INTEGER NOT NULL DEFAULT 0,
+            recognition_count INTEGER NOT NULL DEFAULT 1,
             similarity REAL NOT NULL,
             FOREIGN KEY(student_id) REFERENCES students(id) ON DELETE CASCADE,
             UNIQUE(student_id, day)
@@ -90,6 +92,18 @@ func (s *Store) init(ctx context.Context) error {
 	}
 	if err := s.ensureColumn(ctx, "classes", "attendance_deadline", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
+	}
+	if err := s.ensureColumn(ctx, "attendance", "last_seen_at", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn(ctx, "attendance", "recognition_count", "INTEGER NOT NULL DEFAULT 1"); err != nil {
+		return err
+	}
+	if _, err := s.db.ExecContext(ctx, "UPDATE attendance SET last_seen_at=checked_at WHERE last_seen_at=0"); err != nil {
+		return fmt.Errorf("backfill attendance last_seen_at: %w", err)
+	}
+	if _, err := s.db.ExecContext(ctx, "UPDATE attendance SET recognition_count=1 WHERE recognition_count<1"); err != nil {
+		return fmt.Errorf("backfill attendance recognition_count: %w", err)
 	}
 	if err := s.ensureColumn(ctx, "cameras", "agent_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err

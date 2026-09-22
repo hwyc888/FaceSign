@@ -10,9 +10,10 @@ import (
 
 func (s *Store) MarkAttendance(ctx context.Context, student Student, similarity float64, now time.Time) (Attendance, bool, error) {
 	day := now.Format("2006-01-02")
+	nowUnix := now.Unix()
 	result, err := s.db.ExecContext(ctx,
-		"INSERT OR IGNORE INTO attendance(student_id,day,checked_at,similarity) VALUES(?,?,?,?)",
-		student.ID, day, now.Unix(), similarity,
+		"INSERT OR IGNORE INTO attendance(student_id,day,checked_at,last_seen_at,recognition_count,similarity) VALUES(?,?,?,?,?,?)",
+		student.ID, day, nowUnix, nowUnix, 1, similarity,
 	)
 	if err != nil {
 		return Attendance{}, false, err
@@ -21,18 +22,35 @@ func (s *Store) MarkAttendance(ctx context.Context, student Student, similarity 
 	if err != nil {
 		return Attendance{}, false, err
 	}
+	created := affected == 1
+	if !created {
+		if _, err := s.db.ExecContext(ctx,
+			"UPDATE attendance SET last_seen_at=?,recognition_count=CASE WHEN recognition_count<1 THEN 2 ELSE recognition_count+1 END WHERE student_id=? AND day=?",
+			nowUnix, student.ID, day,
+		); err != nil {
+			return Attendance{}, false, err
+		}
+	}
+
 	var record Attendance
-	var checkedAt int64
+	var checkedAt, lastSeenAt int64
 	err = s.db.QueryRowContext(ctx, `
-        SELECT a.id,s.id,s.student_no,s.name,s.class_name,a.day,a.checked_at,a.similarity
+        SELECT a.id,s.id,s.student_no,s.name,s.class_name,a.day,a.checked_at,
+               COALESCE(NULLIF(a.last_seen_at,0),a.checked_at),
+               CASE WHEN a.recognition_count<1 THEN 1 ELSE a.recognition_count END,
+               a.similarity
         FROM attendance a JOIN students s ON s.id=a.student_id
         WHERE a.student_id=? AND a.day=?`, student.ID, day,
-	).Scan(&record.ID, &record.StudentID, &record.StudentNo, &record.Name, &record.ClassName, &record.Day, &checkedAt, &record.Similarity)
+	).Scan(
+		&record.ID, &record.StudentID, &record.StudentNo, &record.Name, &record.ClassName,
+		&record.Day, &checkedAt, &lastSeenAt, &record.RecognitionCount, &record.Similarity,
+	)
 	if err != nil {
 		return Attendance{}, false, err
 	}
 	record.CheckedAt = time.Unix(checkedAt, 0).In(now.Location()).Format("2006-01-02 15:04:05")
-	return record, affected == 1, nil
+	record.LastSeenAt = time.Unix(lastSeenAt, 0).In(now.Location()).Format("2006-01-02 15:04:05")
+	return record, created, nil
 }
 
 func (s *Store) ListAttendance(ctx context.Context, day string) ([]Attendance, error) {
@@ -41,7 +59,10 @@ func (s *Store) ListAttendance(ctx context.Context, day string) ([]Attendance, e
 		day = time.Now().Format("2006-01-02")
 	}
 	rows, err := s.db.QueryContext(ctx, `
-        SELECT a.id,s.id,s.student_no,s.name,s.class_name,a.day,a.checked_at,a.similarity
+        SELECT a.id,s.id,s.student_no,s.name,s.class_name,a.day,a.checked_at,
+               COALESCE(NULLIF(a.last_seen_at,0),a.checked_at),
+               CASE WHEN a.recognition_count<1 THEN 1 ELSE a.recognition_count END,
+               a.similarity
         FROM attendance a JOIN students s ON s.id=a.student_id
         WHERE a.day=? ORDER BY a.checked_at DESC`, day)
 	if err != nil {
@@ -51,11 +72,15 @@ func (s *Store) ListAttendance(ctx context.Context, day string) ([]Attendance, e
 	out := make([]Attendance, 0)
 	for rows.Next() {
 		var record Attendance
-		var checkedAt int64
-		if err := rows.Scan(&record.ID, &record.StudentID, &record.StudentNo, &record.Name, &record.ClassName, &record.Day, &checkedAt, &record.Similarity); err != nil {
+		var checkedAt, lastSeenAt int64
+		if err := rows.Scan(
+			&record.ID, &record.StudentID, &record.StudentNo, &record.Name, &record.ClassName,
+			&record.Day, &checkedAt, &lastSeenAt, &record.RecognitionCount, &record.Similarity,
+		); err != nil {
 			return nil, err
 		}
 		record.CheckedAt = time.Unix(checkedAt, 0).Format("2006-01-02 15:04:05")
+		record.LastSeenAt = time.Unix(lastSeenAt, 0).Format("2006-01-02 15:04:05")
 		out = append(out, record)
 	}
 	return out, rows.Err()
@@ -101,7 +126,10 @@ func (s *Store) AttendanceSeatBoardAt(ctx context.Context, className, day string
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT s.id,s.student_no,s.name,s.class_name,s.seat_no,
 		       CASE WHEN a.id IS NULL THEN 0 ELSE 1 END,
-		       COALESCE(a.checked_at,0),COALESCE(a.similarity,0)
+		       COALESCE(a.checked_at,0),
+		       COALESCE(NULLIF(a.last_seen_at,0),a.checked_at,0),
+		       COALESCE(a.recognition_count,0),
+		       COALESCE(a.similarity,0)
 		FROM students s
 		LEFT JOIN attendance a ON a.student_id=s.id AND a.day=?
 		WHERE TRIM(s.class_name)=?
@@ -118,10 +146,10 @@ func (s *Store) AttendanceSeatBoardAt(ctx context.Context, className, day string
 	for rows.Next() {
 		var item SeatAttendance
 		var signed int
-		var checkedAt int64
+		var checkedAt, lastSeenAt int64
 		if err := rows.Scan(
 			&item.StudentID, &item.StudentNo, &item.Name, &item.ClassName, &item.SeatNo,
-			&signed, &checkedAt, &item.Similarity,
+			&signed, &checkedAt, &lastSeenAt, &item.RecognitionCount, &item.Similarity,
 		); err != nil {
 			return AttendanceBoard{}, err
 		}
@@ -134,7 +162,12 @@ func (s *Store) AttendanceSeatBoardAt(ctx context.Context, className, day string
 		if item.Signed {
 			board.Signed++
 			checked := time.Unix(checkedAt, 0).In(now.Location())
+			lastSeen := time.Unix(lastSeenAt, 0).In(now.Location())
 			item.CheckedAt = checked.Format("15:04:05")
+			item.LastSeenAt = lastSeen.Format("15:04:05")
+			if item.RecognitionCount < 1 {
+				item.RecognitionCount = 1
+			}
 			if hasLate && checked.After(lateTime) {
 				item.Status = "late"
 				board.Late++

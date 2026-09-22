@@ -37,13 +37,78 @@ func TestStudentMultipleFaceSamplesAndAttendanceFlow(t *testing.T) {
 	}
 
 	now := time.Date(2026, 9, 21, 8, 30, 0, 0, time.Local)
-	_, created, err := s.MarkAttendance(ctx, student, 0.88, now)
+	firstRecord, created, err := s.MarkAttendance(ctx, student, 0.88, now)
 	if err != nil || !created {
 		t.Fatalf("first attendance created=%v err=%v", created, err)
 	}
-	_, created, err = s.MarkAttendance(ctx, student, 0.91, now.Add(time.Hour))
+	if firstRecord.CheckedAt != "2026-09-21 08:30:00" || firstRecord.LastSeenAt != firstRecord.CheckedAt || firstRecord.RecognitionCount != 1 {
+		t.Fatalf("unexpected first attendance: %#v", firstRecord)
+	}
+	secondRecord, created, err := s.MarkAttendance(ctx, student, 0.91, now.Add(time.Hour))
 	if err != nil || created {
 		t.Fatalf("second attendance created=%v err=%v", created, err)
+	}
+	if secondRecord.CheckedAt != firstRecord.CheckedAt {
+		t.Fatalf("repeat recognition changed first check-in: first=%s second=%s", firstRecord.CheckedAt, secondRecord.CheckedAt)
+	}
+	if secondRecord.LastSeenAt != "2026-09-21 09:30:00" || secondRecord.RecognitionCount != 2 {
+		t.Fatalf("repeat recognition did not update latest/count: %#v", secondRecord)
+	}
+	items, err := s.ListAttendance(ctx, "2026-09-21")
+	if err != nil || len(items) != 1 || items[0].CheckedAt != firstRecord.CheckedAt || items[0].LastSeenAt != secondRecord.LastSeenAt || items[0].RecognitionCount != 2 {
+		t.Fatalf("unexpected attendance list: %#v err=%v", items, err)
+	}
+}
+
+func TestAttendanceRecognitionColumnsMigrate(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "legacy-attendance.db")
+	db, err := sql.Open("sqlite", path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = db.Exec(`
+		CREATE TABLE students (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			student_no TEXT NOT NULL UNIQUE,
+			name TEXT NOT NULL,
+			class_name TEXT NOT NULL DEFAULT '',
+			created_at INTEGER NOT NULL
+		);
+		CREATE TABLE attendance (
+			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			student_id INTEGER NOT NULL,
+			day TEXT NOT NULL,
+			checked_at INTEGER NOT NULL,
+			similarity REAL NOT NULL,
+			UNIQUE(student_id, day)
+		);
+		INSERT INTO students(id,student_no,name,class_name,created_at)
+		VALUES(1,'LEGACY-A1','Legacy Attendance','A1',1);
+		INSERT INTO attendance(id,student_id,day,checked_at,similarity)
+		VALUES(1,1,'2026-09-21',1000,0.88);
+	`)
+	if err != nil {
+		db.Close()
+		t.Fatal(err)
+	}
+	if err := db.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	store, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	var checkedAt, lastSeenAt int64
+	var recognitionCount int
+	if err := store.db.QueryRow("SELECT checked_at,last_seen_at,recognition_count FROM attendance WHERE id=1").
+		Scan(&checkedAt, &lastSeenAt, &recognitionCount); err != nil {
+		t.Fatal(err)
+	}
+	if lastSeenAt != checkedAt || recognitionCount != 1 {
+		t.Fatalf("legacy attendance was not backfilled: checked=%d latest=%d count=%d", checkedAt, lastSeenAt, recognitionCount)
 	}
 }
 
@@ -292,7 +357,7 @@ func TestSeatLayoutAndAttendanceBoard(t *testing.T) {
 	defer s.Close()
 	ctx := context.Background()
 
-	class, err := s.CreateClassWithLayout(ctx, "高三7班", 2, 3)
+	class, err := s.CreateClassWithSettings(ctx, "高三7班", 2, 3, "08:05", "12:00")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -316,7 +381,10 @@ func TestSeatLayoutAndAttendanceBoard(t *testing.T) {
 	if _, _, err := s.MarkAttendance(ctx, first, 0.91, time.Date(2026, 9, 21, 8, 0, 0, 0, time.Local)); err != nil {
 		t.Fatal(err)
 	}
-	board, err := s.AttendanceSeatBoard(ctx, class.Name, "2026-09-21")
+	if _, created, err := s.MarkAttendance(ctx, first, 0.93, time.Date(2026, 9, 21, 9, 0, 0, 0, time.Local)); err != nil || created {
+		t.Fatalf("repeat recognition created=%v err=%v", created, err)
+	}
+	board, err := s.AttendanceSeatBoardAt(ctx, class.Name, "2026-09-21", time.Date(2026, 9, 21, 10, 0, 0, 0, time.Local))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -325,6 +393,10 @@ func TestSeatLayoutAndAttendanceBoard(t *testing.T) {
 	}
 	if len(board.Students) != 2 || board.Students[0].SeatNo != 1 || !board.Students[0].Signed || board.Students[1].SeatNo != 2 || board.Students[1].Signed {
 		t.Fatalf("unexpected seat states: %#v", board.Students)
+	}
+	if board.Students[0].Status != "signed" || board.Students[0].CheckedAt != "08:00:00" ||
+		board.Students[0].LastSeenAt != "09:00:00" || board.Students[0].RecognitionCount != 2 {
+		t.Fatalf("first check-in must drive status while latest recognition updates separately: %#v", board.Students[0])
 	}
 	if _, err := s.UpdateClassLayout(ctx, class.ID, 1, 1); err == nil {
 		t.Fatal("layout smaller than student count should fail")

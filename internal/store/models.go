@@ -39,28 +39,32 @@ type FaceSampleInfo struct {
 }
 
 type Attendance struct {
-	ID         int64   `json:"id"`
-	StudentID  int64   `json:"student_id"`
-	StudentNo  string  `json:"student_no"`
-	Name       string  `json:"name"`
-	ClassName  string  `json:"class_name"`
-	Day        string  `json:"day"`
-	CheckedAt  string  `json:"checked_at"`
-	Similarity float64 `json:"similarity"`
+	ID               int64   `json:"id"`
+	StudentID        int64   `json:"student_id"`
+	StudentNo        string  `json:"student_no"`
+	Name             string  `json:"name"`
+	ClassName        string  `json:"class_name"`
+	Day              string  `json:"day"`
+	CheckedAt        string  `json:"checked_at"`
+	LastSeenAt       string  `json:"last_seen_at"`
+	RecognitionCount int     `json:"recognition_count"`
+	Similarity       float64 `json:"similarity"`
 }
 
 type Store struct { db *sql.DB }
 
 type SeatAttendance struct {
-	StudentID  int64   `json:"student_id"`
-	StudentNo  string  `json:"student_no"`
-	Name       string  `json:"name"`
-	ClassName  string  `json:"class_name"`
-	SeatNo     int     `json:"seat_no"`
-	Signed     bool    `json:"signed"`
-	Status     string  `json:"status"`
-	CheckedAt  string  `json:"checked_at,omitempty"`
-	Similarity float64 `json:"similarity,omitempty"`
+	StudentID        int64   `json:"student_id"`
+	StudentNo        string  `json:"student_no"`
+	Name             string  `json:"name"`
+	ClassName        string  `json:"class_name"`
+	SeatNo           int     `json:"seat_no"`
+	Signed           bool    `json:"signed"`
+	Status           string  `json:"status"`
+	CheckedAt        string  `json:"checked_at,omitempty"`
+	LastSeenAt       string  `json:"last_seen_at,omitempty"`
+	RecognitionCount int     `json:"recognition_count,omitempty"`
+	Similarity       float64 `json:"similarity,omitempty"`
 }
 
 type AttendanceBoard struct {

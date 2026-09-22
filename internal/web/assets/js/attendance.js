@@ -12,12 +12,14 @@ async function loadAttendance() {
     $('#attendanceBody').innerHTML = items.map(a => `
       <tr>
         <td>${esc(a.checked_at)}</td>
+        <td>${esc(a.last_seen_at || a.checked_at)}</td>
+        <td>${Number(a.recognition_count || 1)} 次</td>
         <td>${esc(a.student_no)}</td>
         <td>${esc(a.name)}</td>
         <td>${esc(a.class_name || '-')}</td>
         <td>${(a.similarity * 100).toFixed(1)}%</td>
       </tr>
-    `).join('') || '<tr><td colspan="5">暂无记录</td></tr>';
+    `).join('') || '<tr><td colspan="7">暂无记录</td></tr>';
     $('#todaySummary').textContent = day === today() ? `今日已签到 ${items.length} 人` : '';
   } catch (e) {
     toast(e.message);
