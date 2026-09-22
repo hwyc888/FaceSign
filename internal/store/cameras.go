@@ -303,7 +303,10 @@ func (s *Store) SetDefaultCamera(ctx context.Context, id int64) (Camera, error) 
 		return Camera{}, sql.ErrNoRows
 	}
 	now := time.Now().Unix()
-	if _, err := tx.ExecContext(ctx, "UPDATE cameras SET is_default=CASE WHEN id=? THEN 1 ELSE 0 END,updated_at=?", id, now); err != nil {
+	if _, err := tx.ExecContext(ctx, "UPDATE cameras SET is_default=0,updated_at=? WHERE is_default<>0", now); err != nil {
+		return Camera{}, err
+	}
+	if _, err := tx.ExecContext(ctx, "UPDATE cameras SET is_default=1,updated_at=? WHERE id=?", now, id); err != nil {
 		return Camera{}, err
 	}
 	if err := tx.Commit(); err != nil {
