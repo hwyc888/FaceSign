@@ -90,8 +90,9 @@ foreach ($dll in @('msvcp140.dll','msvcp140_1.dll','vcruntime140.dll','vcruntime
   if (Test-Path $p) { Copy-Item $p $InstallDir -Force }
 }
 
-# Models are deliberately not included in every program build. Existing valid
-# models are kept; a fresh machine downloads the fixed repository models once.
+# The installer supports both release variants. Existing valid installed models
+# are reused first. The full package can supply local models; the lightweight
+# package downloads only models that are actually missing or invalid.
 Ensure-FaceModels -TargetDir (Join-Path $InstallDir 'models')
 
 New-Item -ItemType Directory -Force -Path (Join-Path $InstallDir 'data') | Out-Null
