@@ -181,7 +181,7 @@ function renderClassSeatEditor() {
     };
   });
 
-  $('[data-editor-student]').forEach(button => {
+  $$('[data-editor-student]').forEach(button => {
     button.onclick = () => {
       if (!classSeatEditorDraggingStudentID) {
         setSeatEditorSelection(Number(button.dataset.editorStudent));
@@ -189,7 +189,7 @@ function renderClassSeatEditor() {
     };
   });
 
-  $('[data-editor-student-id]').forEach(button => {
+  $$('[data-editor-student-id]').forEach(button => {
     button.ondragstart = event => {
       const studentID = Number(button.dataset.editorStudentId);
       if (!studentID) {
