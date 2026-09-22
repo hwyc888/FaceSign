@@ -71,3 +71,12 @@ Add course, timetable, leave, report/export and similar features as separate sto
 - `internal/web/recognition_track.go`: per-camera multi-frame voting and short-lived identity tracks.
 
 Attendance is written only after the same recognized identity accumulates enough frames and the passive liveness vote passes. A high SFace identity score alone is not sufficient to check in.
+
+
+## Model resolution: internal/models
+
+- Keeps ONNX model binaries outside normal program artifacts.
+- Verifies pinned SHA-256 values before use.
+- Reuses an existing persistent model cache when available.
+- Downloads only missing pinned models, with a per-user writable cache fallback.
+- The Windows smoke test intentionally starts FaceSign without a `models` directory beside the executable so release-layout startup is covered by CI.

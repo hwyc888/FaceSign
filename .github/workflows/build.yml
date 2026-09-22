@@ -112,12 +112,20 @@ jobs:
           $db = Join-Path $env:RUNNER_TEMP 'facesign.db'
           $smokeAssets = Join-Path $env:RUNNER_TEMP 'facesign-smoke-assets'
           New-Item -ItemType Directory -Force -Path $smokeAssets | Out-Null
-          New-Item -ItemType Directory -Force -Path (Join-Path $smokeAssets 'models') | Out-Null
           Copy-Item 'dist\onnxruntime.dll' (Join-Path $smokeAssets 'onnxruntime.dll') -Force
-          Copy-Item 'models\face_detection_yunet_2023mar.onnx' (Join-Path $smokeAssets 'models\face_detection_yunet_2023mar.onnx') -Force
-          Copy-Item 'models\face_recognition_sface_2021dec.onnx' (Join-Path $smokeAssets 'models\face_recognition_sface_2021dec.onnx') -Force
-          Copy-Item 'models\anti-spoof-mn3.onnx' (Join-Path $smokeAssets 'models\anti-spoof-mn3.onnx') -Force
+
+          # Reproduce the real release layout: the program directory contains
+          # no models. The executable must resolve models from an external
+          # persistent cache instead of requiring models beside FaceSign.exe.
+          $modelCache = Join-Path $env:RUNNER_TEMP 'facesign-model-cache'
+          New-Item -ItemType Directory -Force -Path $modelCache | Out-Null
+          Copy-Item 'models\face_detection_yunet_2023mar.onnx' (Join-Path $modelCache 'face_detection_yunet_2023mar.onnx') -Force
+          Copy-Item 'models\face_recognition_sface_2021dec.onnx' (Join-Path $modelCache 'face_recognition_sface_2021dec.onnx') -Force
+          Copy-Item 'models\anti-spoof-mn3.onnx' (Join-Path $modelCache 'anti-spoof-mn3.onnx') -Force
+
           $originalPath = $env:PATH
+          $originalModelDir = $env:FACESIGN_MODEL_DIR
+          $env:FACESIGN_MODEL_DIR = $modelCache
           $env:PATH = (Resolve-Path 'dist').Path + ';' + (Join-Path $env:WINDIR 'System32') + ';' + $env:WINDIR
           $process = Start-Process -FilePath (Resolve-Path 'dist\FaceSign.exe') -ArgumentList @('--listen','127.0.0.1:18082','--open-browser=false','--assets',$smokeAssets,'--data',$db,'--detection-threshold','0.60') -PassThru -WindowStyle Hidden
           try {
@@ -129,6 +137,7 @@ jobs:
               } catch { Start-Sleep -Seconds 1 }
             }
             if (-not $ready) { throw 'FaceSign health check failed' }
+            if (Test-Path (Join-Path $smokeAssets 'models')) { throw 'Runtime unexpectedly required a models directory beside the executable' }
             $versionInfo = Invoke-RestMethod -Uri 'http://127.0.0.1:18082/api/version' -TimeoutSec 3
             if ($versionInfo.version -ne $env:GITHUB_SHA) { throw "Unexpected FaceSign version: $($versionInfo.version)" }
             $homeHeaders = Join-Path $env:RUNNER_TEMP 'home.headers'
@@ -279,6 +288,7 @@ jobs:
           } finally {
             Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
             $env:PATH = $originalPath
+            $env:FACESIGN_MODEL_DIR = $originalModelDir
           }
 
       - name: Upload Windows release

@@ -15,6 +15,7 @@ import (
 
 	"github.com/hwyc888/FaceSign/internal/face"
 	"github.com/hwyc888/FaceSign/internal/liveness"
+	"github.com/hwyc888/FaceSign/internal/models"
 	"github.com/hwyc888/FaceSign/internal/store"
 	webapp "github.com/hwyc888/FaceSign/internal/web"
 )
@@ -40,9 +41,11 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	detectorModel := filepath.Join(cfg.AssetsPath, "models", "face_detection_yunet_2023mar.onnx")
-	recognizerModel := filepath.Join(cfg.AssetsPath, "models", "face_recognition_sface_2021dec.onnx")
-	livenessModel := filepath.Join(cfg.AssetsPath, "models", "anti-spoof-mn3.onnx")
+	modelPaths, err := models.Resolve(cfg.AssetsPath)
+	if err != nil {
+		return fmt.Errorf("prepare face models: %w", err)
+	}
+	logger.Info("FaceSign models ready", "directory", modelPaths.Directory)
 
 	st, err := store.Open(cfg.DataPath)
 	if err != nil {
@@ -50,13 +53,13 @@ func run(logger *slog.Logger) error {
 	}
 	defer st.Close()
 
-	engine, err := face.New(runtimePath, detectorModel, recognizerModel)
+	engine, err := face.New(runtimePath, modelPaths.Detector, modelPaths.Recognizer)
 	if err != nil {
 		return fmt.Errorf("start face engine: %w", err)
 	}
 	defer engine.Close()
 
-	livenessEngine, err := liveness.New(livenessModel)
+	livenessEngine, err := liveness.New(modelPaths.Liveness)
 	if err != nil {
 		return fmt.Errorf("start passive liveness engine: %w", err)
 	}
