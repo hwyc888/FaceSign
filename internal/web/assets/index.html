@@ -255,7 +255,7 @@
           <div class="card-head">
             <div>
               <h2>摄像头管理</h2>
-              <p class="muted compact">可添加本机/USB摄像头和网络摄像头，并指定默认摄像头。签到和人脸采集会自动使用默认项。</p>
+              <p class="muted compact">可添加本机/USB、服务器直连网络摄像头，或教室客户端 Camera Agent。中央服务器部署在云端时，推荐用 Camera Agent 读取教室内网摄像头。</p>
             </div>
             <button id="refreshLocalCameras" type="button">检测本机摄像头</button>
           </div>
@@ -269,7 +269,8 @@
             <label>类型
               <select id="cameraKind">
                 <option value="local">本机 / USB 摄像头</option>
-                <option value="network">网络摄像头</option>
+                <option value="network">网络摄像头（服务器直连）</option>
+                <option value="agent">客户端 Camera Agent</option>
               </select>
             </label>
             <label data-camera-local>本机设备
@@ -320,6 +321,18 @@
             <label data-camera-network class="camera-check hidden">
               <input id="cameraTLSInsecure" type="checkbox"> 允许自签名 HTTPS 证书
             </label>
+            <label data-camera-agent class="hidden">Agent ID
+              <input id="cameraAgentID" maxlength="80" placeholder="例如：classroom-301" autocomplete="off">
+              <small>教室电脑上的 Camera Agent 必须使用相同 ID。</small>
+            </label>
+            <label data-camera-agent class="hidden camera-wide">Agent 连接密钥
+              <input id="cameraAgentSecret" type="password" autocomplete="new-password" placeholder="建议使用随机生成密钥">
+              <small>服务器仅保存 SHA-256 哈希，页面不会回显原密钥。</small>
+            </label>
+            <div data-camera-agent class="camera-form-actions hidden">
+              <button id="generateCameraAgentSecret" type="button">生成随机密钥</button>
+              <button id="copyCameraAgentConfig" type="button">复制 Agent 配置模板</button>
+            </div>
             <label class="camera-check">
               <input id="cameraDefault" type="checkbox"> 设为默认摄像头
             </label>
@@ -340,7 +353,7 @@
               <tbody id="camerasBody"><tr><td colspan="6" class="muted">正在读取摄像头设置...</td></tr></tbody>
             </table>
           </div>
-          <p class="muted camera-settings-help">网络摄像头密码只保存在 FaceSign 数据库中，接口不会把密码回传到页面。RTSP 模式用于保存码流参数，实际人脸识别通过同一摄像机的 HTTP/HTTPS 抓图接口取帧，因此不需要 Python、Docker 或 FFmpeg。</p>
+          <p class="muted camera-settings-help">服务器直连网络摄像头的密码保存在 FaceSign 数据库中；客户端 Camera Agent 模式下，摄像头地址和账号密码只保存在教室电脑本地，中央服务器只保存 Agent ID、连接密钥哈希和最近画面。Agent 只主动出站连接中央服务器，不需要给教室电脑或摄像头做公网端口映射。</p>
         </div>
 
         <div class="card settings-secondary-card">

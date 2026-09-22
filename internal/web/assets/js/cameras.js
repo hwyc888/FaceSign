@@ -4,6 +4,7 @@ let cameraTestPreviewURL = null;
 
 function cameraTypeLabel(camera) {
   if (camera.kind === 'local') return '本机 / USB';
+  if (camera.kind === 'agent') return '客户端 Camera Agent';
   if (camera.protocol === 'http_snapshot') return '网络 / HTTP抓图';
   if (camera.protocol === 'mjpeg') return '网络 / MJPEG';
   if (camera.protocol === 'rtsp') return '网络 / RTSP + HTTP抓图';
@@ -16,6 +17,7 @@ function cameraSourceLabel(camera) {
     const found = localCameraDevices.find(device => device.deviceId === camera.device_id);
     return found?.label || ('设备 ID ' + camera.device_id.slice(0, 12) + '…');
   }
+  if (camera.kind === 'agent') return camera.agent_id || '-';
   return camera.snapshot_url || camera.stream_url || '-';
 }
 
@@ -32,7 +34,11 @@ function renderCameraRows() {
       <td>${esc(cameraTypeLabel(camera))}</td>
       <td class="camera-source-cell" title="${esc(cameraSourceLabel(camera))}">${esc(cameraSourceLabel(camera))}</td>
       <td>${camera.width}×${camera.height} / ${camera.fps} FPS</td>
-      <td>${camera.kind === 'network' ? esc(camera.auth_mode === 'digest' ? 'Digest' : camera.auth_mode === 'basic' ? 'Basic' : '无认证') : '-'}</td>
+      <td>${camera.kind === 'network'
+        ? esc(camera.auth_mode === 'digest' ? 'Digest' : camera.auth_mode === 'basic' ? 'Basic' : '无认证')
+        : camera.kind === 'agent'
+          ? (camera.agent_online ? '<span class="camera-agent-online">在线</span>' : '<span class="camera-agent-offline">离线</span>')
+          : '-'}</td>
       <td>
         <div class="camera-row-actions">
           ${camera.is_default ? '' : `<button data-camera-default="${camera.id}">设为默认</button>`}
@@ -93,9 +99,13 @@ function renderLocalCameraDeviceOptions(selected = $('#cameraDevice')?.value || 
 }
 
 function updateCameraFormVisibility() {
-  const network = $('#cameraKind').value === 'network';
-  $$('[data-camera-local]').forEach(el => el.classList.toggle('hidden', network));
+  const kind = $('#cameraKind').value;
+  const local = kind === 'local';
+  const network = kind === 'network';
+  const agent = kind === 'agent';
+  $$('[data-camera-local]').forEach(el => el.classList.toggle('hidden', !local));
   $$('[data-camera-network]').forEach(el => el.classList.toggle('hidden', !network));
+  $$('[data-camera-agent]').forEach(el => el.classList.toggle('hidden', !agent));
   const protocol = $('#cameraProtocol').value;
   $('#cameraStreamGroup').classList.toggle('hidden', !network || protocol === 'http_snapshot');
   $('#cameraSnapshotGroup').classList.toggle('hidden', !network);
@@ -122,6 +132,9 @@ function resetCameraForm() {
   $('#cancelCameraEdit').classList.add('hidden');
   $('#cameraClearPasswordWrap').classList.add('hidden');
   $('#cameraPassword').placeholder = '网络摄像头密码';
+  $('#cameraAgentID').value = '';
+  $('#cameraAgentSecret').value = '';
+  $('#cameraAgentSecret').placeholder = '建议使用随机生成密钥';
   renderLocalCameraDeviceOptions('');
   updateCameraFormVisibility();
 }
@@ -143,6 +156,9 @@ function editCamera(id) {
   $('#cameraClearPassword').checked = false;
   $('#cameraClearPasswordWrap').classList.toggle('hidden', !camera.has_password);
   $('#cameraAuthMode').value = camera.auth_mode || 'none';
+  $('#cameraAgentID').value = camera.agent_id || '';
+  $('#cameraAgentSecret').value = '';
+  $('#cameraAgentSecret').placeholder = camera.has_agent_secret ? '已保存连接密钥；留空不修改' : '建议使用随机生成密钥';
   $('#cameraWidth').value = camera.width || 1280;
   $('#cameraHeight').value = camera.height || 720;
   $('#cameraFPS').value = camera.fps || (camera.kind === 'network' ? 5 : 30);
@@ -197,7 +213,9 @@ async function testCamera(id) {
       cameraTestPreviewURL = URL.createObjectURL(blob);
       $('#cameraTestPreview').src = cameraTestPreviewURL;
       $('#cameraTestPreview').classList.remove('hidden');
-      $('#cameraTestResult').textContent = `网络摄像头“${camera.name}”连接及抓图成功。`;
+      $('#cameraTestResult').textContent = camera.kind === 'agent'
+        ? `客户端 Agent“${camera.agent_id}”在线，画面接收成功。`
+        : `网络摄像头“${camera.name}”连接及抓图成功。`;
     }
     toast('摄像头测试成功');
   } catch (e) {
@@ -208,8 +226,52 @@ async function testCamera(id) {
 
 $('#cameraKind').addEventListener('change', () => {
   if ($('#cameraKind').value === 'network' && !editingCameraID) $('#cameraFPS').value = '5';
+  if ($('#cameraKind').value === 'agent' && !editingCameraID) $('#cameraFPS').value = '2';
   if ($('#cameraKind').value === 'local' && !editingCameraID) $('#cameraFPS').value = '30';
   updateCameraFormVisibility();
+});
+
+function randomCameraAgentSecret() {
+  const bytes = new Uint8Array(32);
+  crypto.getRandomValues(bytes);
+  return Array.from(bytes, value => value.toString(16).padStart(2, '0')).join('');
+}
+
+$('#generateCameraAgentSecret').addEventListener('click', () => {
+  $('#cameraAgentSecret').value = randomCameraAgentSecret();
+  toast('已生成新的 Agent 连接密钥，请同步到教室 Camera Agent 配置');
+});
+
+$('#copyCameraAgentConfig').addEventListener('click', async () => {
+  const agentID = $('#cameraAgentID').value.trim();
+  const secret = $('#cameraAgentSecret').value.trim();
+  if (!agentID || !secret) {
+    toast('请先填写 Agent ID，并生成或填写连接密钥');
+    return;
+  }
+  const config = {
+    server_url: location.origin,
+    agent_id: agentID,
+    agent_secret: secret,
+    fps: Number($('#cameraFPS').value || 2),
+    server_tls_insecure: false,
+    camera: {
+      protocol: 'http_snapshot',
+      stream_url: '',
+      snapshot_url: 'http://192.168.1.64/ISAPI/Streaming/channels/101/picture',
+      username: 'admin',
+      password: '请填写摄像头密码',
+      auth_mode: 'digest',
+      timeout_ms: 3000,
+      tls_insecure: false
+    }
+  };
+  try {
+    await navigator.clipboard.writeText(JSON.stringify(config, null, 2));
+    toast('Agent 配置模板已复制');
+  } catch (e) {
+    toast('复制失败：' + e.message);
+  }
 });
 $('#cameraProtocol').addEventListener('change', updateCameraFormVisibility);
 $('#refreshLocalCameras').addEventListener('click', () => refreshLocalCameraDevices(true).catch(e => toast(e.message)));
@@ -227,6 +289,7 @@ $('#cameraForm').addEventListener('submit', async event => {
     snapshot_url: kind === 'network' ? $('#cameraSnapshotURL').value.trim() : '',
     username: kind === 'network' ? $('#cameraUsername').value.trim() : '',
     auth_mode: kind === 'network' ? $('#cameraAuthMode').value : 'none',
+    agent_id: kind === 'agent' ? $('#cameraAgentID').value.trim() : '',
     width: Number($('#cameraWidth').value),
     height: Number($('#cameraHeight').value),
     fps: Number($('#cameraFPS').value),
@@ -237,6 +300,8 @@ $('#cameraForm').addEventListener('submit', async event => {
   };
   const password = $('#cameraPassword').value;
   if (kind === 'network' && password) payload.password = password;
+  const agentSecret = $('#cameraAgentSecret').value.trim();
+  if (kind === 'agent' && agentSecret) payload.agent_secret = agentSecret;
 
   try {
     if (editingCameraID) {

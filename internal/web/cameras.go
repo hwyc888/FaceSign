@@ -32,6 +32,8 @@ type cameraRequest struct {
 	Password      *string `json:"password"`
 	ClearPassword bool    `json:"clear_password"`
 	AuthMode      string  `json:"auth_mode"`
+	AgentID       string  `json:"agent_id"`
+	AgentSecret   *string `json:"agent_secret"`
 	Width         int     `json:"width"`
 	Height        int     `json:"height"`
 	FPS           int     `json:"fps"`
@@ -40,12 +42,13 @@ type cameraRequest struct {
 	IsDefault     bool    `json:"is_default"`
 }
 
-func (in cameraRequest) storeInput(password string) store.CameraInput {
+func (in cameraRequest) storeInput(password, agentSecretHash string) store.CameraInput {
 	return store.CameraInput{
 		Name: in.Name, Kind: in.Kind, DeviceID: in.DeviceID, Protocol: in.Protocol,
 		StreamURL: in.StreamURL, SnapshotURL: in.SnapshotURL, Username: in.Username,
-		Password: password, AuthMode: in.AuthMode, Width: in.Width, Height: in.Height,
-		FPS: in.FPS, TimeoutMS: in.TimeoutMS, TLSInsecure: in.TLSInsecure, IsDefault: in.IsDefault,
+		Password: password, AuthMode: in.AuthMode, AgentID: in.AgentID, AgentSecretHash: agentSecretHash,
+		Width: in.Width, Height: in.Height, FPS: in.FPS, TimeoutMS: in.TimeoutMS,
+		TLSInsecure: in.TLSInsecure, IsDefault: in.IsDefault,
 	}
 }
 
@@ -57,6 +60,7 @@ func (s *Server) cameras(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusInternalServerError, err)
 			return
 		}
+		for i := range items { s.decorateCameraAgentState(&items[i]) }
 		writeJSON(w, http.StatusOK, items)
 	case http.MethodPost:
 		var in cameraRequest
@@ -68,11 +72,16 @@ func (s *Server) cameras(w http.ResponseWriter, r *http.Request) {
 		if in.Password != nil {
 			password = *in.Password
 		}
-		item, err := s.store.CreateCamera(r.Context(), in.storeInput(password))
+		agentSecretHash := ""
+		if in.AgentSecret != nil && strings.TrimSpace(*in.AgentSecret) != "" {
+			agentSecretHash = hashCameraAgentSecret(*in.AgentSecret)
+		}
+		item, err := s.store.CreateCamera(r.Context(), in.storeInput(password, agentSecretHash))
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err)
 			return
 		}
+		s.decorateCameraAgentState(&item)
 		writeJSON(w, http.StatusCreated, item)
 	default:
 		methodNotAllowed(w)
@@ -111,11 +120,16 @@ func (s *Server) cameraAction(w http.ResponseWriter, r *http.Request) {
 			} else if in.Password != nil && *in.Password != "" {
 				password = *in.Password
 			}
-			item, err := s.store.UpdateCamera(r.Context(), id, in.storeInput(password))
+			agentSecretHash := current.AgentSecretHash
+			if in.AgentSecret != nil && strings.TrimSpace(*in.AgentSecret) != "" {
+				agentSecretHash = hashCameraAgentSecret(*in.AgentSecret)
+			}
+			item, err := s.store.UpdateCamera(r.Context(), id, in.storeInput(password, agentSecretHash))
 			if err != nil {
 				writeCameraStoreError(w, err)
 				return
 			}
+			s.decorateCameraAgentState(&item)
 			writeJSON(w, http.StatusOK, item)
 		case http.MethodDelete:
 			if err := s.store.DeleteCamera(r.Context(), id); err != nil {
@@ -145,13 +159,23 @@ func (s *Server) cameraAction(w http.ResponseWriter, r *http.Request) {
 			writeCameraStoreError(w, err)
 			return
 		}
-		if item.Kind != "network" {
+		var frame []byte
+		var width, height int
+		switch item.Kind {
+		case "network":
+			frame, width, height, err = fetchNetworkCameraFrame(r.Context(), item)
+			if err != nil {
+				writeError(w, http.StatusBadGateway, fmt.Errorf("读取网络摄像头失败: %w", err))
+				return
+			}
+		case "agent":
+			frame, width, height, err = s.latestCameraAgentFrame(item.AgentID)
+			if err != nil {
+				writeError(w, http.StatusServiceUnavailable, err)
+				return
+			}
+		default:
 			writeError(w, http.StatusBadRequest, errors.New("本机摄像头画面由浏览器直接读取"))
-			return
-		}
-		frame, width, height, err := fetchNetworkCameraFrame(r.Context(), item)
-		if err != nil {
-			writeError(w, http.StatusBadGateway, fmt.Errorf("读取网络摄像头失败: %w", err))
 			return
 		}
 		w.Header().Set("Content-Type", "image/jpeg")

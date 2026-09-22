@@ -72,3 +72,12 @@ The model binaries are committed once and are independent from normal program bu
 - Checksums: `models/SHA256SUMS`
 
 This keeps every later Windows program artifact small. If a target PC must be installed offline, download those three model files once from the pinned commit and place them in a `models` folder beside the extracted program package before running `scripts\install.ps1`.
+
+
+## Remote server + classroom Camera Agent
+
+When the FaceSign server is outside the classroom LAN, browser-local USB cameras continue to work from the client browser (use HTTPS for remote browser camera permission). For classroom IP cameras that the central server cannot route to, use the separate `facesign-camera-agent-windows-amd64` artifact.
+
+The Camera Agent runs on a classroom Windows PC, reads the camera locally, and only makes outbound HTTP/HTTPS requests to the central FaceSign server. No inbound port or router port-forward is required. Camera URL/user/password remain in the classroom PC's local `camera-agent.json`; the server stores only the Agent ID, a SHA-256 connection-key hash, and the latest frame in memory.
+
+See `CAMERA_AGENT.md` in the repository or the Camera Agent artifact for deployment steps.

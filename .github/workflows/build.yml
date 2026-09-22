@@ -67,6 +67,9 @@ jobs:
           $env:CGO_LDFLAGS = '-static-libgcc'
           go build -trimpath -ldflags "-s -w -X main.version=$env:GITHUB_SHA" -o dist\FaceSign.exe ./cmd/facesign
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          New-Item -ItemType Directory -Force -Path dist-agent, dist-agent\scripts | Out-Null
+          go build -trimpath -ldflags "-s -w -X main.version=$env:GITHUB_SHA" -o dist-agent\FaceSignCameraAgent.exe ./cmd/camera-agent
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Bundle native runtime
         shell: pwsh
@@ -90,6 +93,12 @@ jobs:
           Copy-Item scripts\install.ps1 dist\scripts\install.ps1 -Force
           Copy-Item scripts\uninstall.ps1 dist\scripts\uninstall.ps1 -Force
           Copy-Item README.md dist\README.md -Force
+          Copy-Item camera-agent.example.json dist-agent\camera-agent.example.json -Force
+          Copy-Item CAMERA_AGENT.md dist-agent\README.md -Force
+          Copy-Item scripts\install-camera-agent.ps1 dist-agent\scripts\install-camera-agent.ps1 -Force
+          Copy-Item scripts\uninstall-camera-agent.ps1 dist-agent\scripts\uninstall-camera-agent.ps1 -Force
+          & dist-agent\FaceSignCameraAgent.exe --version
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Create full and lightweight packages
         shell: pwsh
@@ -348,6 +357,14 @@ jobs:
               $env:FACESIGN_MODEL_DIR = $originalModelDir
             }
           }
+
+      - name: Upload Windows Camera Agent
+        uses: actions/upload-artifact@v7
+        with:
+          name: facesign-camera-agent-windows-amd64
+          path: dist-agent/
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Upload Windows full release
         uses: actions/upload-artifact@v7

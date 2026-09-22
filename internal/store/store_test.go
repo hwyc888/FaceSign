@@ -433,3 +433,27 @@ func TestCameraManagementAndDefaultSelection(t *testing.T) {
 		t.Fatalf("default camera was not promoted after delete: %#v err=%v", defaultCamera, err)
 	}
 }
+
+
+func TestCameraAgentConfiguration(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "camera-agent.db"))
+	if err != nil { t.Fatal(err) }
+	defer s.Close()
+	ctx := context.Background()
+	hash := "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	camera, err := s.CreateCamera(ctx, CameraInput{
+		Name: "301教室代理", Kind: "agent", AgentID: "classroom-301",
+		AgentSecretHash: hash, Width: 1280, Height: 720, FPS: 2,
+	})
+	if err != nil { t.Fatal(err) }
+	if camera.Protocol != "agent" || camera.AgentID != "classroom-301" || !camera.HasAgentSecret || camera.AgentSecretHash != hash {
+		t.Fatalf("unexpected agent camera: %#v", camera)
+	}
+	if _, err := s.CameraByAgentID(ctx, "classroom-301"); err != nil { t.Fatal(err) }
+	if _, err := s.CreateCamera(ctx, CameraInput{
+		Name: "重复Agent", Kind: "agent", AgentID: "classroom-301",
+		AgentSecretHash: hash, Width: 1280, Height: 720, FPS: 2,
+	}); err == nil {
+		t.Fatal("expected duplicate agent id to fail")
+	}
+}

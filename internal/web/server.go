@@ -25,6 +25,8 @@ type Server struct {
 	static             http.Handler
 	photoImportMu      sync.Mutex
 	photoImports       map[string]*photoImportSession
+	cameraAgentMu      sync.RWMutex
+	cameraAgentFrames  map[string]cameraAgentFrame
 }
 
 func New(logger *slog.Logger, st *store.Store, engine *face.Engine, live *liveness.Engine, matchThreshold, detectionThreshold float64, version string) (*Server, error) {
@@ -48,6 +50,7 @@ func New(logger *slog.Logger, st *store.Store, engine *face.Engine, live *livene
 		home:               home,
 		static:             http.FileServer(http.FS(sub)),
 		photoImports:       make(map[string]*photoImportSession),
+		cameraAgentFrames:  make(map[string]cameraAgentFrame),
 	}, nil
 }
 
@@ -66,6 +69,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/attendance", s.attendance)
 	mux.HandleFunc("/api/cameras", s.cameras)
 	mux.HandleFunc("/api/cameras/", s.cameraAction)
+	mux.HandleFunc("/api/camera-agents/frame", s.cameraAgentFrameUpload)
 	mux.HandleFunc("/api/photo-import/analyze", s.photoImportAnalyze)
 	mux.HandleFunc("/api/photo-import/", s.photoImportAction)
 	mux.HandleFunc("/", s.root)

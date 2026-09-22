@@ -97,7 +97,7 @@ function localVideoConstraints(camera) {
 
 async function startCamera() {
   if (cameraOpen) {
-    if (activeCamera?.kind === 'network') {
+    if (activeCamera?.kind !== 'local') {
       switchCameraViews(true);
       await refreshNetworkPreview();
     } else {
@@ -111,7 +111,7 @@ async function startCamera() {
     resetRecognitionSession();
     activeCamera = await preferredCamera();
 
-    if (activeCamera.kind === 'network') {
+    if (activeCamera.kind !== 'local') {
       stream = null;
       cameraOpen = true;
       switchCameraViews(true);
@@ -221,7 +221,7 @@ async function attachCameraViews() {
 }
 
 function cameraFrameDimensions(selector = '#camera') {
-  if (activeCamera?.kind === 'network') {
+  if (activeCamera?.kind !== 'local') {
     const image = selector === '#enrollCamera' ? $('#enrollCameraNetwork') : $('#cameraNetwork');
     return {
       width: image?.naturalWidth || Number(activeCamera.width || 1280),
@@ -237,7 +237,7 @@ function cameraFrameDimensions(selector = '#camera') {
 
 async function capture(selector = '#camera') {
   if (!cameraOpen) throw new Error('请先打开摄像头');
-  if (activeCamera?.kind === 'network') {
+  if (activeCamera?.kind !== 'local') {
     return await fetchCameraFrameBlob(activeCamera.id);
   }
 

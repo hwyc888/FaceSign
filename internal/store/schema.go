@@ -59,6 +59,8 @@ func (s *Store) init(ctx context.Context) error {
             username TEXT NOT NULL DEFAULT '',
             password TEXT NOT NULL DEFAULT '',
             auth_mode TEXT NOT NULL DEFAULT 'none',
+            agent_id TEXT NOT NULL DEFAULT '',
+            agent_secret_hash TEXT NOT NULL DEFAULT '',
             width INTEGER NOT NULL DEFAULT 1280,
             height INTEGER NOT NULL DEFAULT 720,
             fps INTEGER NOT NULL DEFAULT 30,
@@ -89,6 +91,12 @@ func (s *Store) init(ctx context.Context) error {
 	if err := s.ensureColumn(ctx, "classes", "attendance_deadline", "TEXT NOT NULL DEFAULT ''"); err != nil {
 		return err
 	}
+	if err := s.ensureColumn(ctx, "cameras", "agent_id", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
+	if err := s.ensureColumn(ctx, "cameras", "agent_secret_hash", "TEXT NOT NULL DEFAULT ''"); err != nil {
+		return err
+	}
 	if err := s.migrateFaceSamples(ctx); err != nil {
 		return err
 	}
@@ -100,6 +108,7 @@ func (s *Store) init(ctx context.Context) error {
 		"CREATE INDEX IF NOT EXISTS idx_attendance_day ON attendance(day, checked_at DESC)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS idx_students_class_seat ON students(class_name,seat_no) WHERE seat_no > 0",
 		"CREATE UNIQUE INDEX IF NOT EXISTS idx_cameras_default ON cameras(is_default) WHERE is_default=1",
+		"CREATE UNIQUE INDEX IF NOT EXISTS idx_cameras_agent_id ON cameras(agent_id) WHERE agent_id <> ''",
 	} {
 		if _, err := s.db.ExecContext(ctx, statement); err != nil {
 			return fmt.Errorf("initialize database index: %w", err)

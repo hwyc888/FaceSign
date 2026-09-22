@@ -333,3 +333,7 @@ pre{background:#0b1220;color:#d8e2f3;border-radius:12px;padding:16px;overflow:au
   .camera-form .camera-wide{grid-column:auto}
   .camera-test-box{grid-template-columns:1fr}
 }
+
+.camera-agent-online,.camera-agent-offline{display:inline-block;padding:3px 8px;border-radius:999px;font-size:11px;font-weight:800}
+.camera-agent-online{background:#e8f7ee;color:#166534}
+.camera-agent-offline{background:#f2f4f7;color:#667085}

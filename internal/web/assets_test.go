@@ -168,6 +168,9 @@ func TestCameraSettingsUI(t *testing.T) {
 		`id="cameraSnapshotURL"`,
 		`id="cameraStreamURL"`,
 		`id="camerasBody"`,
+		`id="cameraAgentID"`,
+		`id="cameraAgentSecret"`,
+		`id="generateCameraAgentSecret"`,
 		`/js/cameras.js`,
 	} {
 		if !strings.Contains(html, want) {
@@ -188,6 +191,8 @@ func TestCameraFrontendSupportsLocalAndNetworkSources(t *testing.T) {
 		"http_snapshot",
 		"mjpeg",
 		"rtsp",
+		"agent_id",
+		"Camera Agent",
 		"/api/cameras/",
 		"Digest",
 	} {

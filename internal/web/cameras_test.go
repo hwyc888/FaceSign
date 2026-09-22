@@ -1,6 +1,7 @@
 package web
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"image"
@@ -109,4 +110,50 @@ func TestNetworkCameraDigestChallenge(t *testing.T) {
 	if len(frame) == 0 || !authorized {
 		t.Fatal("digest authenticated frame was not fetched")
 	}
+}
+
+
+func TestCameraAgentUploadAndFrame(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "camera-agent-web.db"))
+	if err != nil { t.Fatal(err) }
+	defer st.Close()
+	secret := "agent-test-secret-0123456789"
+	camera, err := st.CreateCamera(context.Background(), store.CameraInput{
+		Name: "Agent camera", Kind: "agent", AgentID: "classroom-test",
+		AgentSecretHash: hashCameraAgentSecret(secret), Width: 1280, Height: 720, FPS: 2,
+	})
+	if err != nil { t.Fatal(err) }
+	s := &Server{store: st, logger: slog.Default(), cameraAgentFrames: make(map[string]cameraAgentFrame)}
+	img := image.NewRGBA(image.Rect(0, 0, 20, 12))
+	var body bytes.Buffer
+	if err := jpeg.Encode(&body, img, nil); err != nil { t.Fatal(err) }
+	upload := httptest.NewRequest(http.MethodPost, "/api/camera-agents/frame", bytes.NewReader(body.Bytes()))
+	upload.Header.Set("X-FaceSign-Agent-ID", "classroom-test")
+	upload.Header.Set("Authorization", "Bearer "+secret)
+	uploadRec := httptest.NewRecorder()
+	s.cameraAgentFrameUpload(uploadRec, upload)
+	if uploadRec.Code != http.StatusOK { t.Fatalf("upload status=%d body=%s", uploadRec.Code, uploadRec.Body.String()) }
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/cameras/%d/frame", camera.ID), nil)
+	s.cameraAction(rec, req)
+	if rec.Code != http.StatusOK { t.Fatalf("agent frame status=%d body=%s", rec.Code, rec.Body.String()) }
+	if rec.Header().Get("Content-Type") != "image/jpeg" { t.Fatalf("unexpected content type: %s", rec.Header().Get("Content-Type")) }
+}
+
+func TestCameraAgentRejectsWrongSecret(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "camera-agent-auth.db"))
+	if err != nil { t.Fatal(err) }
+	defer st.Close()
+	_, err = st.CreateCamera(context.Background(), store.CameraInput{
+		Name: "Agent auth", Kind: "agent", AgentID: "classroom-auth",
+		AgentSecretHash: hashCameraAgentSecret("correct-secret"), Width: 1280, Height: 720, FPS: 2,
+	})
+	if err != nil { t.Fatal(err) }
+	s := &Server{store: st, logger: slog.Default(), cameraAgentFrames: make(map[string]cameraAgentFrame)}
+	req := httptest.NewRequest(http.MethodPost, "/api/camera-agents/frame", strings.NewReader("bad"))
+	req.Header.Set("X-FaceSign-Agent-ID", "classroom-auth")
+	req.Header.Set("Authorization", "Bearer wrong-secret")
+	rec := httptest.NewRecorder()
+	s.cameraAgentFrameUpload(rec, req)
+	if rec.Code != http.StatusUnauthorized { t.Fatalf("expected unauthorized, got %d", rec.Code) }
 }

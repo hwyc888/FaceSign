@@ -94,10 +94,15 @@ type Camera struct {
 	StreamURL    string `json:"stream_url,omitempty"`
 	SnapshotURL  string `json:"snapshot_url,omitempty"`
 	Username     string `json:"username,omitempty"`
-	Password     string `json:"-"`
-	HasPassword  bool   `json:"has_password"`
-	AuthMode     string `json:"auth_mode"`
-	Width        int    `json:"width"`
+	Password        string `json:"-"`
+	HasPassword     bool   `json:"has_password"`
+	AuthMode        string `json:"auth_mode"`
+	AgentID         string `json:"agent_id,omitempty"`
+	AgentSecretHash string `json:"-"`
+	HasAgentSecret  bool   `json:"has_agent_secret"`
+	AgentOnline     bool   `json:"agent_online,omitempty"`
+	AgentLastSeen   string `json:"agent_last_seen,omitempty"`
+	Width           int    `json:"width"`
 	Height       int    `json:"height"`
 	FPS          int    `json:"fps"`
 	TimeoutMS    int    `json:"timeout_ms"`

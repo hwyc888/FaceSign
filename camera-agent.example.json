@@ -1,0 +1,17 @@
+{
+  "server_url": "https://facesign.example.com",
+  "agent_id": "classroom-301",
+  "agent_secret": "replace-with-the-same-key-created-in-facesign-settings",
+  "fps": 2,
+  "server_tls_insecure": false,
+  "camera": {
+    "protocol": "http_snapshot",
+    "stream_url": "",
+    "snapshot_url": "http://192.168.1.64/ISAPI/Streaming/channels/101/picture",
+    "username": "admin",
+    "password": "replace-with-camera-password",
+    "auth_mode": "digest",
+    "timeout_ms": 3000,
+    "tls_insecure": false
+  }
+}

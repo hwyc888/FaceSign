@@ -19,8 +19,10 @@ type CameraInput struct {
 	SnapshotURL string
 	Username    string
 	Password    string
-	AuthMode    string
-	Width       int
+	AuthMode        string
+	AgentID         string
+	AgentSecretHash string
+	Width           int
 	Height      int
 	FPS         int
 	TimeoutMS   int
@@ -47,6 +49,8 @@ func normalizeCameraInput(in CameraInput) (CameraInput, error) {
 	in.SnapshotURL = strings.TrimSpace(in.SnapshotURL)
 	in.Username = strings.TrimSpace(in.Username)
 	in.AuthMode = strings.ToLower(strings.TrimSpace(in.AuthMode))
+	in.AgentID = strings.TrimSpace(in.AgentID)
+	in.AgentSecretHash = strings.ToLower(strings.TrimSpace(in.AgentSecretHash))
 
 	if in.Width == 0 {
 		in.Width = 1280
@@ -72,6 +76,8 @@ func normalizeCameraInput(in CameraInput) (CameraInput, error) {
 		in.Username = ""
 		in.Password = ""
 		in.AuthMode = "none"
+		in.AgentID = ""
+		in.AgentSecretHash = ""
 		in.TLSInsecure = false
 		if in.FPS == 0 {
 			in.FPS = 30
@@ -80,6 +86,8 @@ func normalizeCameraInput(in CameraInput) (CameraInput, error) {
 			return CameraInput{}, errors.New("本机摄像头帧率必须在1到60之间")
 		}
 	case "network":
+		in.AgentID = ""
+		in.AgentSecretHash = ""
 		if in.FPS == 0 {
 			in.FPS = 5
 		}
@@ -122,8 +130,37 @@ func normalizeCameraInput(in CameraInput) (CameraInput, error) {
 		default:
 			return CameraInput{}, errors.New("认证方式只支持无认证、Basic或Digest")
 		}
+	case "agent":
+		in.Protocol = "agent"
+		in.DeviceID = ""
+		in.StreamURL = ""
+		in.SnapshotURL = ""
+		in.Username = ""
+		in.Password = ""
+		in.AuthMode = "none"
+		in.TLSInsecure = false
+		if len(in.AgentID) < 3 || len(in.AgentID) > 80 {
+			return CameraInput{}, errors.New("Agent ID长度必须在3到80个字符之间")
+		}
+		for _, r := range in.AgentID {
+			if !(r == '-' || r == '_' || r == '.' || r >= '0' && r <= '9' || r >= 'a' && r <= 'z' || r >= 'A' && r <= 'Z') {
+				return CameraInput{}, errors.New("Agent ID只能使用字母、数字、点、下划线和横线")
+			}
+		}
+		if len(in.AgentSecretHash) != 64 {
+			return CameraInput{}, errors.New("客户端代理连接密钥未设置")
+		}
+		for _, r := range in.AgentSecretHash {
+			if !(r >= '0' && r <= '9' || r >= 'a' && r <= 'f') {
+				return CameraInput{}, errors.New("客户端代理连接密钥格式不正确")
+			}
+		}
+		if in.FPS == 0 { in.FPS = 2 }
+		if in.FPS < 1 || in.FPS > 10 {
+			return CameraInput{}, errors.New("客户端代理帧率必须在1到10之间")
+		}
 	default:
-		return CameraInput{}, errors.New("摄像头类型只支持本机或网络摄像头")
+		return CameraInput{}, errors.New("摄像头类型只支持本机、服务器直连网络摄像头或客户端代理")
 	}
 	return in, nil
 }
@@ -154,6 +191,7 @@ func scanCamera(scanner rowScanner) (Camera, error) {
 	err := scanner.Scan(
 		&item.ID, &item.Name, &item.Kind, &item.DeviceID, &item.Protocol,
 		&item.StreamURL, &item.SnapshotURL, &item.Username, &item.Password, &item.AuthMode,
+		&item.AgentID, &item.AgentSecretHash,
 		&item.Width, &item.Height, &item.FPS, &item.TimeoutMS, &tlsInsecure, &isDefault,
 	)
 	if err != nil {
@@ -162,10 +200,11 @@ func scanCamera(scanner rowScanner) (Camera, error) {
 	item.TLSInsecure = tlsInsecure != 0
 	item.IsDefault = isDefault != 0
 	item.HasPassword = item.Password != ""
+	item.HasAgentSecret = item.AgentSecretHash != ""
 	return item, nil
 }
 
-const cameraSelectColumns = "id,name,kind,device_id,protocol,stream_url,snapshot_url,username,password,auth_mode,width,height,fps,timeout_ms,tls_insecure,is_default"
+const cameraSelectColumns = "id,name,kind,device_id,protocol,stream_url,snapshot_url,username,password,auth_mode,agent_id,agent_secret_hash,width,height,fps,timeout_ms,tls_insecure,is_default"
 
 func (s *Store) ListCameras(ctx context.Context) ([]Camera, error) {
 	rows, err := s.db.QueryContext(ctx, "SELECT "+cameraSelectColumns+" FROM cameras ORDER BY is_default DESC,id")
@@ -192,6 +231,10 @@ func (s *Store) DefaultCamera(ctx context.Context) (Camera, error) {
 	return scanCamera(s.db.QueryRowContext(ctx, "SELECT "+cameraSelectColumns+" FROM cameras WHERE is_default=1 ORDER BY id LIMIT 1"))
 }
 
+func (s *Store) CameraByAgentID(ctx context.Context, agentID string) (Camera, error) {
+	return scanCamera(s.db.QueryRowContext(ctx, "SELECT "+cameraSelectColumns+" FROM cameras WHERE agent_id=? LIMIT 1", strings.TrimSpace(agentID)))
+}
+
 func (s *Store) CreateCamera(ctx context.Context, input CameraInput) (Camera, error) {
 	input, err := normalizeCameraInput(input)
 	if err != nil {
@@ -216,16 +259,19 @@ func (s *Store) CreateCamera(ctx context.Context, input CameraInput) (Camera, er
 	now := time.Now().Unix()
 	result, err := tx.ExecContext(ctx, `
 		INSERT INTO cameras(
-			name,kind,device_id,protocol,stream_url,snapshot_url,username,password,auth_mode,
+			name,kind,device_id,protocol,stream_url,snapshot_url,username,password,auth_mode,agent_id,agent_secret_hash,
 			width,height,fps,timeout_ms,tls_insecure,is_default,created_at,updated_at
-		) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+		) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
 		input.Name, input.Kind, input.DeviceID, input.Protocol, input.StreamURL, input.SnapshotURL,
-		input.Username, input.Password, input.AuthMode, input.Width, input.Height, input.FPS,
-		input.TimeoutMS, boolInt(input.TLSInsecure), boolInt(makeDefault), now, now,
+		input.Username, input.Password, input.AuthMode, input.AgentID, input.AgentSecretHash,
+		input.Width, input.Height, input.FPS, input.TimeoutMS, boolInt(input.TLSInsecure), boolInt(makeDefault), now, now,
 	)
 	if err != nil {
 		if strings.Contains(err.Error(), "cameras.name") {
 			return Camera{}, errors.New("该摄像头名称已经存在")
+		}
+		if strings.Contains(err.Error(), "cameras.agent_id") {
+			return Camera{}, errors.New("该Agent ID已经被其他摄像头使用")
 		}
 		return Camera{}, err
 	}
@@ -263,16 +309,19 @@ func (s *Store) UpdateCamera(ctx context.Context, id int64, input CameraInput) (
 	}
 	result, err := tx.ExecContext(ctx, `
 		UPDATE cameras SET
-			name=?,kind=?,device_id=?,protocol=?,stream_url=?,snapshot_url=?,username=?,password=?,auth_mode=?,
+			name=?,kind=?,device_id=?,protocol=?,stream_url=?,snapshot_url=?,username=?,password=?,auth_mode=?,agent_id=?,agent_secret_hash=?,
 			width=?,height=?,fps=?,timeout_ms=?,tls_insecure=?,is_default=?,updated_at=?
 		WHERE id=?`,
 		input.Name, input.Kind, input.DeviceID, input.Protocol, input.StreamURL, input.SnapshotURL,
-		input.Username, input.Password, input.AuthMode, input.Width, input.Height, input.FPS,
-		input.TimeoutMS, boolInt(input.TLSInsecure), boolInt(makeDefault), now, id,
+		input.Username, input.Password, input.AuthMode, input.AgentID, input.AgentSecretHash,
+		input.Width, input.Height, input.FPS, input.TimeoutMS, boolInt(input.TLSInsecure), boolInt(makeDefault), now, id,
 	)
 	if err != nil {
 		if strings.Contains(err.Error(), "cameras.name") {
 			return Camera{}, errors.New("该摄像头名称已经存在")
+		}
+		if strings.Contains(err.Error(), "cameras.agent_id") {
+			return Camera{}, errors.New("该Agent ID已经被其他摄像头使用")
 		}
 		return Camera{}, err
 	}
