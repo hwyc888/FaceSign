@@ -1,0 +1,42 @@
+name: Seed Passive Liveness Model
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/seed-liveness-model.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  seed-liveness:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Download pinned anti-spoof model
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p models
+          curl -fL --retry 3             'https://storage.openvinotoolkit.org/repositories/open_model_zoo/public/2022.1/anti-spoof-mn3/anti-spoof-mn3.onnx'             -o models/anti-spoof-mn3.onnx
+          test $(stat -c%s models/anti-spoof-mn3.onnx) -gt 10000000
+          sha256sum models/face_detection_yunet_2023mar.onnx                     models/face_recognition_sface_2021dec.onnx                     models/anti-spoof-mn3.onnx > models/SHA256SUMS
+
+      - name: Commit model once
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add models/anti-spoof-mn3.onnx models/SHA256SUMS
+          if git diff --cached --quiet; then
+            echo 'Liveness model already committed.'
+            exit 0
+          fi
+          git commit -m 'chore: pin passive liveness model'
+          git push origin HEAD:main
