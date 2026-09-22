@@ -59,7 +59,7 @@ async function fetchCameraFrameBlob(cameraID) {
 }
 
 async function refreshNetworkPreview() {
-  if (!cameraOpen || !activeCamera || activeCamera.kind !== 'network' || networkPreviewBusy) return;
+  if (!cameraOpen || !activeCamera || activeCamera.kind === 'local' || networkPreviewBusy) return;
   networkPreviewBusy = true;
   try {
     const blob = await fetchCameraFrameBlob(activeCamera.id);
@@ -120,6 +120,9 @@ async function startCamera() {
     } else {
       switchCameraViews(false);
       try {
+        if (!window.isSecureContext) {
+          throw new Error('远程浏览器调用本机摄像头需要 HTTPS 安全连接；请使用 FaceSign 的 https:// 地址，并先安装 FaceSign 根证书');
+        }
         stream = await navigator.mediaDevices.getUserMedia(localVideoConstraints(activeCamera));
       } catch (e) {
         if (activeCamera.device_id && (e.name === 'NotFoundError' || e.name === 'OverconstrainedError')) {

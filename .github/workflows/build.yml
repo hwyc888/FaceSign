@@ -92,6 +92,7 @@ jobs:
           }
           Copy-Item scripts\install.ps1 dist\scripts\install.ps1 -Force
           Copy-Item scripts\uninstall.ps1 dist\scripts\uninstall.ps1 -Force
+          Copy-Item scripts\install-client-ca.ps1 dist\scripts\install-client-ca.ps1 -Force
           Copy-Item README.md dist\README.md -Force
           Copy-Item camera-agent.example.json dist-agent\camera-agent.example.json -Force
           Copy-Item CAMERA_AGENT.md dist-agent\README.md -Force
@@ -150,7 +151,8 @@ jobs:
           $originalModelDir = $env:FACESIGN_MODEL_DIR
           Remove-Item Env:FACESIGN_MODEL_DIR -ErrorAction SilentlyContinue
           $env:PATH = $smokeAssets + ';' + (Join-Path $env:WINDIR 'System32') + ';' + $env:WINDIR
-          $process = Start-Process -FilePath (Resolve-Path 'dist-full\FaceSign.exe') -ArgumentList @('--listen','127.0.0.1:18082','--open-browser=false','--assets',$smokeAssets,'--data',$db,'--detection-threshold','0.60') -PassThru -WindowStyle Hidden
+          $tlsDir = Join-Path $env:RUNNER_TEMP 'facesign-tls-full'
+          $process = Start-Process -FilePath (Resolve-Path 'dist-full\FaceSign.exe') -ArgumentList @('--listen','127.0.0.1:18082','--https-listen','127.0.0.1:18084','--http-redirect=false','--tls-dir',$tlsDir,'--tls-hosts','smoke.facesign.test','--open-browser=false','--assets',$smokeAssets,'--data',$db,'--detection-threshold','0.60') -PassThru -WindowStyle Hidden
           try {
             $ready = $false
             for ($i = 0; $i -lt 30; $i++) {
@@ -160,6 +162,13 @@ jobs:
               } catch { Start-Sleep -Seconds 1 }
             }
             if (-not $ready) { throw 'FaceSign health check failed' }
+            if (-not (Test-Path (Join-Path $tlsDir 'facesign-root-ca.crt') -PathType Leaf)) { throw 'Persistent root CA was not generated' }
+            if (-not (Test-Path (Join-Path $tlsDir 'facesign-server.crt') -PathType Leaf)) { throw 'HTTPS server certificate was not generated' }
+            $httpsVersionRaw = & curl.exe -k -fsS 'https://127.0.0.1:18084/api/version'
+            if ($LASTEXITCODE -ne 0) { throw 'FaceSign HTTPS endpoint failed' }
+            $httpsVersion = $httpsVersionRaw | ConvertFrom-Json
+            if ($httpsVersion.version -ne $env:GITHUB_SHA) { throw "Unexpected HTTPS FaceSign version: $($httpsVersion.version)" }
+            if (-not (Test-Path 'dist-full\scripts\install-client-ca.ps1' -PathType Leaf)) { throw 'Client CA installer is missing from full package' }
             if (-not (Test-Path (Join-Path $smokeAssets 'models') -PathType Container)) { throw 'Full release smoke test is missing bundled models' }
             $versionInfo = Invoke-RestMethod -Uri 'http://127.0.0.1:18082/api/version' -TimeoutSec 3
             if ($versionInfo.version -ne $env:GITHUB_SHA) { throw "Unexpected FaceSign version: $($versionInfo.version)" }
@@ -335,7 +344,8 @@ jobs:
           $originalModelDir = $env:FACESIGN_MODEL_DIR
           $env:FACESIGN_MODEL_DIR = $modelCache
           $env:PATH = $liteAssets + ';' + (Join-Path $env:WINDIR 'System32') + ';' + $env:WINDIR
-          $process = Start-Process -FilePath (Resolve-Path 'dist-lite\FaceSign.exe') -ArgumentList @('--listen','127.0.0.1:18083','--open-browser=false','--assets',$liteAssets,'--data',$db,'--detection-threshold','0.60') -PassThru -WindowStyle Hidden
+          $liteTLSDir = Join-Path $env:RUNNER_TEMP 'facesign-tls-lite'
+          $process = Start-Process -FilePath (Resolve-Path 'dist-lite\FaceSign.exe') -ArgumentList @('--listen','127.0.0.1:18083','--https-listen','127.0.0.1:18085','--http-redirect=false','--tls-dir',$liteTLSDir,'--open-browser=false','--assets',$liteAssets,'--data',$db,'--detection-threshold','0.60') -PassThru -WindowStyle Hidden
           try {
             $ready = $false
             for ($i = 0; $i -lt 30; $i++) {
@@ -345,6 +355,9 @@ jobs:
               } catch { Start-Sleep -Seconds 1 }
             }
             if (-not $ready) { throw 'Lightweight package could not start with an existing model cache' }
+            $liteHTTPSRaw = & curl.exe -k -fsS 'https://127.0.0.1:18085/api/version'
+            if ($LASTEXITCODE -ne 0) { throw 'Lightweight package HTTPS endpoint failed' }
+            if (($liteHTTPSRaw | ConvertFrom-Json).version -ne $env:GITHUB_SHA) { throw 'Lightweight package HTTPS version check failed' }
             if (Test-Path (Join-Path $liteAssets 'models')) { throw 'Lightweight package unexpectedly gained bundled models' }
             $versionInfo = Invoke-RestMethod -Uri 'http://127.0.0.1:18083/api/version' -TimeoutSec 3
             if ($versionInfo.version -ne $env:GITHUB_SHA) { throw "Unexpected lightweight package version: $($versionInfo.version)" }

@@ -11,15 +11,26 @@ import (
 const ortVersion = "1.26.0"
 
 func browserURL(listen string) string {
+	return browserURLForScheme(listen, "http")
+}
+
+func secureBrowserURL(listen string) string {
+	return browserURLForScheme(listen, "https")
+}
+
+func browserURLForScheme(listen, scheme string) string {
 	host, port, err := net.SplitHostPort(listen)
 	if err != nil {
+		if scheme == "https" {
+			return "https://127.0.0.1:8443/"
+		}
 		return "http://127.0.0.1:8080/"
 	}
 	switch host {
 	case "", "0.0.0.0", "::":
 		host = "127.0.0.1"
 	}
-	return "http://" + net.JoinHostPort(host, port) + "/"
+	return scheme + "://" + net.JoinHostPort(host, port) + "/"
 }
 
 func openURL(url string) error {

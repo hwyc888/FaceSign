@@ -1,6 +1,8 @@
 param(
   [string]$InstallDir = "$env:ProgramData\FaceSign",
-  [string]$Listen = "0.0.0.0:8080"
+  [string]$Listen = "0.0.0.0:8080",
+  [string]$HTTPSListen = "0.0.0.0:8443",
+  [string]$TLSHosts = ""
 )
 $ErrorActionPreference = 'Stop'
 $source = Split-Path -Parent $PSScriptRoot
@@ -100,26 +102,58 @@ Remove-Item (Join-Path $InstallDir 'facesign-error.log') -Force -ErrorAction Sil
 
 $exe = Join-Path $InstallDir 'FaceSign.exe'
 $db = Join-Path $InstallDir 'data\facesign.db'
-$args = '--listen {0} --open-browser=false --assets "{1}" --data "{2}"' -f $Listen, $InstallDir, $db
-$action = New-ScheduledTaskAction -Execute $exe -Argument $args
+$tlsDir = Join-Path $InstallDir 'tls'
+$faceArgs = '--listen {0} --https-listen {1} --http-redirect=true --tls-dir "{2}" --open-browser=false --assets "{3}" --data "{4}"' -f $Listen, $HTTPSListen, $tlsDir, $InstallDir, $db
+if ($TLSHosts) {
+  $faceArgs += ' --tls-hosts "{0}"' -f $TLSHosts
+}
+$action = New-ScheduledTaskAction -Execute $exe -Argument $faceArgs
 $trigger = New-ScheduledTaskTrigger -AtStartup
 $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
 $settings = New-ScheduledTaskSettingsSet -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero)
 Register-ScheduledTask -TaskName 'FaceSign' -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
 
 $port = ($Listen -split ':')[-1]
+$httpsPort = ($HTTPSListen -split ':')[-1]
+Get-NetFirewallRule -DisplayName 'FaceSign Web' -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction SilentlyContinue
+Get-NetFirewallRule -DisplayName 'FaceSign HTTP' -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction SilentlyContinue
+Get-NetFirewallRule -DisplayName 'FaceSign HTTPS' -ErrorAction SilentlyContinue | Remove-NetFirewallRule -ErrorAction SilentlyContinue
 if ($Listen.StartsWith('0.0.0.0:') -or $Listen.StartsWith(':')) {
-  Get-NetFirewallRule -DisplayName 'FaceSign Web' -ErrorAction SilentlyContinue |
-    Remove-NetFirewallRule -ErrorAction SilentlyContinue
-  New-NetFirewallRule -DisplayName 'FaceSign Web' -Direction Inbound -Action Allow -Protocol TCP -LocalPort $port -Profile Domain,Private | Out-Null
+  New-NetFirewallRule -DisplayName 'FaceSign HTTP' -Direction Inbound -Action Allow -Protocol TCP -LocalPort $port -Profile Domain,Private | Out-Null
+}
+if ($HTTPSListen.StartsWith('0.0.0.0:') -or $HTTPSListen.StartsWith(':')) {
+  New-NetFirewallRule -DisplayName 'FaceSign HTTPS' -Direction Inbound -Action Allow -Protocol TCP -LocalPort $httpsPort -Profile Domain,Private | Out-Null
 }
 
 Start-ScheduledTask -TaskName 'FaceSign'
 
+$rootCAPath = Join-Path $tlsDir 'facesign-root-ca.crt'
+$rootReady = $false
+for ($i = 0; $i -lt 30; $i++) {
+  try {
+    $response = Invoke-WebRequest -Uri "http://127.0.0.1:$port/facesign-root-ca.crt" -UseBasicParsing -TimeoutSec 2
+    if ($response.StatusCode -eq 200 -and (Test-Path $rootCAPath -PathType Leaf)) {
+      $rootReady = $true
+      break
+    }
+  } catch {
+    Start-Sleep -Milliseconds 500
+  }
+}
+if (-not $rootReady) {
+  throw 'FaceSign root CA was not generated or could not be downloaded from the HTTP bootstrap endpoint.'
+}
+
+& icacls.exe $tlsDir /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' | Out-Null
+if ($LASTEXITCODE -ne 0) { throw 'Failed to protect the FaceSign TLS directory ACL.' }
+
+$rootCertificate = Import-Certificate -FilePath $rootCAPath -CertStoreLocation 'Cert:\LocalMachine\Root'
+$rootThumbprint = $rootCertificate.Thumbprint.ToUpperInvariant()
+
 $versionInfo = $null
 for ($i = 0; $i -lt 20; $i++) {
   try {
-    $versionInfo = Invoke-RestMethod -Uri "http://127.0.0.1:$port/api/version" -TimeoutSec 2
+    $versionInfo = Invoke-RestMethod -Uri "https://127.0.0.1:$httpsPort/api/version" -TimeoutSec 2
     if ($versionInfo.version) { break }
   } catch {
     Start-Sleep -Milliseconds 500
@@ -133,12 +167,22 @@ if (-not $versionInfo.version) {
   throw 'FaceSign failed to start. Check C:\ProgramData\FaceSign\data\facesign-startup.log and Windows Task Scheduler.'
 }
 
-$url = "http://127.0.0.1:$port/?v=$($versionInfo.version)"
+$url = "https://127.0.0.1:$httpsPort/?v=$($versionInfo.version)"
 Write-Host "FaceSign upgraded and started."
-Write-Host "Version: $($versionInfo.version)"
-Write-Host "Models:  pinned at $ModelCommit"
-Write-Host "Local:   $url"
-if ($Listen.StartsWith('0.0.0.0:') -or $Listen.StartsWith(':')) {
-  Write-Host "LAN:     http://<this-PC-IP>:$port/"
+Write-Host "Version:       $($versionInfo.version)"
+Write-Host "Models:        pinned at $ModelCommit"
+Write-Host "Root CA:       $rootCAPath"
+Write-Host "CA Thumbprint: $rootThumbprint"
+Write-Host "Local HTTPS:   $url"
+$lanIPs = @(Get-NetIPAddress -AddressFamily IPv4 -AddressState Preferred -ErrorAction SilentlyContinue |
+  Where-Object { $_.IPAddress -ne '127.0.0.1' -and -not $_.IPAddress.StartsWith('169.254.') } |
+  Select-Object -ExpandProperty IPAddress -Unique)
+foreach ($ip in $lanIPs) {
+  $lanURL = "https://{0}:{1}/" -f $ip, $httpsPort
+  Write-Host "LAN HTTPS:     $lanURL"
+  Write-Host ("Client CA:     .\scripts\install-client-ca.ps1 -Server {0} -HTTPPort {1} -HTTPSPort {2} -ExpectedThumbprint {3}" -f $ip, $port, $httpsPort, $rootThumbprint)
+}
+if ($TLSHosts) {
+  Write-Host "Extra TLS SAN: $TLSHosts"
 }
 Start-Process $url

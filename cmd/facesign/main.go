@@ -37,6 +37,12 @@ func run(logger *slog.Logger) error {
 		return err
 	}
 
+	tlsIdentity, err := ensureTLSIdentity(cfg.TLSDir, cfg.TLSHosts)
+	if err != nil {
+		return fmt.Errorf("prepare HTTPS identity: %w", err)
+	}
+	logger.Info("FaceSign HTTPS identity ready", "root_ca", tlsIdentity.CACertPath, "tls_dir", cfg.TLSDir)
+
 	runtimePath, err := runtimeLibraryPath(cfg.AssetsPath)
 	if err != nil {
 		return err
@@ -69,33 +75,49 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	server := &http.Server{
-		Handler:           webServer.Handler(),
-		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      30 * time.Second,
-		IdleTimeout:       60 * time.Second,
-	}
 
-	listener, err := net.Listen("tcp", cfg.Listen)
-	if err != nil {
-		return fmt.Errorf("listen on %s: %w; another FaceSign instance may still be running, so use scripts/install.ps1 as Administrator when upgrading", cfg.Listen, err)
+	appHandler := tlsBootstrapHandler(webServer.Handler(), tlsIdentity.CACertPath)
+	httpHandler := http.Handler(appHandler)
+	if cfg.HTTPRedirect {
+		httpHandler = httpsRedirectHandler(appHandler, cfg.HTTPSListen)
 	}
-	defer listener.Close()
+	httpServer := newHTTPServer(httpHandler)
+	httpsServer := newHTTPServer(appHandler)
+
+	httpsListener, err := net.Listen("tcp", cfg.HTTPSListen)
+	if err != nil {
+		return fmt.Errorf("listen for HTTPS on %s: %w", cfg.HTTPSListen, err)
+	}
+	defer httpsListener.Close()
+
+	httpListener, err := net.Listen("tcp", cfg.Listen)
+	if err != nil {
+		return fmt.Errorf("listen for HTTP on %s: %w; another FaceSign instance may still be running, so use scripts/install.ps1 as Administrator when upgrading", cfg.Listen, err)
+	}
+	defer httpListener.Close()
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
-	done := make(chan error, 1)
+	done := make(chan error, 2)
+
 	localURL := browserURL(cfg.Listen)
-	writeStartupInfo(filepath.Dir(cfg.DataPath), listener.Addr().String(), localURL)
+	if cfg.HTTPRedirect {
+		localURL = secureBrowserURL(cfg.HTTPSListen)
+	}
+	writeStartupInfo(filepath.Dir(cfg.DataPath), httpListener.Addr().String(), httpsListener.Addr().String(), localURL, tlsIdentity.CACertPath)
+
 	go func() {
-		logger.Info("FaceSign started", "version", version, "listen", listener.Addr().String(), "browser", localURL, "database", cfg.DataPath, "device", "cpu")
-		done <- server.Serve(listener)
+		logger.Info("FaceSign HTTPS started", "version", version, "listen", httpsListener.Addr().String(), "url", secureBrowserURL(cfg.HTTPSListen), "database", cfg.DataPath, "device", "cpu")
+		done <- httpsServer.ServeTLS(httpsListener, tlsIdentity.ServerCertPath, tlsIdentity.ServerKeyPath)
+	}()
+	go func() {
+		logger.Info("FaceSign HTTP started", "listen", httpListener.Addr().String(), "redirect_to_https", cfg.HTTPRedirect)
+		done <- httpServer.Serve(httpListener)
 	}()
 
 	if cfg.OpenBrowser {
 		go func() {
-			time.Sleep(250 * time.Millisecond)
+			time.Sleep(350 * time.Millisecond)
 			if err := openURL(localURL + "?v=" + version); err != nil {
 				logger.Warn("could not open browser automatically", "url", localURL, "error", err)
 			}
@@ -106,18 +128,29 @@ func run(logger *slog.Logger) error {
 	case <-ctx.Done():
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		if err := server.Shutdown(shutdownCtx); err != nil {
+		if err := httpsServer.Shutdown(shutdownCtx); err != nil {
 			return err
 		}
-		err := <-done
-		if errors.Is(err, http.ErrServerClosed) {
-			return nil
+		if err := httpServer.Shutdown(shutdownCtx); err != nil {
+			return err
 		}
-		return err
+		return nil
 	case err := <-done:
+		_ = httpsServer.Close()
+		_ = httpServer.Close()
 		if errors.Is(err, http.ErrServerClosed) {
 			return nil
 		}
 		return err
+	}
+}
+
+func newHTTPServer(handler http.Handler) *http.Server {
+	return &http.Server{
+		Handler:           handler,
+		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      30 * time.Second,
+		IdleTimeout:       60 * time.Second,
 	}
 }

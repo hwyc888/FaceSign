@@ -7,13 +7,13 @@ import (
 	"time"
 )
 
-func writeStartupInfo(dir, listen, localURL string) {
+func writeStartupInfo(dir, httpListen, httpsListen, browserURL, caPath string) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return
 	}
 	message := fmt.Sprintf(
-		"started=%s\r\nversion=%s\r\npid=%d\r\nlisten=%s\r\nurl=%s\r\n",
-		time.Now().Format(time.RFC3339), version, os.Getpid(), listen, localURL,
+		"started=%s\r\nversion=%s\r\npid=%d\r\nhttp_listen=%s\r\nhttps_listen=%s\r\nurl=%s\r\nroot_ca=%s\r\n",
+		time.Now().Format(time.RFC3339), version, os.Getpid(), httpListen, httpsListen, browserURL, caPath,
 	)
 	_ = os.WriteFile(filepath.Join(dir, "facesign-startup.log"), []byte(message), 0o644)
 }
