@@ -44,7 +44,7 @@ SQL stays in the store package; HTTP handlers do not execute SQL directly.
 - classes.js: class arrangement and seat-layout UI.
 - students.js: students, editable class/seat number and face samples.
 - seating.js: real-time class seat check-in board with on-time/late/waiting/absent/empty filters.
-- seat_editor.js: visual class seat editor; move students to empty seats or atomically swap occupied seats.
+- seat_editor.js: visual class seat editor with drag/drop and click fallback; move students to empty seats or atomically swap occupied seats.
 - photo_import.js: ZIP photo import preview, class editing and confirmation.
 - attendance.js: attendance UI.
 - boot.js: startup.

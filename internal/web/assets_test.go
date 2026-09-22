@@ -111,3 +111,42 @@ func TestSeatEditorSupportsMoveAndSwap(t *testing.T) {
 		}
 	}
 }
+
+
+func TestStudentListSelectorsUseQuerySelectorAll(t *testing.T) {
+	data, err := assets.ReadFile("assets/js/students.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(data)
+	for _, selector := range []string{"data-student-seat", "data-faces"} {
+		bad := "$('[" + selector + "]').forEach"
+		if strings.Contains(script, bad) {
+			t.Fatalf("%s must use querySelectorAll before forEach", selector)
+		}
+		good := "$$('[" + selector + "]').forEach"
+		if !strings.Contains(script, good) {
+			t.Fatalf("%s querySelectorAll binding is missing", selector)
+		}
+	}
+}
+
+func TestSeatEditorSupportsNativeDragDrop(t *testing.T) {
+	data, err := assets.ReadFile("assets/js/seat_editor.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(data)
+	for _, want := range []string{
+		`draggable="true"`,
+		"ondragstart",
+		"ondragover",
+		"ondrop",
+		"dataTransfer.setData",
+		"confirmSwap: false",
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("seat editor drag/drop missing %q", want)
+		}
+	}
+}

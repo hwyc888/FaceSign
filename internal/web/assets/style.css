@@ -296,3 +296,11 @@ pre{background:#0b1220;color:#d8e2f3;border-radius:12px;padding:16px;overflow:au
   .seat-layout-form,.seat-editor-settings{grid-template-columns:1fr}
   .seat-editor-row{grid-template-columns:52px minmax(0,1fr)}
 }
+
+.seat-editor-cell[draggable="true"],.unassigned-student[draggable="true"]{cursor:grab}
+.seat-editor-cell[draggable="true"]:active,.unassigned-student[draggable="true"]:active{cursor:grabbing}
+.seat-editor-cell.dragging,.unassigned-student.dragging{opacity:.38;transform:scale(.98)}
+.seat-editor-cell.drag-over{border-color:#2563eb;background:#dbeafe;box-shadow:0 0 0 3px rgba(37,99,235,.16)}
+.seat-editor-cell.drag-over.swap-target{border-color:#f59e0b;background:#fff4e5;box-shadow:0 0 0 3px rgba(245,158,11,.18)}
+.drag-hint{font-size:10px!important;color:#98a2b3!important}
+.seat-editor-cell:hover .drag-hint{color:#2563eb!important}

@@ -1,6 +1,7 @@
 window.classSeatEditorID = 0;
 let classSeatEditorStudents = [];
 let classSeatEditorSelectedStudentID = 0;
+let classSeatEditorDraggingStudentID = 0;
 
 function classSeatEditorClass() {
   return classesCache.find(item => Number(item.id) === Number(window.classSeatEditorID)) || null;
@@ -80,10 +81,12 @@ function renderClassSeatEditor() {
       const student = bySeat.get(seatNo);
       const selectedClass = student && selected && Number(student.id) === Number(selected.id) ? ' selected' : '';
       if (student) {
-        seats.push(`<button class="seat-editor-cell occupied${selectedClass}" type="button" data-editor-seat="${seatNo}">
+        seats.push(`<button class="seat-editor-cell occupied${selectedClass}" type="button"
+          draggable="true" data-editor-seat="${seatNo}" data-editor-student-id="${student.id}">
           <span class="seat-no">${seatNo}号</span>
           <strong>${esc(student.name)}</strong>
           <span>${esc(student.student_no)}</span>
+          <span class="drag-hint">拖动调整位置</span>
         </button>`);
       } else {
         seats.push(`<button class="seat-editor-cell empty" type="button" data-editor-seat="${seatNo}">
@@ -104,7 +107,8 @@ function renderClassSeatEditor() {
   $('#seatEditorUnassigned').innerHTML = unassigned.length
     ? '<strong>未编座位：</strong>' + unassigned.map(student => {
         const active = selected && Number(selected.id) === Number(student.id) ? ' selected' : '';
-        return `<button class="unassigned-student${active}" type="button" data-editor-student="${student.id}">
+        return `<button class="unassigned-student${active}" type="button"
+          draggable="true" data-editor-student="${student.id}" data-editor-student-id="${student.id}">
           ${esc(student.name)} · ${esc(student.student_no)}
         </button>`;
       }).join('')
@@ -122,8 +126,9 @@ function renderClassSeatEditor() {
     clear.disabled = true;
   }
 
-  $$('[data-editor-seat]').forEach(button => {
+  $('[data-editor-seat]').forEach(button => {
     button.onclick = async () => {
+      if (classSeatEditorDraggingStudentID) return;
       const targetSeatNo = Number(button.dataset.editorSeat);
       const occupant = bySeat.get(targetSeatNo);
       const current = selectedSeatEditorStudent();
@@ -132,7 +137,7 @@ function renderClassSeatEditor() {
         if (occupant) {
           setSeatEditorSelection(occupant.id);
         } else {
-          toast('这是空位，请先选择要移动的学生');
+          toast('这是空位，请先选择要移动的学生，或直接拖动学生到这里');
         }
         return;
       }
@@ -142,19 +147,81 @@ function renderClassSeatEditor() {
       }
       await moveSeatEditorStudent(current.id, targetSeatNo);
     };
+
+    button.ondragover = event => {
+      if (!classSeatEditorDraggingStudentID) return;
+      event.preventDefault();
+      event.dataTransfer.dropEffect = 'move';
+      button.classList.add('drag-over');
+      const occupant = bySeat.get(Number(button.dataset.editorSeat));
+      button.classList.toggle(
+        'swap-target',
+        Boolean(occupant && Number(occupant.id) !== Number(classSeatEditorDraggingStudentID))
+      );
+    };
+    button.ondragleave = () => {
+      button.classList.remove('drag-over', 'swap-target');
+    };
+    button.ondrop = async event => {
+      event.preventDefault();
+      const studentID = Number(
+        event.dataTransfer.getData('text/plain') || classSeatEditorDraggingStudentID
+      );
+      const targetSeatNo = Number(button.dataset.editorSeat);
+      button.classList.remove('drag-over', 'swap-target');
+      if (!studentID) return;
+
+      const moving = classSeatEditorStudents.find(student => Number(student.id) === studentID);
+      if (!moving || Number(moving.seat_no || 0) === targetSeatNo) {
+        classSeatEditorDraggingStudentID = 0;
+        return;
+      }
+      classSeatEditorDraggingStudentID = 0;
+      await moveSeatEditorStudent(studentID, targetSeatNo, {confirmSwap: false});
+    };
   });
 
-  $$('[data-editor-student]').forEach(button => {
-    button.onclick = () => setSeatEditorSelection(Number(button.dataset.editorStudent));
+  $('[data-editor-student]').forEach(button => {
+    button.onclick = () => {
+      if (!classSeatEditorDraggingStudentID) {
+        setSeatEditorSelection(Number(button.dataset.editorStudent));
+      }
+    };
+  });
+
+  $('[data-editor-student-id]').forEach(button => {
+    button.ondragstart = event => {
+      const studentID = Number(button.dataset.editorStudentId);
+      if (!studentID) {
+        event.preventDefault();
+        return;
+      }
+      classSeatEditorDraggingStudentID = studentID;
+      classSeatEditorSelectedStudentID = studentID;
+      event.dataTransfer.effectAllowed = 'move';
+      event.dataTransfer.setData('text/plain', String(studentID));
+      button.classList.add('dragging');
+      const selectedStudent = classSeatEditorStudents.find(student => Number(student.id) === studentID);
+      if (selectedStudent) {
+        $('#seatEditorSelection').textContent = selectedStudent.seat_no > 0
+          ? `正在拖动：${selectedStudent.name}（${selectedStudent.seat_no}号）`
+          : `正在拖动：${selectedStudent.name}（未编座位）`;
+      }
+    };
+    button.ondragend = () => {
+      classSeatEditorDraggingStudentID = 0;
+      button.classList.remove('dragging');
+      $('.seat-editor-cell').forEach(cell => cell.classList.remove('drag-over', 'swap-target'));
+    };
   });
 }
 
-async function moveSeatEditorStudent(studentID, targetSeatNo) {
+async function moveSeatEditorStudent(studentID, targetSeatNo, options = {}) {
   const item = classSeatEditorClass();
   if (!item) return;
   try {
     const targetStudent = classSeatEditorStudents.find(student => Number(student.seat_no) === Number(targetSeatNo));
-    if (targetStudent && Number(targetStudent.id) !== Number(studentID)) {
+    if (targetStudent && Number(targetStudent.id) !== Number(studentID) && options.confirmSwap !== false) {
       const moving = classSeatEditorStudents.find(student => Number(student.id) === Number(studentID));
       if (!confirm(`${moving ? moving.name : '所选学生'} 移到 ${targetSeatNo}号后，将与 ${targetStudent.name} 交换座位。继续吗？`)) {
         return;
@@ -169,7 +236,7 @@ async function moveSeatEditorStudent(studentID, targetSeatNo) {
     await reloadClassSeatEditor();
     if (typeof loadStudents === 'function') await loadStudents();
     if (typeof loadCheckinSeatBoard === 'function') await loadCheckinSeatBoard();
-    toast('座位已调整');
+    toast(targetStudent ? '座位已交换' : '座位已移动');
   } catch (e) {
     toast(e.message);
   }
