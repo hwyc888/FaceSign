@@ -120,13 +120,15 @@ func TestStudentListSelectorsUseQuerySelectorAll(t *testing.T) {
 	}
 	script := string(data)
 	for _, selector := range []string{"data-student-seat", "data-faces"} {
-		bad := "$('[" + selector + "]').forEach"
-		if strings.Contains(script, bad) {
-			t.Fatalf("%s must use querySelectorAll before forEach", selector)
-		}
-		good := "$$('[" + selector + "]').forEach"
+		good := "$('[" + selector + "]').forEach"
 		if !strings.Contains(script, good) {
 			t.Fatalf("%s querySelectorAll binding is missing", selector)
+		}
+	}
+	for _, line := range strings.Split(script, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, "$(") && strings.Contains(line, ").forEach") {
+			t.Fatalf("single-element selector cannot be iterated with forEach: %s", line)
 		}
 	}
 }
