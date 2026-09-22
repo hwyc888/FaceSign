@@ -371,6 +371,44 @@ jobs:
             }
           }
 
+      - name: Verify portable startup survives HTTPS port conflict
+        shell: pwsh
+        run: |
+          $liteAssets = (Resolve-Path 'dist-lite').Path
+          $modelCache = (Resolve-Path 'models').Path
+          $db = Join-Path $env:RUNNER_TEMP 'facesign-portable.db'
+          $tlsDir = Join-Path $env:RUNNER_TEMP 'facesign-portable-tls'
+          $originalPath = $env:PATH
+          $originalModelDir = $env:FACESIGN_MODEL_DIR
+          $env:FACESIGN_MODEL_DIR = $modelCache
+          $env:PATH = $liteAssets + ';' + (Join-Path $env:WINDIR 'System32') + ';' + $env:WINDIR
+          $blocker = [System.Net.Sockets.TcpListener]::new([System.Net.IPAddress]::Loopback, 18086)
+          $blocker.Start()
+          $process = $null
+          try {
+            $process = Start-Process -FilePath (Resolve-Path 'dist-lite\FaceSign.exe') -ArgumentList @('--listen','127.0.0.1:18087','--https-listen','127.0.0.1:18086','--http-redirect=false','--tls-dir',$tlsDir,'--open-browser=false','--assets',$liteAssets,'--data',$db) -PassThru -WindowStyle Hidden
+            $ready = $false
+            for ($i = 0; $i -lt 20; $i++) {
+              try {
+                $health = Invoke-RestMethod -Uri 'http://127.0.0.1:18087/api/health' -TimeoutSec 2
+                if ($health.ok) { $ready = $true; break }
+              } catch { Start-Sleep -Milliseconds 500 }
+            }
+            if (-not $ready) { throw 'Portable FaceSign stopped when HTTPS port was occupied' }
+            $startupLog = Join-Path (Split-Path $db -Parent) 'facesign-startup.log'
+            if (-not (Test-Path $startupLog)) { throw 'Portable startup log was not written' }
+            if ((Get-Content $startupLog -Raw) -notmatch 'https_listen=disabled') { throw 'Portable HTTPS fallback was not recorded' }
+          } finally {
+            if ($process) { Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue }
+            $blocker.Stop()
+            $env:PATH = $originalPath
+            if ($null -eq $originalModelDir) {
+              Remove-Item Env:FACESIGN_MODEL_DIR -ErrorAction SilentlyContinue
+            } else {
+              $env:FACESIGN_MODEL_DIR = $originalModelDir
+            }
+          }
+
       - name: Upload Windows Camera Agent
         uses: actions/upload-artifact@v7
         with:
