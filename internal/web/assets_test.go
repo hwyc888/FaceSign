@@ -612,6 +612,10 @@ func TestNetworkCameraPresetSimpleConfiguration(t *testing.T) {
 		"其他品牌 / 自定义（高级）",
 		`id="cameraAdvancedToggle"`,
 		"data-camera-advanced",
+		"$$('[data-camera-local]').forEach",
+		"$$('[data-camera-network]').forEach",
+		"$$('[data-camera-agent]').forEach",
+		"$$('[data-camera-advanced]').forEach",
 	} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("simple network camera setup UI missing %q", want)
