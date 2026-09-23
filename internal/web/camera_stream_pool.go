@@ -27,6 +27,7 @@ const (
 	networkCameraStreamRetryMin  = 500 * time.Millisecond
 	networkCameraStreamRetryMax  = 5 * time.Second
 	maxContinuousFrameBytes      = 16 << 20
+	networkCameraPreviewBufferFrames = 4
 )
 
 type pooledNetworkCameraFrame struct {
@@ -47,6 +48,7 @@ type networkCameraStream struct {
 	frame   pooledNetworkCameraFrame
 	lastErr error
 	notify  chan struct{}
+	history []pooledNetworkCameraFrame
 }
 
 func newNetworkCameraStream(camera store.Camera, key string) *networkCameraStream {
@@ -82,12 +84,21 @@ func (stream *networkCameraStream) publish(data []byte, source string) error {
 
 	frameCopy := append([]byte(nil), data...)
 	stream.mu.Lock()
-	stream.frame.data = frameCopy
-	stream.frame.width = config.Width
-	stream.frame.height = config.Height
-	stream.frame.sequence++
-	stream.frame.source = source
-	stream.frame.updatedAt = time.Now()
+	frame := pooledNetworkCameraFrame{
+		data:      frameCopy,
+		width:     config.Width,
+		height:    config.Height,
+		sequence:  stream.frame.sequence + 1,
+		source:    source,
+		updatedAt: time.Now(),
+	}
+	stream.frame = frame
+	if len(stream.history) >= networkCameraPreviewBufferFrames {
+		copy(stream.history, stream.history[1:])
+		stream.history[len(stream.history)-1] = pooledNetworkCameraFrame{}
+		stream.history = stream.history[:len(stream.history)-1]
+	}
+	stream.history = append(stream.history, frame)
 	stream.lastErr = nil
 	notify := stream.notify
 	stream.notify = make(chan struct{})
@@ -169,9 +180,6 @@ func (stream *networkCameraStream) waitCurrent(ctx context.Context, maxAge, wait
 
 
 func (stream *networkCameraStream) waitNext(ctx context.Context, afterSequence uint64, wait time.Duration) (pooledNetworkCameraFrame, error) {
-	if frame, ok := stream.current(0); ok && frame.sequence > afterSequence {
-		return frame, nil
-	}
 	if wait <= 0 {
 		wait = 500 * time.Millisecond
 	}
@@ -180,10 +188,11 @@ func (stream *networkCameraStream) waitNext(ctx context.Context, afterSequence u
 	defer timer.Stop()
 	for {
 		stream.mu.RLock()
-		if stream.frame.sequence > afterSequence && len(stream.frame.data) > 0 {
-			frame := stream.frame
-			stream.mu.RUnlock()
-			return frame, nil
+		for _, frame := range stream.history {
+			if frame.sequence > afterSequence && len(frame.data) > 0 {
+				stream.mu.RUnlock()
+				return frame, nil
+			}
 		}
 		notify := stream.notify
 		lastErr := stream.lastErr
@@ -464,6 +473,15 @@ func ffmpegRTSPArgs(camera store.Camera, inputURL string) []string {
 	if timeout <= 0 {
 		timeout = 3 * time.Second
 	}
+	width := camera.Width
+	height := camera.Height
+	if width <= 0 {
+		width = 1280
+	}
+	if height <= 0 {
+		height = 720
+	}
+	scale := fmt.Sprintf("scale=%d:%d:force_original_aspect_ratio=decrease:force_divisible_by=2", width, height)
 	return []string{
 		"-hide_banner",
 		"-loglevel", "error",
@@ -478,8 +496,11 @@ func ffmpegRTSPArgs(camera store.Camera, inputURL string) []string {
 		"-an",
 		"-sn",
 		"-dn",
+		"-vf", scale,
 		"-c:v", "mjpeg",
-		"-q:v", "5",
+		"-q:v", "7",
+		"-fps_mode", "passthrough",
+		"-flush_packets", "1",
 		"-f", "image2pipe",
 		"pipe:1",
 	}
