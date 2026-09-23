@@ -57,6 +57,7 @@ type cameraTestResult struct {
 	ElapsedMS     int64             `json:"elapsed_ms"`
 	Width         int               `json:"width,omitempty"`
 	Height        int               `json:"height,omitempty"`
+	DetectedAuth  string            `json:"detected_auth,omitempty"`
 	PreviewBase64 string            `json:"preview_base64,omitempty"`
 	Checks        []cameraTestCheck `json:"checks"`
 }
@@ -65,13 +66,14 @@ func cameraTestCheckItem(name, status, message string) cameraTestCheck {
 	return cameraTestCheck{Name: name, Status: status, Message: message}
 }
 
-func cameraTestFailure(err error, elapsed time.Duration, authRequired bool) cameraTestResult {
+func cameraTestFailure(err error, elapsed time.Duration, authRequired bool, detectedAuth string) cameraTestResult {
 	message := strings.TrimSpace(err.Error())
 	lower := strings.ToLower(message)
 	result := cameraTestResult{
 		OK:        false,
 		Message:   message,
-		ElapsedMS: elapsed.Milliseconds(),
+		ElapsedMS:    elapsed.Milliseconds(),
+		DetectedAuth: detectedAuth,
 		Checks: []cameraTestCheck{
 			cameraTestCheckItem("参数检查", "ok", "参数格式有效"),
 		},
@@ -204,15 +206,27 @@ func (s *Server) cameraTest(w http.ResponseWriter, r *http.Request) {
 
 	camera := cameraFromNormalizedInput(normalized)
 	started := time.Now()
-	frame, width, height, err := fetchNetworkCameraFrame(r.Context(), camera)
+	frame, width, height, detectedAuth, err := fetchNetworkCameraFrameWithAuth(r.Context(), camera)
 	elapsed := time.Since(started)
+	reportedAuth := ""
+	if camera.AuthMode == "auto" {
+		reportedAuth = detectedAuth
+	}
 	if err != nil {
-		writeJSON(w, http.StatusOK, cameraTestFailure(err, elapsed, camera.AuthMode != "none"))
+		authRequired := detectedAuth == "basic" || detectedAuth == "digest" || camera.AuthMode == "basic" || camera.AuthMode == "digest"
+		writeJSON(w, http.StatusOK, cameraTestFailure(err, elapsed, authRequired, reportedAuth))
 		return
 	}
 
 	authMessage := "无需认证"
-	if camera.AuthMode != "none" {
+	switch {
+	case camera.AuthMode == "auto" && detectedAuth == "digest":
+		authMessage = "自动检测到 Digest，认证通过"
+	case camera.AuthMode == "auto" && detectedAuth == "basic":
+		authMessage = "自动检测到 Basic，认证通过"
+	case camera.AuthMode == "auto":
+		authMessage = "自动检测：无需认证"
+	case camera.AuthMode != "none":
 		authMessage = "认证通过（" + strings.ToUpper(camera.AuthMode) + "）"
 	}
 	writeJSON(w, http.StatusOK, cameraTestResult{
@@ -221,6 +235,7 @@ func (s *Server) cameraTest(w http.ResponseWriter, r *http.Request) {
 		ElapsedMS: elapsed.Milliseconds(),
 		Width: width,
 		Height: height,
+		DetectedAuth: reportedAuth,
 		PreviewBase64: base64.StdEncoding.EncodeToString(frame),
 		Checks: []cameraTestCheck{
 			cameraTestCheckItem("参数检查", "ok", "参数格式有效"),
@@ -388,6 +403,11 @@ func writeCameraStoreError(w http.ResponseWriter, err error) {
 }
 
 func fetchNetworkCameraFrame(ctx context.Context, camera store.Camera) ([]byte, int, int, error) {
+	frame, width, height, _, err := fetchNetworkCameraFrameWithAuth(ctx, camera)
+	return frame, width, height, err
+}
+
+func fetchNetworkCameraFrameWithAuth(ctx context.Context, camera store.Camera) ([]byte, int, int, string, error) {
 	rawURL := camera.SnapshotURL
 	mjpeg := false
 	if rawURL == "" && camera.Protocol == "mjpeg" {
@@ -395,7 +415,7 @@ func fetchNetworkCameraFrame(ctx context.Context, camera store.Camera) ([]byte, 
 		mjpeg = true
 	}
 	if rawURL == "" {
-		return nil, 0, 0, errors.New("没有可用于识别的HTTP/HTTPS抓图地址")
+		return nil, 0, 0, "", errors.New("没有可用于识别的HTTP/HTTPS抓图地址")
 	}
 
 	transport := http.DefaultTransport.(*http.Transport).Clone()
@@ -416,34 +436,36 @@ func fetchNetworkCameraFrame(ctx context.Context, camera store.Camera) ([]byte, 
 		},
 	}
 
-	response, err := doCameraRequest(ctx, client, camera, rawURL)
+	response, detectedAuth, err := doCameraRequest(ctx, client, camera, rawURL)
 	if err != nil {
-		return nil, 0, 0, err
+		return nil, 0, 0, detectedAuth, err
 	}
 	defer response.Body.Close()
 	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return nil, 0, 0, fmt.Errorf("摄像头返回 HTTP %d", response.StatusCode)
+		return nil, 0, 0, detectedAuth, fmt.Errorf("摄像头返回 HTTP %d", response.StatusCode)
 	}
 
 	var data []byte
 	if mjpeg || strings.Contains(strings.ToLower(response.Header.Get("Content-Type")), "multipart/x-mixed-replace") {
 		data, err = readFirstJPEG(response.Body, 16<<20)
 		if err != nil {
-			return nil, 0, 0, err
+			return nil, 0, 0, detectedAuth, err
 		}
 	} else {
 		img, _, err := image.Decode(io.LimitReader(response.Body, 16<<20))
 		if err != nil {
-			return nil, 0, 0, fmt.Errorf("摄像头返回的不是可识别图片: %w", err)
+			return nil, 0, 0, detectedAuth, fmt.Errorf("摄像头返回的不是可识别图片: %w", err)
 		}
-		return encodeJPEG(img)
+		frame, width, height, err := encodeJPEG(img)
+		return frame, width, height, detectedAuth, err
 	}
 
 	img, _, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
-		return nil, 0, 0, fmt.Errorf("MJPEG帧解码失败: %w", err)
+		return nil, 0, 0, detectedAuth, fmt.Errorf("MJPEG帧解码失败: %w", err)
 	}
-	return encodeJPEG(img)
+	frame, width, height, err := encodeJPEG(img)
+	return frame, width, height, detectedAuth, err
 }
 
 func encodeJPEG(img image.Image) ([]byte, int, int, error) {
@@ -455,15 +477,15 @@ func encodeJPEG(img image.Image) ([]byte, int, int, error) {
 	return buf.Bytes(), bounds.Dx(), bounds.Dy(), nil
 }
 
-func doCameraRequest(ctx context.Context, client *http.Client, camera store.Camera, rawURL string) (*http.Response, error) {
-	build := func(authorization string) (*http.Request, error) {
+func doCameraRequest(ctx context.Context, client *http.Client, camera store.Camera, rawURL string) (*http.Response, string, error) {
+	build := func(authorization string, basic bool) (*http.Request, error) {
 		req, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 		if err != nil {
 			return nil, err
 		}
 		req.Header.Set("Accept", "image/jpeg,image/png,multipart/x-mixed-replace,*/*")
 		req.Header.Set("User-Agent", "FaceSign/Camera")
-		if camera.AuthMode == "basic" {
+		if basic {
 			req.SetBasicAuth(camera.Username, camera.Password)
 		}
 		if authorization != "" {
@@ -472,28 +494,95 @@ func doCameraRequest(ctx context.Context, client *http.Client, camera store.Came
 		return req, nil
 	}
 
-	req, err := build("")
-	if err != nil {
-		return nil, err
+	send := func(authorization string, basic bool) (*http.Response, *http.Request, error) {
+		req, err := build(authorization, basic)
+		if err != nil {
+			return nil, nil, err
+		}
+		response, err := client.Do(req)
+		return response, req, err
 	}
-	response, err := client.Do(req)
-	if err != nil {
-		return nil, err
+
+	switch camera.AuthMode {
+	case "none":
+		response, _, err := send("", false)
+		return response, "none", err
+	case "basic":
+		response, _, err := send("", true)
+		return response, "basic", err
+	case "digest":
+		response, req, err := send("", false)
+		if err != nil {
+			return nil, "digest", err
+		}
+		if response.StatusCode != http.StatusUnauthorized {
+			return response, "digest", nil
+		}
+		challenge := findCameraAuthChallenge(response.Header.Values("WWW-Authenticate"), "digest")
+		_ = response.Body.Close()
+		authorization, err := digestAuthorization(challenge, camera.Username, camera.Password, http.MethodGet, req.URL.RequestURI())
+		if err != nil {
+			return nil, "digest", err
+		}
+		response, _, err = send(authorization, false)
+		return response, "digest", err
+	case "auto":
+		response, req, err := send("", false)
+		if err != nil {
+			return nil, "", err
+		}
+		if response.StatusCode != http.StatusUnauthorized && response.StatusCode != http.StatusForbidden {
+			return response, "none", nil
+		}
+
+		challenges := response.Header.Values("WWW-Authenticate")
+		if challenge := findCameraAuthChallenge(challenges, "digest"); challenge != "" {
+			_ = response.Body.Close()
+			if strings.TrimSpace(camera.Username) == "" {
+				return nil, "digest", errors.New("自动检测到Digest认证，但未填写用户名")
+			}
+			authorization, err := digestAuthorization(challenge, camera.Username, camera.Password, http.MethodGet, req.URL.RequestURI())
+			if err != nil {
+				return nil, "digest", err
+			}
+			response, _, err = send(authorization, false)
+			return response, "digest", err
+		}
+
+		if findCameraAuthChallenge(challenges, "basic") != "" || (len(challenges) == 0 && strings.TrimSpace(camera.Username) != "") {
+			_ = response.Body.Close()
+			if strings.TrimSpace(camera.Username) == "" {
+				return nil, "basic", errors.New("自动检测到Basic认证，但未填写用户名")
+			}
+			response, _, err = send("", true)
+			return response, "basic", err
+		}
+		return response, "", nil
+	default:
+		return nil, "", fmt.Errorf("不支持的摄像头认证方式 %s", camera.AuthMode)
 	}
-	if camera.AuthMode != "digest" || response.StatusCode != http.StatusUnauthorized {
-		return response, nil
+}
+
+func findCameraAuthChallenge(values []string, scheme string) string {
+	prefix := strings.ToLower(strings.TrimSpace(scheme)) + " "
+	for _, value := range values {
+		lower := strings.ToLower(value)
+		index := strings.Index(lower, prefix)
+		if index < 0 {
+			continue
+		}
+		challenge := strings.TrimSpace(value[index:])
+		for _, other := range []string{", basic ", ", digest "} {
+			if strings.HasPrefix(other, ", "+strings.ToLower(scheme)+" ") {
+				continue
+			}
+			if cut := strings.Index(strings.ToLower(challenge), other); cut > 0 {
+				challenge = strings.TrimSpace(challenge[:cut])
+			}
+		}
+		return challenge
 	}
-	challenge := response.Header.Get("WWW-Authenticate")
-	_ = response.Body.Close()
-	authorization, err := digestAuthorization(challenge, camera.Username, camera.Password, http.MethodGet, req.URL.RequestURI())
-	if err != nil {
-		return nil, err
-	}
-	req, err = build(authorization)
-	if err != nil {
-		return nil, err
-	}
-	return client.Do(req)
+	return ""
 }
 
 func digestAuthorization(challenge, username, password, method, uri string) (string, error) {

@@ -248,3 +248,121 @@ func TestCameraConnectionTestDiagnosesInvalidImage(t *testing.T) {
 		t.Fatalf("invalid image was not diagnosed: %s", rec.Body.String())
 	}
 }
+
+
+func TestNetworkCameraAutoDetectsDigest(t *testing.T) {
+	authorized := false
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.Header.Get("Authorization"), "Digest ") {
+			w.Header().Set("WWW-Authenticate", `Digest realm="camera", nonce="auto-digest", qop="auth", algorithm=MD5`)
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		authorized = true
+		w.Header().Set("Content-Type", "image/jpeg")
+		img := image.NewRGBA(image.Rect(0, 0, 18, 12))
+		_ = jpeg.Encode(w, img, nil)
+	}))
+	defer upstream.Close()
+
+	camera := store.Camera{
+		Name: "Auto Digest", Kind: "network", Protocol: "http_snapshot",
+		SnapshotURL: upstream.URL, Username: "admin", Password: "pass",
+		AuthMode: "auto", Width: 1280, Height: 720, FPS: 5, TimeoutMS: 2000,
+	}
+	frame, width, height, detectedAuth, err := fetchNetworkCameraFrameWithAuth(context.Background(), camera)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !authorized || detectedAuth != "digest" || len(frame) == 0 || width != 18 || height != 12 {
+		t.Fatalf("auto digest failed: authorized=%v auth=%q size=%dx%d bytes=%d", authorized, detectedAuth, width, height, len(frame))
+	}
+}
+
+func TestNetworkCameraAutoDetectsBasic(t *testing.T) {
+	authorized := false
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		username, password, ok := r.BasicAuth()
+		if !ok || username != "admin" || password != "pass" {
+			w.Header().Set("WWW-Authenticate", `Basic realm="camera"`)
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		authorized = true
+		w.Header().Set("Content-Type", "image/jpeg")
+		img := image.NewRGBA(image.Rect(0, 0, 20, 14))
+		_ = jpeg.Encode(w, img, nil)
+	}))
+	defer upstream.Close()
+
+	camera := store.Camera{
+		Name: "Auto Basic", Kind: "network", Protocol: "http_snapshot",
+		SnapshotURL: upstream.URL, Username: "admin", Password: "pass",
+		AuthMode: "auto", Width: 1280, Height: 720, FPS: 5, TimeoutMS: 2000,
+	}
+	frame, width, height, detectedAuth, err := fetchNetworkCameraFrameWithAuth(context.Background(), camera)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !authorized || detectedAuth != "basic" || len(frame) == 0 || width != 20 || height != 14 {
+		t.Fatalf("auto basic failed: authorized=%v auth=%q size=%dx%d bytes=%d", authorized, detectedAuth, width, height, len(frame))
+	}
+}
+
+func TestNetworkCameraAutoDetectsNoAuthentication(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/jpeg")
+		img := image.NewRGBA(image.Rect(0, 0, 16, 10))
+		_ = jpeg.Encode(w, img, nil)
+	}))
+	defer upstream.Close()
+
+	camera := store.Camera{
+		Name: "Auto None", Kind: "network", Protocol: "http_snapshot",
+		SnapshotURL: upstream.URL, AuthMode: "auto",
+		Width: 1280, Height: 720, FPS: 5, TimeoutMS: 2000,
+	}
+	_, _, _, detectedAuth, err := fetchNetworkCameraFrameWithAuth(context.Background(), camera)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if detectedAuth != "none" {
+		t.Fatalf("expected no authentication, got %q", detectedAuth)
+	}
+}
+
+func TestCameraConnectionTestReportsAutoDetectedDigest(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if !strings.HasPrefix(r.Header.Get("Authorization"), "Digest ") {
+			w.Header().Set("WWW-Authenticate", `Digest realm="camera", nonce="test-report", qop="auth", algorithm=MD5`)
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "image/jpeg")
+		img := image.NewRGBA(image.Rect(0, 0, 22, 15))
+		_ = jpeg.Encode(w, img, nil)
+	}))
+	defer upstream.Close()
+
+	st, err := store.Open(filepath.Join(t.TempDir(), "camera-auto-test.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	s := &Server{store: st, logger: slog.Default()}
+
+	body := fmt.Sprintf(`{"name":"auto","kind":"network","protocol":"http_snapshot","snapshot_url":%q,"username":"admin","password":"pass","auth_mode":"auto","width":1280,"height":720,"fps":5,"timeout_ms":2000}`, upstream.URL)
+	req := httptest.NewRequest(http.MethodPost, "/api/cameras/test", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	s.cameraTest(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	bodyText := rec.Body.String()
+	if !strings.Contains(bodyText, `"ok":true`) ||
+		!strings.Contains(bodyText, `"detected_auth":"digest"`) ||
+		!strings.Contains(bodyText, "自动检测到 Digest") {
+		t.Fatalf("auto auth result not reported: %s", bodyText)
+	}
+}

@@ -61,8 +61,11 @@ function renderCameraConnectionTest(result) {
     headline.className = 'camera-test-headline ' + (result.ok ? 'success' : 'error');
   }
   if (summary) {
+    const authSuffix = result.detected_auth
+      ? ` · 自动检测认证：${result.detected_auth === 'none' ? '无需认证' : result.detected_auth.toUpperCase()}`
+      : '';
     const suffix = result.elapsed_ms > 0 ? ` · ${result.elapsed_ms} ms` : '';
-    summary.textContent = (result.message || (result.ok ? '连接成功' : '连接失败')) + suffix;
+    summary.textContent = (result.message || (result.ok ? '连接成功' : '连接失败')) + authSuffix + suffix;
   }
   if (checks) {
     checks.innerHTML = (result.checks || []).map(check => `
@@ -194,7 +197,7 @@ function renderCameraRows() {
       <td class="camera-source-cell" title="${esc(cameraSourceLabel(camera))}">${esc(cameraSourceLabel(camera))}</td>
       <td>${camera.width}×${camera.height} / ${camera.fps} FPS</td>
       <td>${camera.kind === 'network'
-        ? esc(camera.auth_mode === 'digest' ? 'Digest' : camera.auth_mode === 'basic' ? 'Basic' : '无认证')
+        ? esc(camera.auth_mode === 'auto' ? '自动检测' : camera.auth_mode === 'digest' ? 'Digest' : camera.auth_mode === 'basic' ? 'Basic' : '无认证')
         : camera.kind === 'agent'
           ? (camera.agent_online ? '<span class="camera-agent-online">在线</span>' : '<span class="camera-agent-offline">离线</span>')
           : '-'}</td>
@@ -281,7 +284,7 @@ function resetCameraForm() {
   $('#cameraEditID').value = '';
   $('#cameraKind').value = 'local';
   $('#cameraProtocol').value = 'http_snapshot';
-  $('#cameraAuthMode').value = 'none';
+  $('#cameraAuthMode').value = 'auto';
   $('#cameraWidth').value = '1280';
   $('#cameraHeight').value = '720';
   $('#cameraFPS').value = '30';
@@ -315,7 +318,7 @@ function editCamera(id) {
   $('#cameraPassword').placeholder = camera.has_password ? '已保存密码，留空不修改' : '网络摄像头密码';
   $('#cameraClearPassword').checked = false;
   $('#cameraClearPasswordWrap').classList.toggle('hidden', !camera.has_password);
-  $('#cameraAuthMode').value = camera.auth_mode || 'none';
+  $('#cameraAuthMode').value = camera.auth_mode || 'auto';
   $('#cameraAgentID').value = camera.agent_id || '';
   $('#cameraAgentSecret').value = '';
   $('#cameraAgentSecret').placeholder = camera.has_agent_secret ? '已保存连接密钥；留空不修改' : '建议使用随机生成密钥';

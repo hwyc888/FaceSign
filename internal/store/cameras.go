@@ -123,8 +123,9 @@ func normalizeCameraInput(in CameraInput) (CameraInput, error) {
 			return CameraInput{}, errors.New("不支持的网络摄像头协议")
 		}
 		switch in.AuthMode {
-		case "", "none":
-			in.AuthMode = "none"
+		case "", "auto":
+			in.AuthMode = "auto"
+		case "none":
 			in.Username = ""
 			in.Password = ""
 		case "basic", "digest":
@@ -132,7 +133,7 @@ func normalizeCameraInput(in CameraInput) (CameraInput, error) {
 				return CameraInput{}, errors.New("启用摄像头认证时必须填写用户名")
 			}
 		default:
-			return CameraInput{}, errors.New("认证方式只支持无认证、Basic或Digest")
+			return CameraInput{}, errors.New("认证方式只支持自动检测、无认证、Basic或Digest")
 		}
 	case "agent":
 		in.Protocol = "agent"

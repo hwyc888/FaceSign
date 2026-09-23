@@ -519,3 +519,36 @@ func TestCameraSettingsSupportsPreSaveConnectionDiagnostics(t *testing.T) {
 		}
 	}
 }
+
+
+func TestCameraAuthenticationAutoDetectUI(t *testing.T) {
+	htmlData, err := assets.ReadFile("assets/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	html := string(htmlData)
+	for _, want := range []string{
+		`<option value="auto">自动检测（推荐）</option>`,
+		"自动选择 Digest / Basic / 无认证",
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("camera auto authentication UI missing %q", want)
+		}
+	}
+
+	jsData, err := assets.ReadFile("assets/js/cameras.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(jsData)
+	for _, want := range []string{
+		"$('#cameraAuthMode').value = 'auto'",
+		"camera.auth_mode === 'auto' ? '自动检测'",
+		"result.detected_auth",
+		"自动检测认证",
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("camera auto authentication flow missing %q", want)
+		}
+	}
+}

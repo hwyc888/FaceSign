@@ -307,10 +307,12 @@
             </label>
             <label data-camera-network class="hidden">认证方式
               <select id="cameraAuthMode">
+                <option value="auto">自动检测（推荐）</option>
                 <option value="none">无认证</option>
                 <option value="basic">Basic</option>
                 <option value="digest">Digest</option>
               </select>
+              <small>自动检测会根据摄像头返回的认证挑战自动选择 Digest / Basic / 无认证。</small>
             </label>
             <label data-camera-network class="hidden">用户名
               <input id="cameraUsername" autocomplete="off">
