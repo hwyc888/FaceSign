@@ -162,8 +162,8 @@ async function recognizeFrame(options = {}) {
 
 function recognitionFrameIntervalMS() {
   if (activeCamera && activeCamera.kind !== 'local') {
-    const fps = Math.max(1, Math.min(Number(activeCamera.fps || 5), 12));
-    return Math.max(120, Math.round(1000 / fps));
+    const fps = Math.max(1, Math.min(Number(activeCamera.fps || 5), 5));
+    return Math.max(200, Math.round(1000 / fps));
   }
   return 120;
 }
