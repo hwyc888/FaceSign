@@ -1,3 +1,6 @@
+let networkPreviewRetryTimer = null;
+let networkPreviewGeneration = 0;
+
 function updateCameraControls() {
   const opened = cameraOpen;
   const checkinButton = $('#startCamera');
@@ -64,7 +67,13 @@ function activeNetworkCameraImage() {
 }
 
 function stopNetworkPreview() {
+  networkPreviewGeneration++;
+  if (networkPreviewRetryTimer) {
+    clearTimeout(networkPreviewRetryTimer);
+    networkPreviewRetryTimer = null;
+  }
   ['#cameraNetwork', '#enrollCameraNetwork'].map($).filter(Boolean).forEach(image => {
+    image.onerror = null;
     image.removeAttribute('src');
   });
 }
@@ -72,11 +81,36 @@ function stopNetworkPreview() {
 function startNetworkPreview() {
   if (!cameraOpen || !activeCamera || activeCamera.kind === 'local') return;
   const target = activeNetworkCameraImage();
-  const url = `/api/cameras/${activeCamera.id}/stream?t=${Date.now()}`;
+  if (!target) return;
+
+  const generation = ++networkPreviewGeneration;
+  if (networkPreviewRetryTimer) {
+    clearTimeout(networkPreviewRetryTimer);
+    networkPreviewRetryTimer = null;
+  }
+
   ['#cameraNetwork', '#enrollCameraNetwork'].map($).filter(Boolean).forEach(image => {
-    if (image === target) image.src = url;
-    else image.removeAttribute('src');
+    image.onerror = null;
+    if (image !== target) image.removeAttribute('src');
   });
+
+  const reconnect = () => {
+    if (generation !== networkPreviewGeneration || !cameraOpen || !activeCamera || activeCamera.kind === 'local') {
+      return;
+    }
+    target.src = `/api/cameras/${activeCamera.id}/stream?t=${Date.now()}`;
+  };
+
+  target.onerror = () => {
+    if (generation !== networkPreviewGeneration || !cameraOpen) return;
+    if (networkPreviewRetryTimer) clearTimeout(networkPreviewRetryTimer);
+    networkPreviewRetryTimer = setTimeout(() => {
+      networkPreviewRetryTimer = null;
+      reconnect();
+    }, 800);
+  };
+
+  reconnect();
 }
 
 function localVideoConstraints(camera) {

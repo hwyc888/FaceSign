@@ -228,6 +228,25 @@ func TestCameraFrontendSupportsLocalAndNetworkSources(t *testing.T) {
 }
 
 
+func TestNetworkCameraPreviewAutoReconnects(t *testing.T) {
+	data, err := assets.ReadFile("assets/js/camera.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(data)
+	for _, want := range []string{
+		"networkPreviewRetryTimer",
+		"networkPreviewGeneration",
+		"target.onerror",
+		"setTimeout(() =>",
+		"/stream?t=",
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("network camera preview reconnect logic missing %q", want)
+		}
+	}
+}
+
 func TestEnrollmentFaceGuideCanBeMoved(t *testing.T) {
 	htmlData, err := assets.ReadFile("assets/index.html")
 	if err != nil {

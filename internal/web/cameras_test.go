@@ -14,6 +14,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -165,6 +166,98 @@ func TestNetworkCameraLiveStream(t *testing.T) {
 	}
 	if decoded.Bounds().Dx() != 36 || decoded.Bounds().Dy() != 22 {
 		t.Fatalf("unexpected live stream frame size: %v", decoded.Bounds())
+	}
+}
+
+func TestNetworkCameraPreviewReusesConfiguredFrameCache(t *testing.T) {
+	var upstreamCalls int
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls++
+		w.Header().Set("Content-Type", "image/jpeg")
+		img := image.NewRGBA(image.Rect(0, 0, 28, 18))
+		_ = jpeg.Encode(w, img, nil)
+	}))
+	defer upstream.Close()
+
+	camera := store.Camera{
+		ID: 42, Name: "Stable preview", Kind: "network", Protocol: "http_snapshot",
+		SnapshotURL: upstream.URL, AuthMode: "none",
+		Width: 1280, Height: 720, FPS: 8, TimeoutMS: 2000,
+	}
+	s := &Server{logger: slog.Default(), networkCameraFrames: make(map[int64]*networkCameraFrameCache)}
+	for i := 0; i < 2; i++ {
+		frame, _, _, status, err := s.cameraPreviewSourceFrame(context.Background(), camera)
+		if err != nil || status != http.StatusOK || len(frame) == 0 {
+			t.Fatalf("preview frame %d failed: status=%d bytes=%d err=%v", i+1, status, len(frame), err)
+		}
+	}
+	if upstreamCalls != 1 {
+		t.Fatalf("preview should reuse the configured frame cache instead of hammering snapshot URL; calls=%d", upstreamCalls)
+	}
+}
+
+func TestNetworkCameraLiveStreamSurvivesTransientSnapshotFailure(t *testing.T) {
+	var upstreamCalls atomic.Int32
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		call := upstreamCalls.Add(1)
+		if call == 2 {
+			http.Error(w, "temporary camera overload", http.StatusServiceUnavailable)
+			return
+		}
+		w.Header().Set("Content-Type", "image/jpeg")
+		img := image.NewRGBA(image.Rect(0, 0, 34, 20))
+		img.Set(2, 2, color.RGBA{R: 255, G: 128, A: 255})
+		_ = jpeg.Encode(w, img, nil)
+	}))
+	defer upstream.Close()
+
+	st, err := store.Open(filepath.Join(t.TempDir(), "camera-stream-retry.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	camera, err := st.CreateCamera(context.Background(), store.CameraInput{
+		Name: "Retry camera", Kind: "network", Protocol: "http_snapshot",
+		SnapshotURL: upstream.URL, AuthMode: "none",
+		Width: 1280, Height: 720, FPS: 12, TimeoutMS: 1000,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	s := &Server{store: st, logger: slog.Default(), networkCameraFrames: make(map[int64]*networkCameraFrameCache)}
+	server := httptest.NewServer(http.HandlerFunc(s.cameraAction))
+	defer server.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 3*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/api/cameras/%d/stream", server.URL, camera.ID), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := server.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	_, params, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader := multipart.NewReader(resp.Body, params["boundary"])
+	for i := 0; i < 8; i++ {
+		part, err := reader.NextPart()
+		if err != nil {
+			t.Fatalf("stream ended after transient upstream failure at part %d: %v", i+1, err)
+		}
+		if _, _, err := image.Decode(part); err != nil {
+			t.Fatalf("decode recovered stream frame %d: %v", i+1, err)
+		}
+		_ = part.Close()
+	}
+	if upstreamCalls.Load() < 3 {
+		t.Fatalf("preview did not retry after the temporary snapshot failure; upstream calls=%d", upstreamCalls.Load())
 	}
 }
 

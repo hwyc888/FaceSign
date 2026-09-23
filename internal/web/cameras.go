@@ -542,7 +542,7 @@ func (s *Server) cameraSourceFrame(ctx context.Context, item store.Camera) ([]by
 
 func (s *Server) cameraPreviewSourceFrame(ctx context.Context, item store.Camera) ([]byte, int, int, int, error) {
 	if item.Kind == "network" {
-		frame, width, height, err := s.cachedNetworkCameraFrameFor(ctx, item, 0)
+		frame, width, height, err := s.cachedNetworkCameraFrame(ctx, item)
 		if err != nil {
 			return nil, 0, 0, http.StatusBadGateway, fmt.Errorf("读取网络摄像头失败: %w", err)
 		}
@@ -572,6 +572,7 @@ func (s *Server) cameraStream(w http.ResponseWriter, r *http.Request, item store
 	w.WriteHeader(http.StatusOK)
 
 	interval := cameraPreviewFrameInterval(item)
+	consecutiveFailures := 0
 	for {
 		cycleStarted := time.Now()
 		if _, err := fmt.Fprintf(w,
@@ -588,13 +589,38 @@ func (s *Server) cameraStream(w http.ResponseWriter, r *http.Request, item store
 		}
 		flusher.Flush()
 
-		frame, width, height, _, err = s.cameraPreviewSourceFrame(r.Context(), item)
+		nextFrame, nextWidth, nextHeight, _, err := s.cameraPreviewSourceFrame(r.Context(), item)
 		if err != nil {
-			if r.Context().Err() == nil {
-				s.logger.Warn("camera stream stopped", "camera_id", item.ID, "camera", item.Name, "error", err)
+			if r.Context().Err() != nil {
+				return
 			}
-			return
+			consecutiveFailures++
+			if consecutiveFailures == 1 || consecutiveFailures%10 == 0 {
+				s.logger.Warn("camera preview frame retrying",
+					"camera_id", item.ID,
+					"camera", item.Name,
+					"failures", consecutiveFailures,
+					"error", err,
+				)
+			}
+			retryDelay := 250 * time.Millisecond
+			if consecutiveFailures >= 4 {
+				retryDelay = 500 * time.Millisecond
+			}
+			if consecutiveFailures >= 10 {
+				retryDelay = time.Second
+			}
+			timer := time.NewTimer(retryDelay)
+			select {
+			case <-r.Context().Done():
+				timer.Stop()
+				return
+			case <-timer.C:
+			}
+			continue
 		}
+		frame, width, height = nextFrame, nextWidth, nextHeight
+		consecutiveFailures = 0
 
 		delay := interval - time.Since(cycleStarted)
 		if delay <= 0 {
