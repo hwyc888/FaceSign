@@ -32,6 +32,28 @@ func TestResolveReusesExistingModels(t *testing.T) {
 	}
 }
 
+func TestChooseTargetDoesNotCreateLowerRankedCandidate(t *testing.T) {
+	cache := t.TempDir()
+	unused := filepath.Join(t.TempDir(), "portable", "models")
+	specs := []spec{
+		fakeSpec("one.onnx", []byte("one")),
+		fakeSpec("two.onnx", []byte("two")),
+	}
+	if err := os.WriteFile(filepath.Join(cache, "one.onnx"), []byte("one"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	target, err := chooseTarget([]string{cache, unused}, specs)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if target != cache {
+		t.Fatalf("target=%q want cache=%q", target, cache)
+	}
+	if _, err := os.Stat(unused); !os.IsNotExist(err) {
+		t.Fatalf("unused lower-ranked candidate was created: err=%v", err)
+	}
+}
+
 func TestResolveDownloadsOnlyMissingModels(t *testing.T) {
 	assets := t.TempDir()
 	target := filepath.Join(assets, "models")
