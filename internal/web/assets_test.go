@@ -608,7 +608,8 @@ func TestNetworkCameraUsesLiveStreamAndDirectRecognition(t *testing.T) {
 		"function startNetworkPreview()",
 		"function stopNetworkPreview()",
 		"/api/cameras/${activeCamera.id}/stream",
-		"image.src = url",
+		"target.src =",
+		"target.onerror",
 	} {
 		if !strings.Contains(cameraScript, want) {
 			t.Fatalf("network live preview missing %q", want)
