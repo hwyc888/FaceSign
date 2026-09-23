@@ -36,6 +36,10 @@ jobs:
       - name: Test and vet
         shell: pwsh
         run: |
+          go mod tidy
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          git diff --exit-code -- go.mod go.sum
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           Get-ChildItem 'internal\web\assets\js' -Filter '*.js' | ForEach-Object {
             node --check $_.FullName
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
