@@ -20,6 +20,45 @@ import (
 	"github.com/hwyc888/FaceSign/internal/store"
 )
 
+func TestNetworkCameraPreviewRateIsIndependentFromRecognition(t *testing.T) {
+	camera := store.Camera{Kind: "network", FPS: 5}
+	if got, want := networkCameraFrameInterval(camera), 200*time.Millisecond; got != want {
+		t.Fatalf("recognition interval=%v want=%v", got, want)
+	}
+	if got, want := cameraPreviewFrameInterval(camera), 40*time.Millisecond; got != want {
+		t.Fatalf("preview interval=%v want=%v", got, want)
+	}
+}
+
+func TestNetworkCameraJPEGPassThrough(t *testing.T) {
+	img := image.NewRGBA(image.Rect(0, 0, 18, 12))
+	img.Set(1, 1, color.RGBA{B: 255, A: 255})
+	var original bytes.Buffer
+	if err := jpeg.Encode(&original, img, &jpeg.Options{Quality: 87}); err != nil {
+		t.Fatal(err)
+	}
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/jpeg")
+		_, _ = w.Write(original.Bytes())
+	}))
+	defer upstream.Close()
+
+	camera := store.Camera{
+		Kind: "network", Protocol: "http_snapshot", SnapshotURL: upstream.URL,
+		AuthMode: "none", TimeoutMS: 2000,
+	}
+	frame, width, height, err := fetchNetworkCameraFrame(context.Background(), camera)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if width != 18 || height != 12 {
+		t.Fatalf("frame size=%dx%d", width, height)
+	}
+	if !bytes.Equal(frame, original.Bytes()) {
+		t.Fatal("JPEG frame was unnecessarily decoded and re-encoded")
+	}
+}
+
 func TestNetworkCameraFrameProxy(t *testing.T) {
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "image/jpeg")
