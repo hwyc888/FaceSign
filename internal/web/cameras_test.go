@@ -157,3 +157,94 @@ func TestCameraAgentRejectsWrongSecret(t *testing.T) {
 	s.cameraAgentFrameUpload(rec, req)
 	if rec.Code != http.StatusUnauthorized { t.Fatalf("expected unauthorized, got %d", rec.Code) }
 }
+
+
+func TestCameraConnectionTestDiagnosesSuccess(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/jpeg")
+		img := image.NewRGBA(image.Rect(0, 0, 40, 30))
+		if err := jpeg.Encode(w, img, nil); err != nil {
+			t.Error(err)
+		}
+	}))
+	defer upstream.Close()
+
+	st, err := store.Open(filepath.Join(t.TempDir(), "camera-test-success.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	s := &Server{store: st, logger: slog.Default()}
+
+	body := fmt.Sprintf(`{"name":"test","kind":"network","protocol":"http_snapshot","snapshot_url":%q,"auth_mode":"none","width":1280,"height":720,"fps":5,"timeout_ms":2000}`, upstream.URL)
+	req := httptest.NewRequest(http.MethodPost, "/api/cameras/test", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	s.cameraTest(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"ok":true`) ||
+		!strings.Contains(rec.Body.String(), `"width":40`) ||
+		!strings.Contains(rec.Body.String(), `"height":30`) ||
+		!strings.Contains(rec.Body.String(), `"preview_base64"`) {
+		t.Fatalf("unexpected success diagnostics: %s", rec.Body.String())
+	}
+}
+
+func TestCameraConnectionTestDiagnosesAuthenticationFailure(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusUnauthorized)
+	}))
+	defer upstream.Close()
+
+	st, err := store.Open(filepath.Join(t.TempDir(), "camera-test-auth.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	s := &Server{store: st, logger: slog.Default()}
+
+	body := fmt.Sprintf(`{"name":"test","kind":"network","protocol":"http_snapshot","snapshot_url":%q,"username":"admin","password":"wrong","auth_mode":"basic","width":1280,"height":720,"fps":5,"timeout_ms":2000}`, upstream.URL)
+	req := httptest.NewRequest(http.MethodPost, "/api/cameras/test", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	s.cameraTest(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), `"ok":false`) ||
+		!strings.Contains(rec.Body.String(), "认证失败") ||
+		!strings.Contains(rec.Body.String(), `"name":"网络连接","status":"ok"`) ||
+		!strings.Contains(rec.Body.String(), `"name":"身份认证","status":"error"`) {
+		t.Fatalf("authentication failure was not diagnosed: %s", rec.Body.String())
+	}
+}
+
+func TestCameraConnectionTestDiagnosesInvalidImage(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/html")
+		_, _ = w.Write([]byte("<html>camera login page</html>"))
+	}))
+	defer upstream.Close()
+
+	st, err := store.Open(filepath.Join(t.TempDir(), "camera-test-image.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	s := &Server{store: st, logger: slog.Default()}
+
+	body := fmt.Sprintf(`{"name":"test","kind":"network","protocol":"http_snapshot","snapshot_url":%q,"auth_mode":"none","width":1280,"height":720,"fps":5,"timeout_ms":2000}`, upstream.URL)
+	req := httptest.NewRequest(http.MethodPost, "/api/cameras/test", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	rec := httptest.NewRecorder()
+	s.cameraTest(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if !strings.Contains(rec.Body.String(), "没有返回有效图片") ||
+		!strings.Contains(rec.Body.String(), `"name":"图像抓取","status":"error"`) {
+		t.Fatalf("invalid image was not diagnosed: %s", rec.Body.String())
+	}
+}

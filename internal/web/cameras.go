@@ -7,6 +7,7 @@ import (
 	"crypto/rand"
 	"crypto/tls"
 	"database/sql"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -22,6 +23,7 @@ import (
 )
 
 type cameraRequest struct {
+	CameraID      int64   `json:"camera_id,omitempty"`
 	Name          string  `json:"name"`
 	Kind          string  `json:"kind"`
 	DeviceID      string  `json:"device_id"`
@@ -40,6 +42,191 @@ type cameraRequest struct {
 	TimeoutMS     int     `json:"timeout_ms"`
 	TLSInsecure   bool    `json:"tls_insecure"`
 	IsDefault     bool    `json:"is_default"`
+}
+
+
+type cameraTestCheck struct {
+	Name    string `json:"name"`
+	Status  string `json:"status"`
+	Message string `json:"message"`
+}
+
+type cameraTestResult struct {
+	OK            bool              `json:"ok"`
+	Message       string            `json:"message"`
+	ElapsedMS     int64             `json:"elapsed_ms"`
+	Width         int               `json:"width,omitempty"`
+	Height        int               `json:"height,omitempty"`
+	PreviewBase64 string            `json:"preview_base64,omitempty"`
+	Checks        []cameraTestCheck `json:"checks"`
+}
+
+func cameraTestCheckItem(name, status, message string) cameraTestCheck {
+	return cameraTestCheck{Name: name, Status: status, Message: message}
+}
+
+func cameraTestFailure(err error, elapsed time.Duration, authRequired bool) cameraTestResult {
+	message := strings.TrimSpace(err.Error())
+	lower := strings.ToLower(message)
+	result := cameraTestResult{
+		OK:        false,
+		Message:   message,
+		ElapsedMS: elapsed.Milliseconds(),
+		Checks: []cameraTestCheck{
+			cameraTestCheckItem("参数检查", "ok", "参数格式有效"),
+		},
+	}
+
+	switch {
+	case strings.Contains(lower, "401") || strings.Contains(lower, "403") ||
+		strings.Contains(lower, "digest认证") || strings.Contains(lower, "digest authentication"):
+		result.Message = "认证失败：请检查认证方式、用户名和密码"
+		result.Checks = append(result.Checks,
+			cameraTestCheckItem("网络连接", "ok", "摄像头地址可以访问"),
+			cameraTestCheckItem("身份认证", "error", result.Message),
+			cameraTestCheckItem("图像抓取", "pending", "认证未通过，尚未读取图像"),
+		)
+	case errors.Is(err, context.DeadlineExceeded) || strings.Contains(lower, "timeout") ||
+		strings.Contains(lower, "deadline exceeded"):
+		result.Message = "连接超时：请检查摄像头IP、端口、网络连通性和超时时间"
+		result.Checks = append(result.Checks,
+			cameraTestCheckItem("网络连接", "error", result.Message),
+			cameraTestCheckItem("身份认证", "pending", "尚未建立连接"),
+			cameraTestCheckItem("图像抓取", "pending", "尚未建立连接"),
+		)
+	case strings.Contains(lower, "connection refused"):
+		result.Message = "连接被拒绝：IP可能可达，但摄像头端口未开放或服务未启动"
+		result.Checks = append(result.Checks,
+			cameraTestCheckItem("网络连接", "error", result.Message),
+			cameraTestCheckItem("身份认证", "pending", "尚未建立连接"),
+			cameraTestCheckItem("图像抓取", "pending", "尚未建立连接"),
+		)
+	case strings.Contains(lower, "no route to host") || strings.Contains(lower, "network is unreachable") ||
+		strings.Contains(lower, "host is down") || strings.Contains(lower, "no such host"):
+		result.Message = "网络不可达：请检查摄像头IP、网关、VLAN/路由和DNS设置"
+		result.Checks = append(result.Checks,
+			cameraTestCheckItem("网络连接", "error", result.Message),
+			cameraTestCheckItem("身份认证", "pending", "尚未建立连接"),
+			cameraTestCheckItem("图像抓取", "pending", "尚未建立连接"),
+		)
+	case strings.Contains(lower, "x509") || strings.Contains(lower, "certificate"):
+		result.Message = "HTTPS证书验证失败：如果摄像头使用自签名证书，可勾选“允许自签名 HTTPS 证书”后重试"
+		result.Checks = append(result.Checks,
+			cameraTestCheckItem("网络连接", "ok", "已连接到HTTPS服务"),
+			cameraTestCheckItem("HTTPS证书", "error", result.Message),
+			cameraTestCheckItem("图像抓取", "pending", "HTTPS握手未完成"),
+		)
+	case strings.Contains(lower, "返回的不是可识别图片") || strings.Contains(lower, "mjpeg") ||
+		strings.Contains(lower, "完整jpeg帧"):
+		result.Message = "已连接摄像头，但抓图地址没有返回有效图片；请检查抓图URL或MJPEG地址"
+		authMessage := "无需认证"
+		if authRequired {
+			authMessage = "认证已通过"
+		}
+		result.Checks = append(result.Checks,
+			cameraTestCheckItem("网络连接", "ok", "摄像头已响应"),
+			cameraTestCheckItem("身份认证", "ok", authMessage),
+			cameraTestCheckItem("图像抓取", "error", result.Message),
+		)
+	case strings.Contains(lower, "http 404"):
+		result.Message = "摄像头已响应，但抓图路径不存在（HTTP 404）；请检查抓图地址"
+		result.Checks = append(result.Checks,
+			cameraTestCheckItem("网络连接", "ok", "摄像头已响应"),
+			cameraTestCheckItem("身份认证", "ok", "连接已建立"),
+			cameraTestCheckItem("图像抓取", "error", result.Message),
+		)
+	case strings.Contains(lower, "http "):
+		result.Message = "摄像头已响应，但返回异常HTTP状态：" + message
+		result.Checks = append(result.Checks,
+			cameraTestCheckItem("网络连接", "ok", "摄像头已响应"),
+			cameraTestCheckItem("身份认证", "ok", "连接已建立"),
+			cameraTestCheckItem("图像抓取", "error", result.Message),
+		)
+	default:
+		result.Message = "连接失败：" + message
+		result.Checks = append(result.Checks,
+			cameraTestCheckItem("网络连接", "error", result.Message),
+			cameraTestCheckItem("身份认证", "pending", "无法确认"),
+			cameraTestCheckItem("图像抓取", "pending", "无法确认"),
+		)
+	}
+	return result
+}
+
+func cameraFromNormalizedInput(in store.CameraInput) store.Camera {
+	return store.Camera{
+		Name: in.Name, Kind: in.Kind, DeviceID: in.DeviceID, Protocol: in.Protocol,
+		StreamURL: in.StreamURL, SnapshotURL: in.SnapshotURL, Username: in.Username,
+		Password: in.Password, AuthMode: in.AuthMode, Width: in.Width, Height: in.Height,
+		FPS: in.FPS, TimeoutMS: in.TimeoutMS, TLSInsecure: in.TLSInsecure, IsDefault: in.IsDefault,
+	}
+}
+
+func (s *Server) cameraTest(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	var in cameraRequest
+	if err := decodeJSON(r, &in); err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+	if strings.ToLower(strings.TrimSpace(in.Kind)) != "network" {
+		writeJSON(w, http.StatusOK, cameraTestResult{
+			OK: false,
+			Message: "服务器连接测试用于网络摄像头；本机摄像头请使用浏览器设备测试",
+			Checks: []cameraTestCheck{cameraTestCheckItem("参数检查", "error", "请选择“网络摄像头（服务器直连）”")},
+		})
+		return
+	}
+
+	password := ""
+	if in.CameraID > 0 {
+		if current, err := s.store.CameraByID(r.Context(), in.CameraID); err == nil {
+			password = current.Password
+		}
+	}
+	if in.Password != nil {
+		password = *in.Password
+	}
+	normalized, err := store.NormalizeCameraInput(in.storeInput(password, ""))
+	if err != nil {
+		writeJSON(w, http.StatusOK, cameraTestResult{
+			OK: false,
+			Message: "参数错误：" + err.Error(),
+			Checks: []cameraTestCheck{cameraTestCheckItem("参数检查", "error", err.Error())},
+		})
+		return
+	}
+
+	camera := cameraFromNormalizedInput(normalized)
+	started := time.Now()
+	frame, width, height, err := fetchNetworkCameraFrame(r.Context(), camera)
+	elapsed := time.Since(started)
+	if err != nil {
+		writeJSON(w, http.StatusOK, cameraTestFailure(err, elapsed, camera.AuthMode != "none"))
+		return
+	}
+
+	authMessage := "无需认证"
+	if camera.AuthMode != "none" {
+		authMessage = "认证通过（" + strings.ToUpper(camera.AuthMode) + "）"
+	}
+	writeJSON(w, http.StatusOK, cameraTestResult{
+		OK: true,
+		Message: "网络摄像头连接成功，已成功读取实时图像",
+		ElapsedMS: elapsed.Milliseconds(),
+		Width: width,
+		Height: height,
+		PreviewBase64: base64.StdEncoding.EncodeToString(frame),
+		Checks: []cameraTestCheck{
+			cameraTestCheckItem("参数检查", "ok", "参数格式有效"),
+			cameraTestCheckItem("网络连接", "ok", "摄像头地址可访问"),
+			cameraTestCheckItem("身份认证", "ok", authMessage),
+			cameraTestCheckItem("图像抓取", "ok", fmt.Sprintf("成功读取 %d×%d 图像", width, height)),
+		},
+	})
 }
 
 func (in cameraRequest) storeInput(password, agentSecretHash string) store.CameraInput {

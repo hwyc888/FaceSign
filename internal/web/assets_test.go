@@ -482,3 +482,40 @@ func TestAutoStartCheckinSettingUIAndFlow(t *testing.T) {
 		}
 	}
 }
+
+
+func TestCameraSettingsSupportsPreSaveConnectionDiagnostics(t *testing.T) {
+	htmlData, err := assets.ReadFile("assets/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	html := string(htmlData)
+	for _, want := range []string{
+		`id="testCameraConfig"`,
+		`id="cameraTestHeadline"`,
+		`id="cameraTestChecks"`,
+		"参数、网络、认证和图像抓取",
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("camera connection test UI missing %q", want)
+		}
+	}
+
+	jsData, err := assets.ReadFile("assets/js/cameras.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(jsData)
+	for _, want := range []string{
+		"cameraFormPayload",
+		"testCurrentCameraConfig",
+		"/api/cameras/test",
+		"renderCameraConnectionTest",
+		"preview_base64",
+		"camera_id: editingCameraID || 0",
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("camera connection diagnostics missing %q", want)
+		}
+	}
+}

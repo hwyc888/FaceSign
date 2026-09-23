@@ -352,13 +352,18 @@
               <input id="cameraDefault" type="checkbox"> 设为默认摄像头
             </label>
             <div class="camera-form-actions">
+              <button id="testCameraConfig" type="button">测试连接</button>
               <button class="primary" id="saveCamera" type="submit">添加摄像头</button>
               <button id="cancelCameraEdit" class="hidden" type="button">取消编辑</button>
             </div>
           </form>
 
           <div class="camera-test-box">
-            <div id="cameraTestResult" class="muted">点击列表中的“测试”可验证本机设备或网络抓图。</div>
+            <div>
+              <div id="cameraTestHeadline" class="camera-test-headline neutral">尚未测试连接</div>
+              <div id="cameraTestResult" class="muted">填写摄像头参数后点击“测试连接”，系统会检查参数、网络、认证和图像抓取。</div>
+              <div id="cameraTestChecks" class="camera-test-checks"></div>
+            </div>
             <img id="cameraTestPreview" class="camera-test-preview hidden" alt="摄像头测试画面">
           </div>
 

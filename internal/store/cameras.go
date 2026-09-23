@@ -34,6 +34,10 @@ type rowScanner interface {
 	Scan(dest ...any) error
 }
 
+func NormalizeCameraInput(in CameraInput) (CameraInput, error) {
+	return normalizeCameraInput(in)
+}
+
 func normalizeCameraInput(in CameraInput) (CameraInput, error) {
 	in.Name = strings.TrimSpace(in.Name)
 	if in.Name == "" {

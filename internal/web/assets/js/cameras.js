@@ -2,6 +2,165 @@ let editingCameraID = 0;
 let localCameraDevices = [];
 let cameraTestPreviewURL = null;
 
+
+function cameraFormPayload() {
+  const kind = $('#cameraKind').value;
+  const payload = {
+    camera_id: editingCameraID || 0,
+    name: $('#cameraName').value.trim() || '连接测试',
+    kind,
+    device_id: kind === 'local' ? $('#cameraDevice').value : '',
+    protocol: kind === 'local' ? 'browser' : $('#cameraProtocol').value,
+    stream_url: kind === 'network' ? $('#cameraStreamURL').value.trim() : '',
+    snapshot_url: kind === 'network' ? $('#cameraSnapshotURL').value.trim() : '',
+    username: kind === 'network' ? $('#cameraUsername').value.trim() : '',
+    auth_mode: kind === 'network' ? $('#cameraAuthMode').value : 'none',
+    agent_id: kind === 'agent' ? $('#cameraAgentID').value.trim() : '',
+    width: Number($('#cameraWidth').value),
+    height: Number($('#cameraHeight').value),
+    fps: Number($('#cameraFPS').value),
+    timeout_ms: Number($('#cameraTimeout').value),
+    tls_insecure: kind === 'network' && $('#cameraTLSInsecure').checked,
+    is_default: $('#cameraDefault').checked,
+    clear_password: editingCameraID > 0 && $('#cameraClearPassword').checked
+  };
+  const password = $('#cameraPassword').value;
+  if (kind === 'network' && password) payload.password = password;
+  const agentSecret = $('#cameraAgentSecret').value.trim();
+  if (kind === 'agent' && agentSecret) payload.agent_secret = agentSecret;
+  return payload;
+}
+
+function resetCameraTestPanel(message = '填写摄像头参数后点击“测试连接”，系统会检查参数、网络、认证和图像抓取。') {
+  const headline = $('#cameraTestHeadline');
+  if (headline) {
+    headline.textContent = '尚未测试连接';
+    headline.className = 'camera-test-headline neutral';
+  }
+  const result = $('#cameraTestResult');
+  if (result) result.textContent = message;
+  const checks = $('#cameraTestChecks');
+  if (checks) checks.innerHTML = '';
+  if (cameraTestPreviewURL) {
+    URL.revokeObjectURL(cameraTestPreviewURL);
+    cameraTestPreviewURL = null;
+  }
+  const preview = $('#cameraTestPreview');
+  if (preview) {
+    preview.removeAttribute('src');
+    preview.classList.add('hidden');
+  }
+}
+
+function renderCameraConnectionTest(result) {
+  const headline = $('#cameraTestHeadline');
+  const summary = $('#cameraTestResult');
+  const checks = $('#cameraTestChecks');
+  if (headline) {
+    headline.textContent = result.ok ? '连接成功' : '连接失败';
+    headline.className = 'camera-test-headline ' + (result.ok ? 'success' : 'error');
+  }
+  if (summary) {
+    const suffix = result.elapsed_ms > 0 ? ` · ${result.elapsed_ms} ms` : '';
+    summary.textContent = (result.message || (result.ok ? '连接成功' : '连接失败')) + suffix;
+  }
+  if (checks) {
+    checks.innerHTML = (result.checks || []).map(check => `
+      <div class="camera-test-check ${esc(check.status || 'pending')}">
+        <span class="camera-test-check-icon">${check.status === 'ok' ? '✓' : check.status === 'error' ? '×' : '…'}</span>
+        <strong>${esc(check.name || '')}</strong>
+        <span>${esc(check.message || '')}</span>
+      </div>
+    `).join('');
+  }
+  const preview = $('#cameraTestPreview');
+  if (result.ok && result.preview_base64 && preview) {
+    if (cameraTestPreviewURL) {
+      URL.revokeObjectURL(cameraTestPreviewURL);
+      cameraTestPreviewURL = null;
+    }
+    preview.src = 'data:image/jpeg;base64,' + result.preview_base64;
+    preview.classList.remove('hidden');
+  } else if (preview) {
+    preview.removeAttribute('src');
+    preview.classList.add('hidden');
+  }
+}
+
+async function testCurrentCameraConfig() {
+  const button = $('#testCameraConfig');
+  const kind = $('#cameraKind').value;
+  if (button) button.disabled = true;
+  const headline = $('#cameraTestHeadline');
+  if (headline) {
+    headline.textContent = '正在测试...';
+    headline.className = 'camera-test-headline testing';
+  }
+  $('#cameraTestResult').textContent = '正在检测摄像头连接，请稍候...';
+  $('#cameraTestChecks').innerHTML = '';
+
+  try {
+    if (kind === 'local') {
+      if (!window.isSecureContext) {
+        throw new Error('本机摄像头测试需要 HTTPS 安全连接');
+      }
+      const camera = {
+        width: Number($('#cameraWidth').value || 1280),
+        height: Number($('#cameraHeight').value || 720),
+        fps: Number($('#cameraFPS').value || 30),
+        device_id: $('#cameraDevice').value
+      };
+      const started = performance.now();
+      const testStream = await navigator.mediaDevices.getUserMedia(localVideoConstraints(camera));
+      const settings = testStream.getVideoTracks()[0]?.getSettings?.() || {};
+      testStream.getTracks().forEach(track => track.stop());
+      renderCameraConnectionTest({
+        ok: true,
+        message: `本机摄像头可用：${settings.width || camera.width}×${settings.height || camera.height}，${Math.round(settings.frameRate || camera.fps)} FPS`,
+        elapsed_ms: Math.round(performance.now() - started),
+        checks: [
+          {name: '浏览器权限', status: 'ok', message: '摄像头权限正常'},
+          {name: '设备连接', status: 'ok', message: '视频设备可以打开'}
+        ]
+      });
+      toast('摄像头测试成功');
+      return;
+    }
+
+    if (kind === 'agent') {
+      if (!editingCameraID) {
+        renderCameraConnectionTest({
+          ok: false,
+          message: 'Camera Agent 需要先保存配置并让客户端连接后才能测试',
+          checks: [
+            {name: '配置状态', status: 'error', message: '请先保存 Camera Agent 配置'}
+          ]
+        });
+        return;
+      }
+      await testCamera(editingCameraID);
+      return;
+    }
+
+    const result = await api('/api/cameras/test', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(cameraFormPayload())
+    });
+    renderCameraConnectionTest(result);
+    toast(result.ok ? '网络摄像头连接测试成功' : '连接测试失败：' + result.message);
+  } catch (e) {
+    renderCameraConnectionTest({
+      ok: false,
+      message: e.message,
+      checks: [{name: '连接测试', status: 'error', message: e.message}]
+    });
+    toast('摄像头测试失败：' + e.message);
+  } finally {
+    if (button) button.disabled = false;
+  }
+}
+
 function cameraTypeLabel(camera) {
   if (camera.kind === 'local') return '本机 / USB';
   if (camera.kind === 'agent') return '客户端 Camera Agent';
@@ -137,6 +296,7 @@ function resetCameraForm() {
   $('#cameraAgentSecret').placeholder = '建议使用随机生成密钥';
   renderLocalCameraDeviceOptions('');
   updateCameraFormVisibility();
+  resetCameraTestPanel();
 }
 
 function editCamera(id) {
@@ -169,6 +329,7 @@ function editCamera(id) {
   $('#saveCamera').textContent = '保存摄像头';
   $('#cancelCameraEdit').classList.remove('hidden');
   updateCameraFormVisibility();
+  resetCameraTestPanel('已载入保存的摄像头参数，可直接修改后测试连接。');
   $('#cameraForm').scrollIntoView({behavior: 'smooth', block: 'start'});
 }
 
@@ -201,25 +362,50 @@ async function testCamera(id) {
   const camera = camerasCache.find(item => item.id === id);
   if (!camera) return;
   try {
+    const headline = $('#cameraTestHeadline');
+    if (headline) {
+      headline.textContent = '正在测试...';
+      headline.className = 'camera-test-headline testing';
+    }
+    $('#cameraTestChecks').innerHTML = '';
     if (camera.kind === 'local') {
       const testStream = await navigator.mediaDevices.getUserMedia(localVideoConstraints(camera));
       const settings = testStream.getVideoTracks()[0]?.getSettings?.() || {};
       testStream.getTracks().forEach(track => track.stop());
-      $('#cameraTestResult').textContent = `本机摄像头连接成功：${settings.width || camera.width}×${settings.height || camera.height}，${Math.round(settings.frameRate || camera.fps)} FPS`;
-      $('#cameraTestPreview').classList.add('hidden');
+      renderCameraConnectionTest({
+        ok: true,
+        message: `本机摄像头连接成功：${settings.width || camera.width}×${settings.height || camera.height}，${Math.round(settings.frameRate || camera.fps)} FPS`,
+        checks: [
+          {name: '浏览器权限', status: 'ok', message: '摄像头权限正常'},
+          {name: '设备连接', status: 'ok', message: '视频设备可以打开'}
+        ]
+      });
     } else {
       const blob = await fetchCameraFrameBlob(camera.id);
       if (cameraTestPreviewURL) URL.revokeObjectURL(cameraTestPreviewURL);
       cameraTestPreviewURL = URL.createObjectURL(blob);
       $('#cameraTestPreview').src = cameraTestPreviewURL;
       $('#cameraTestPreview').classList.remove('hidden');
-      $('#cameraTestResult').textContent = camera.kind === 'agent'
-        ? `客户端 Agent“${camera.agent_id}”在线，画面接收成功。`
-        : `网络摄像头“${camera.name}”连接及抓图成功。`;
+      renderCameraConnectionTest({
+        ok: true,
+        message: camera.kind === 'agent'
+          ? `客户端 Agent“${camera.agent_id}”在线，画面接收成功。`
+          : `网络摄像头“${camera.name}”连接及抓图成功。`,
+        checks: [
+          {name: '网络连接', status: 'ok', message: '摄像头/Agent 可以访问'},
+          {name: '图像抓取', status: 'ok', message: '成功读取实时画面'}
+        ]
+      });
+      $('#cameraTestPreview').src = cameraTestPreviewURL;
+      $('#cameraTestPreview').classList.remove('hidden');
     }
     toast('摄像头测试成功');
   } catch (e) {
-    $('#cameraTestResult').textContent = '测试失败：' + e.message;
+    renderCameraConnectionTest({
+      ok: false,
+      message: '测试失败：' + e.message,
+      checks: [{name: '连接测试', status: 'error', message: e.message}]
+    });
     toast('摄像头测试失败：' + e.message);
   }
 }
@@ -274,34 +460,15 @@ $('#copyCameraAgentConfig').addEventListener('click', async () => {
   }
 });
 $('#cameraProtocol').addEventListener('change', updateCameraFormVisibility);
+$('#testCameraConfig').addEventListener('click', testCurrentCameraConfig);
 $('#refreshLocalCameras').addEventListener('click', () => refreshLocalCameraDevices(true).catch(e => toast(e.message)));
 $('#cancelCameraEdit').addEventListener('click', resetCameraForm);
 
 $('#cameraForm').addEventListener('submit', async event => {
   event.preventDefault();
   const kind = $('#cameraKind').value;
-  const payload = {
-    name: $('#cameraName').value.trim(),
-    kind,
-    device_id: kind === 'local' ? $('#cameraDevice').value : '',
-    protocol: kind === 'local' ? 'browser' : $('#cameraProtocol').value,
-    stream_url: kind === 'network' ? $('#cameraStreamURL').value.trim() : '',
-    snapshot_url: kind === 'network' ? $('#cameraSnapshotURL').value.trim() : '',
-    username: kind === 'network' ? $('#cameraUsername').value.trim() : '',
-    auth_mode: kind === 'network' ? $('#cameraAuthMode').value : 'none',
-    agent_id: kind === 'agent' ? $('#cameraAgentID').value.trim() : '',
-    width: Number($('#cameraWidth').value),
-    height: Number($('#cameraHeight').value),
-    fps: Number($('#cameraFPS').value),
-    timeout_ms: Number($('#cameraTimeout').value),
-    tls_insecure: kind === 'network' && $('#cameraTLSInsecure').checked,
-    is_default: $('#cameraDefault').checked,
-    clear_password: editingCameraID > 0 && $('#cameraClearPassword').checked
-  };
-  const password = $('#cameraPassword').value;
-  if (kind === 'network' && password) payload.password = password;
-  const agentSecret = $('#cameraAgentSecret').value.trim();
-  if (kind === 'agent' && agentSecret) payload.agent_secret = agentSecret;
+  const payload = cameraFormPayload();
+  delete payload.camera_id;
 
   try {
     if (editingCameraID) {

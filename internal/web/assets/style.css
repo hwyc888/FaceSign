@@ -354,3 +354,18 @@ pre{background:#0b1220;color:#d8e2f3;border-radius:12px;padding:16px;overflow:au
 .profile-diff-row.consequence{border-color:#f0c36a;background:#fff9eb}
 .profile-diff-warning{margin-top:12px;padding:11px 12px;border-radius:10px;border:1px solid #f0c36a;background:#fff9eb;color:#8a4b08;font-size:13px;line-height:1.5}
 @media(max-width:620px){.profile-diff-row{grid-template-columns:64px 1fr}.profile-diff-arrow{display:none}.profile-diff-new{grid-column:2}}
+
+.camera-test-headline{font-size:16px;font-weight:800;margin-bottom:6px}
+.camera-test-headline.neutral{color:#667085}
+.camera-test-headline.testing{color:#2563eb}
+.camera-test-headline.success{color:#166534}
+.camera-test-headline.error{color:#b42318}
+.camera-test-checks{display:grid;gap:7px;margin-top:10px}
+.camera-test-check{display:grid;grid-template-columns:24px 86px minmax(0,1fr);gap:7px;align-items:start;padding:8px 10px;border-radius:9px;border:1px solid #e4e8f0;background:#fff;font-size:12px;line-height:1.45}
+.camera-test-check-icon{display:grid;place-items:center;width:20px;height:20px;border-radius:50%;font-weight:900}
+.camera-test-check.ok{border-color:#b7e4c7;background:#f1fbf5;color:#166534}
+.camera-test-check.ok .camera-test-check-icon{background:#dcfce7;color:#15803d}
+.camera-test-check.error{border-color:#f3c3c0;background:#fff5f4;color:#9f1c13}
+.camera-test-check.error .camera-test-check-icon{background:#fee2e2;color:#dc2626}
+.camera-test-check.pending{color:#667085;background:#f8fafc}
+.camera-test-check.pending .camera-test-check-icon{background:#e9eef5;color:#667085}
