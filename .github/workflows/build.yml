@@ -184,11 +184,19 @@ jobs:
             throw "YOLOX-Nano checksum mismatch: $personHash"
           }
 
+
+          Copy-Item 'dist-full' 'dist-full-no-ffmpeg' -Recurse
+          Remove-Item 'dist-full-no-ffmpeg\ffmpeg.exe' -Force
+          Remove-Item 'dist-full-no-ffmpeg\licenses\FFMPEG_LGPLv2.1.txt' -Force -ErrorAction SilentlyContinue
+          Remove-Item 'dist-full-no-ffmpeg\licenses\FFMPEG_LGPLv3.txt' -Force -ErrorAction SilentlyContinue
+          Remove-Item 'dist-full-no-ffmpeg\licenses\FFMPEG_NOTICE.txt' -Force -ErrorAction SilentlyContinue
+
       - name: Verify release variants
         shell: pwsh
         run: |
           if (Test-Path 'dist-lite\models') { throw 'Lightweight package must not contain a models directory' }
           if (-not (Test-Path 'dist-full\models' -PathType Container)) { throw 'Full package is missing the models directory' }
+          if (-not (Test-Path 'dist-full-no-ffmpeg\models' -PathType Container)) { throw 'Full no-FFmpeg package is missing the models directory' }
 
           $onnxFiles = @(Get-ChildItem -Path 'dist-full\models' -Filter '*.onnx' -File)
           if ($onnxFiles.Count -ne 4) { throw "Full package must contain exactly 4 ONNX model files, got $($onnxFiles.Count)" }
@@ -210,6 +218,15 @@ jobs:
           $fullManager = (Get-FileHash 'dist-full\FaceSignManager.exe' -Algorithm SHA256).Hash
           $liteManager = (Get-FileHash 'dist-lite\FaceSignManager.exe' -Algorithm SHA256).Hash
           if ($fullManager -ne $liteManager) { throw 'Full and lightweight packages must contain the same FaceSignManager.exe' }
+
+          $noFFmpegExe = (Get-FileHash 'dist-full-no-ffmpeg\FaceSign.exe' -Algorithm SHA256).Hash
+          $noFFmpegManager = (Get-FileHash 'dist-full-no-ffmpeg\FaceSignManager.exe' -Algorithm SHA256).Hash
+          if ($fullExe -ne $noFFmpegExe) { throw 'Full and no-FFmpeg packages must contain the same FaceSign.exe' }
+          if ($fullManager -ne $noFFmpegManager) { throw 'Full and no-FFmpeg packages must contain the same FaceSignManager.exe' }
+          if (Test-Path 'dist-full-no-ffmpeg\ffmpeg.exe' -PathType Leaf) { throw 'No-FFmpeg package must not contain ffmpeg.exe' }
+          if (Test-Path 'dist-full-no-ffmpeg\licenses\FFMPEG_NOTICE.txt' -PathType Leaf) { throw 'No-FFmpeg package must not contain FFmpeg notices' }
+          $noFFmpegModels = @(Get-ChildItem -Path 'dist-full-no-ffmpeg\models' -Filter '*.onnx' -File)
+          if ($noFFmpegModels.Count -ne 4) { throw "Full no-FFmpeg package must contain exactly 4 ONNX model files, got $($noFFmpegModels.Count)" }
 
           foreach ($variant in @('dist-full','dist-lite')) {
             $ffmpeg = Join-Path $variant 'ffmpeg.exe'
@@ -455,6 +472,38 @@ jobs:
             }
           }
 
+
+      - name: Smoke test full package without bundled FFmpeg
+        shell: pwsh
+        run: |
+          $db = Join-Path $env:RUNNER_TEMP 'facesign-no-ffmpeg.db'
+          $assets = (Resolve-Path 'dist-full-no-ffmpeg').Path
+          $originalPath = $env:PATH
+          $originalModelDir = $env:FACESIGN_MODEL_DIR
+          Remove-Item Env:FACESIGN_MODEL_DIR -ErrorAction SilentlyContinue
+          $env:PATH = $assets + ';' + (Join-Path $env:WINDIR 'System32') + ';' + $env:WINDIR
+          $tlsDir = Join-Path $env:RUNNER_TEMP 'facesign-tls-no-ffmpeg'
+          $process = Start-Process -FilePath (Resolve-Path 'dist-full-no-ffmpeg\FaceSign.exe') -ArgumentList @('--listen','127.0.0.1:18088','--https-listen','127.0.0.1:18089','--http-redirect=false','--tls-dir',$tlsDir,'--open-browser=false','--assets',$assets,'--data',$db) -PassThru -WindowStyle Hidden
+          try {
+            $ready = $false
+            for ($i = 0; $i -lt 30; $i++) {
+              try {
+                $health = Invoke-RestMethod -Uri 'http://127.0.0.1:18088/api/health' -TimeoutSec 3
+                if ($health.ok -and $health.device -eq 'cpu') { $ready = $true; break }
+              } catch { Start-Sleep -Seconds 1 }
+            }
+            if (-not $ready) { throw 'Full no-FFmpeg package could not start without bundled FFmpeg' }
+            if (Test-Path (Join-Path $assets 'ffmpeg.exe') -PathType Leaf) { throw 'No-FFmpeg smoke package unexpectedly contains ffmpeg.exe' }
+          } finally {
+            Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue
+            $env:PATH = $originalPath
+            if ($null -eq $originalModelDir) {
+              Remove-Item Env:FACESIGN_MODEL_DIR -ErrorAction SilentlyContinue
+            } else {
+              $env:FACESIGN_MODEL_DIR = $originalModelDir
+            }
+          }
+
       - name: Verify portable startup survives HTTPS port conflict
         shell: pwsh
         run: |
@@ -514,6 +563,15 @@ jobs:
         with:
           name: facesign-windows-amd64-lite
           path: dist-lite/
+          if-no-files-found: error
+          retention-days: 30
+
+
+      - name: Upload Windows full release without FFmpeg
+        uses: actions/upload-artifact@v7
+        with:
+          name: facesign-windows-amd64-full-no-ffmpeg
+          path: dist-full-no-ffmpeg/
           if-no-files-found: error
           retention-days: 30
 
