@@ -561,7 +561,7 @@ async function testCamera(id) {
 
 $('#cameraKind').addEventListener('change', () => {
   if ($('#cameraKind').value === 'network' && !editingCameraID) {
-    $('#cameraFPS').value = '8';
+    $('#cameraFPS').value = '5';
     $('#cameraPreset').value = 'hikvision';
     cameraAdvancedOpen = false;
   }
