@@ -21,6 +21,11 @@ $Models = @(
   @{
     Name = 'anti-spoof-mn3.onnx'
     SHA256 = 'C4C99AF04603B62D7E44F6F4DAEB33E0DAECCC696008C0B1D62F6F5CEBBB3262'
+  },
+  @{
+    Name = 'yolox_nano.onnx'
+    SHA256 = 'C789161ED43C8269FCD4E67C67EEEB4E80C622DA2EB296A20BC6007BD18A0B7D'
+    URL = 'https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/yolox_nano.onnx'
   }
 )
 
@@ -53,7 +58,7 @@ function Ensure-FaceModels {
       continue
     }
 
-    $url = "$ModelBaseUrl/$($model.Name)"
+    $url = if ($model.URL) { $model.URL } else { "$ModelBaseUrl/$($model.Name)" }
     $temp = "$target.download"
     Write-Host "Downloading model once: $($model.Name)"
     try {
@@ -171,7 +176,7 @@ if (-not $versionInfo.version) {
 $url = "https://127.0.0.1:$httpsPort/?v=$($versionInfo.version)"
 Write-Host "FaceSign upgraded and started."
 Write-Host "Version:       $($versionInfo.version)"
-Write-Host "Models:        pinned at $ModelCommit"
+Write-Host "Models:        face models pinned at $ModelCommit; YOLOX-Nano pinned by SHA-256"
 Write-Host "Root CA:       $rootCAPath"
 Write-Host "CA Thumbprint: $rootThumbprint"
 Write-Host "Local HTTPS:   $url"
