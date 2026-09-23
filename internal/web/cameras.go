@@ -187,7 +187,9 @@ func (s *Server) cameraTest(w http.ResponseWriter, r *http.Request) {
 			password = current.Password
 		}
 	}
-	if in.Password != nil {
+	if in.ClearPassword {
+		password = ""
+	} else if in.Password != nil {
 		password = *in.Password
 	}
 	normalized, err := store.NormalizeCameraInput(in.storeInput(password, ""))

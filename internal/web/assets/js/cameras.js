@@ -459,6 +459,14 @@ $('#copyCameraAgentConfig').addEventListener('click', async () => {
     toast('复制失败：' + e.message);
   }
 });
+function markCameraTestStale() {
+  const headline = $('#cameraTestHeadline');
+  if (!headline || headline.textContent === '尚未测试连接') return;
+  resetCameraTestPanel('摄像头参数已修改，请重新点击“测试连接”确认当前设置。');
+}
+
+$('#cameraForm').addEventListener('input', markCameraTestStale);
+$('#cameraForm').addEventListener('change', markCameraTestStale);
 $('#cameraProtocol').addEventListener('change', updateCameraFormVisibility);
 $('#testCameraConfig').addEventListener('click', testCurrentCameraConfig);
 $('#refreshLocalCameras').addEventListener('click', () => refreshLocalCameraDevices(true).catch(e => toast(e.message)));
