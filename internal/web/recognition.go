@@ -1,6 +1,7 @@
 package web
 
 import (
+	"errors"
 	"image"
 	"net/http"
 	"sort"
@@ -8,6 +9,7 @@ import (
 	"time"
 
 	"github.com/hwyc888/FaceSign/internal/face"
+	"github.com/hwyc888/FaceSign/internal/person"
 	"github.com/hwyc888/FaceSign/internal/store"
 )
 
@@ -28,11 +30,27 @@ type recognitionFace struct {
 	FirstCheckinToday bool              `json:"first_checkin_today"`
 	Box               faceBox           `json:"box"`
 	TrackID           string            `json:"track_id,omitempty"`
+	LivenessTrackID   string            `json:"liveness_track_id,omitempty"`
+	QualityScore      float64           `json:"quality_score,omitempty"`
+	QualityStatus     string            `json:"quality_status,omitempty"`
+	BestQuality       float64           `json:"best_quality,omitempty"`
 	LivenessScore     float64           `json:"liveness_score,omitempty"`
 	LivenessStatus    string            `json:"liveness_status,omitempty"`
 	LivenessFrames    int               `json:"liveness_frames,omitempty"`
 	RequiredFrames    int               `json:"required_frames,omitempty"`
 	LivenessTimedOut  bool              `json:"liveness_timed_out,omitempty"`
+}
+
+type recognitionPerson struct {
+	TrackID         string         `json:"track_id"`
+	Box             faceBox        `json:"box"`
+	Score           float64        `json:"score"`
+	Status          string         `json:"status"`
+	FaceVisible     bool           `json:"face_visible"`
+	FaceQuality     float64        `json:"face_quality,omitempty"`
+	BestFaceQuality float64        `json:"best_face_quality,omitempty"`
+	Student         *store.Student `json:"student,omitempty"`
+	Similarity      float64        `json:"similarity,omitempty"`
 }
 
 type decodedFaceSample struct {
@@ -42,14 +60,16 @@ type decodedFaceSample struct {
 
 type matchCandidate struct {
 	DetectionIndex int
-	SampleIndex    int
+	Student        store.Student
 	Score          float64
+	FreshFeature   bool
 }
 
 type selectedMatch struct {
 	DetectionIndex int
 	Student        store.Student
 	Similarity     float64
+	FreshFeature   bool
 }
 
 func (s *Server) recognize(w http.ResponseWriter, r *http.Request) {
@@ -66,51 +86,145 @@ func (s *Server) recognize(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) recognizeImage(w http.ResponseWriter, r *http.Request, img image.Image) {
-	detections, err := s.engine.ExtractAll(img, s.detectionThreshold)
+	now := time.Now()
+	sessionID := recognitionSessionID(r)
+
+	detections, err := s.engine.DetectAll(img, s.detectionThreshold)
 	if err != nil {
-		writeFaceError(w, err)
-		return
-	}
-	samples, err := s.store.ListFaceSamples(r.Context())
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, err)
-		return
+		if errors.Is(err, face.ErrNoFace) {
+			detections = nil
+		} else {
+			writeFaceError(w, err)
+			return
+		}
 	}
 
-	decoded := make([]decodedFaceSample, 0, len(samples))
-	for _, sample := range samples {
-		stored, err := face.Decode(sample.Embedding)
+	personDetections := make([]person.Detection, 0)
+	if s.personEngine != nil {
+		personDetections, err = s.personEngine.Detect(img, 0.32)
 		if err != nil {
-			s.logger.Warn("skip invalid face sample", "student_id", sample.Student.ID, "sample_id", sample.ID, "error", err)
-			continue
+			s.logger.Warn("person detector failed; continuing with face-derived tracks", "error", err)
+			personDetections = nil
 		}
-		decoded = append(decoded, decodedFaceSample{Student: sample.Student, Feature: stored})
+	}
+	personDetections = addFaceFallbackPersons(personDetections, detections, img.Bounds())
+	tracks := s.personTracker.Observe(sessionID, personDetections, now)
+	personResults := make([]recognitionPerson, len(tracks))
+	personIndex := make(map[string]int, len(tracks))
+	for i, track := range tracks {
+		status := "等待露脸"
+		if track.Student != nil {
+			status = "已识别，等待再次露脸"
+		}
+		personResults[i] = recognitionPerson{
+			TrackID:         track.TrackID,
+			Box:             boxFromRectangle(track.Rectangle),
+			Score:           track.Score,
+			Status:          status,
+			BestFaceQuality: track.BestQuality,
+			Student:         track.Student,
+			Similarity:      track.Similarity,
+		}
+		personIndex[track.TrackID] = i
 	}
 
 	results := make([]recognitionFace, len(detections))
-	candidates := make([]matchCandidate, 0, len(detections)*len(decoded))
+	qualities := make([]faceQualityResult, len(detections))
+	detectionTrackIDs := make([]string, len(detections))
+	needsFeature := make([]bool, len(detections))
+	candidates := make([]matchCandidate, 0, len(detections)*2)
+
 	for i, detected := range detections {
-		rect := detected.Rectangle
-		results[i] = recognitionFace{
-			Status: "未录入",
-			Box: faceBox{
-				X:      rect.Min.X,
-				Y:      rect.Min.Y,
-				Width:  rect.Dx(),
-				Height: rect.Dy(),
-			},
+		quality := scoreFaceQuality(img, detected)
+		qualities[i] = quality
+		result := recognitionFace{
+			Status:        "等待清晰人脸",
+			Box:           boxFromRectangle(detected.Rectangle),
+			QualityScore:  quality.Score,
+			QualityStatus: quality.Status,
 		}
-		for j, sample := range decoded {
-			score := face.Similarity(detected.Feature, sample.Feature)
-			if score > results[i].Similarity {
-				results[i].Similarity = score
+
+		if trackIndex, ok := associateFaceToPerson(detected.Rectangle, tracks); ok {
+			track := tracks[trackIndex]
+			detectionTrackIDs[i] = track.TrackID
+			result.TrackID = track.TrackID
+			result.BestQuality = track.BestQuality
+			if pIndex, exists := personIndex[track.TrackID]; exists {
+				personResults[pIndex].FaceVisible = true
+				personResults[pIndex].FaceQuality = quality.Score
+				personResults[pIndex].Status = "等待清晰人脸"
 			}
-			if score >= s.matchThreshold {
+		}
+
+		if quality.Score < minRecognitionFaceQuality {
+			if student, similarity, best := s.personTracker.Identity(sessionID, result.TrackID); student != nil {
+				result.Matched = true
+				result.Student = student
+				result.Similarity = similarity
+				result.BestQuality = best
+				if pIndex, ok := personIndex[result.TrackID]; ok {
+					personResults[pIndex].Student = student
+					personResults[pIndex].Similarity = similarity
+					personResults[pIndex].BestFaceQuality = best
+				}
+			}
+			results[i] = result
+			continue
+		}
+
+		if result.TrackID != "" && !s.personTracker.NeedFeature(sessionID, result.TrackID, quality.Score, now) {
+			if student, similarity, best := s.personTracker.Identity(sessionID, result.TrackID); student != nil {
 				candidates = append(candidates, matchCandidate{
 					DetectionIndex: i,
-					SampleIndex:    j,
-					Score:          score,
+					Student:        *student,
+					Score:          similarity,
 				})
+				result.BestQuality = best
+			} else {
+				result.Status = "等待更佳人脸帧"
+			}
+		} else {
+			needsFeature[i] = true
+		}
+		results[i] = result
+	}
+
+	var decoded []decodedFaceSample
+	if anyTrue(needsFeature) {
+		samples, err := s.store.ListFaceSamples(r.Context())
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		decoded = make([]decodedFaceSample, 0, len(samples))
+		for _, sample := range samples {
+			stored, err := face.Decode(sample.Embedding)
+			if err != nil {
+				s.logger.Warn("skip invalid face sample", "student_id", sample.Student.ID, "sample_id", sample.ID, "error", err)
+				continue
+			}
+			decoded = append(decoded, decodedFaceSample{Student: sample.Student, Feature: stored})
+		}
+
+		for i, need := range needsFeature {
+			if !need {
+				continue
+			}
+			feature, err := s.engine.Feature(img, detections[i])
+			if err != nil {
+				s.logger.Warn("best-frame feature extraction failed", "track_id", detectionTrackIDs[i], "error", err)
+				continue
+			}
+			for _, sample := range decoded {
+				score := face.Similarity(feature, sample.Feature)
+				if score >= s.matchThreshold {
+					candidates = append(candidates, matchCandidate{
+						DetectionIndex: i,
+						Student:        sample.Student,
+						Score:          score,
+						FreshFeature:   true,
+					})
+				}
 			}
 		}
 	}
@@ -119,37 +233,65 @@ func (s *Server) recognizeImage(w http.ResponseWriter, r *http.Request, img imag
 	usedFaces := make(map[int]bool)
 	usedStudents := make(map[int64]bool)
 	selected := make([]selectedMatch, 0, len(detections))
+	selectedByDetection := make(map[int]selectedMatch)
 	for _, candidate := range candidates {
-		if usedFaces[candidate.DetectionIndex] {
-			continue
-		}
-		student := decoded[candidate.SampleIndex].Student
-		if usedStudents[student.ID] {
+		if usedFaces[candidate.DetectionIndex] || usedStudents[candidate.Student.ID] {
 			continue
 		}
 		usedFaces[candidate.DetectionIndex] = true
-		usedStudents[student.ID] = true
-		selected = append(selected, selectedMatch{
+		usedStudents[candidate.Student.ID] = true
+		match := selectedMatch{
 			DetectionIndex: candidate.DetectionIndex,
-			Student:        student,
+			Student:        candidate.Student,
 			Similarity:     candidate.Score,
-		})
+			FreshFeature:   candidate.FreshFeature,
+		}
+		selected = append(selected, match)
+		selectedByDetection[candidate.DetectionIndex] = match
 	}
 
-	sessionID := recognitionSessionID(r)
+	for i, need := range needsFeature {
+		if !need {
+			continue
+		}
+		if match, ok := selectedByDetection[i]; ok && match.FreshFeature {
+			student := match.Student
+			s.personTracker.RecordFeature(sessionID, detectionTrackIDs[i], qualities[i].Score, &student, match.Similarity, now)
+			if _, _, best := s.personTracker.Identity(sessionID, detectionTrackIDs[i]); best > 0 {
+				results[i].BestQuality = best
+			}
+		} else {
+			s.personTracker.RecordFeature(sessionID, detectionTrackIDs[i], qualities[i].Score, nil, 0, now)
+			if _, _, best := s.personTracker.Identity(sessionID, detectionTrackIDs[i]); best > 0 {
+				results[i].BestQuality = best
+			}
+		}
+	}
+
 	observations := make([]recognitionObservation, 0, len(selected))
 	observationDetectionIndexes := make([]int, 0, len(selected))
 	for _, match := range selected {
 		result := &results[match.DetectionIndex]
 		result.Matched = true
-		result.Student = &match.Student
+		student := match.Student
+		result.Student = &student
 		result.Similarity = match.Similarity
 		result.Status = "活体验证中"
+
+		if pIndex, ok := personIndex[result.TrackID]; ok {
+			personResults[pIndex].Student = &student
+			personResults[pIndex].Similarity = match.Similarity
+			personResults[pIndex].BestFaceQuality = result.BestQuality
+			personResults[pIndex].Status = "活体验证中"
+		}
 
 		score, err := s.liveness.Score(img, detections[match.DetectionIndex].Rectangle)
 		if err != nil {
 			result.Status = "活体检测失败"
 			result.LivenessStatus = "活体检测失败"
+			if pIndex, ok := personIndex[result.TrackID]; ok {
+				personResults[pIndex].Status = "活体检测失败"
+			}
 			s.logger.Warn("passive liveness inference failed", "student_id", match.Student.ID, "error", err)
 			continue
 		}
@@ -162,7 +304,7 @@ func (s *Server) recognizeImage(w http.ResponseWriter, r *http.Request, img imag
 		observationDetectionIndexes = append(observationDetectionIndexes, match.DetectionIndex)
 	}
 
-	decisions := s.tracker.Observe(sessionID, observations, time.Now())
+	decisions := s.tracker.Observe(sessionID, observations, now)
 	verifiedCount := 0
 	pendingCount := 0
 	timeoutCount := 0
@@ -172,7 +314,7 @@ func (s *Server) recognizeImage(w http.ResponseWriter, r *http.Request, img imag
 		detectionIndex := observationDetectionIndexes[i]
 		result := &results[detectionIndex]
 		matchedCount++
-		result.TrackID = decision.TrackID
+		result.LivenessTrackID = decision.TrackID
 		result.LivenessScore = decision.LiveScore
 		result.LivenessStatus = decision.LivenessStatus
 		result.LivenessFrames = decision.Frames
@@ -188,7 +330,7 @@ func (s *Server) recognizeImage(w http.ResponseWriter, r *http.Request, img imag
 			result.Status = "签到通过"
 			verifiedCount++
 			if decision.NeedsAttendance {
-				record, created, err := s.store.MarkAttendance(r.Context(), *result.Student, result.Similarity, time.Now())
+				record, created, err := s.store.MarkAttendance(r.Context(), *result.Student, result.Similarity, now)
 				if err != nil {
 					writeError(w, http.StatusInternalServerError, err)
 					return
@@ -204,32 +346,49 @@ func (s *Server) recognizeImage(w http.ResponseWriter, r *http.Request, img imag
 			result.Status = decision.LivenessStatus
 			pendingCount++
 		}
+
+		if pIndex, ok := personIndex[result.TrackID]; ok {
+			personResults[pIndex].Status = result.Status
+			personResults[pIndex].Student = result.Student
+			personResults[pIndex].Similarity = result.Similarity
+			personResults[pIndex].BestFaceQuality = result.BestQuality
+		}
 	}
 
 	unregisteredCount := 0
 	for _, result := range results {
-		if !result.Matched {
+		if !result.Matched && result.QualityScore >= minRecognitionFaceQuality {
 			unregisteredCount++
+		}
+	}
+	waitingFaceCount := 0
+	for _, item := range personResults {
+		if !item.FaceVisible || item.FaceQuality < minRecognitionFaceQuality {
+			waitingFaceCount++
 		}
 	}
 
 	response := map[string]any{
-		"faces":               results,
-		"detected_count":      len(results),
-		"matched_count":       matchedCount,
-		"recognized_count":    verifiedCount,
-		"verified_count":      verifiedCount,
-		"pending_count":          pendingCount,
-		"timeout_count":          timeoutCount,
-		"spoof_count":            spoofCount,
-		"unregistered_count":     unregisteredCount,
-		"threshold":              s.matchThreshold,
-		"liveness_threshold":     livenessPassThreshold,
+		"faces":                   results,
+		"persons":                 personResults,
+		"detected_count":          len(results),
+		"tracked_person_count":    len(personResults),
+		"waiting_face_count":      waitingFaceCount,
+		"matched_count":           matchedCount,
+		"recognized_count":        verifiedCount,
+		"verified_count":          verifiedCount,
+		"pending_count":           pendingCount,
+		"timeout_count":           timeoutCount,
+		"spoof_count":             spoofCount,
+		"unregistered_count":      unregisteredCount,
+		"threshold":               s.matchThreshold,
+		"face_quality_threshold":  minRecognitionFaceQuality,
+		"liveness_threshold":      livenessPassThreshold,
 		"liveness_fast_threshold": livenessFastPassThreshold,
-		"liveness_fast_frames":   livenessFastFrames,
-		"liveness_min_frames":    livenessMinFrames,
-		"liveness_max_frames":    livenessMaxFrames,
-		"liveness_timeout_ms":    livenessDecisionTimeout.Milliseconds(),
+		"liveness_fast_frames":    livenessFastFrames,
+		"liveness_min_frames":     livenessMinFrames,
+		"liveness_max_frames":     livenessMaxFrames,
+		"liveness_timeout_ms":     livenessDecisionTimeout.Milliseconds(),
 	}
 
 	if len(results) == 1 {
@@ -237,6 +396,9 @@ func (s *Server) recognizeImage(w http.ResponseWriter, r *http.Request, img imag
 		response["matched"] = results[0].Matched
 		response["status"] = results[0].Status
 		response["similarity"] = results[0].Similarity
+		response["quality_score"] = results[0].QualityScore
+		response["quality_status"] = results[0].QualityStatus
+		response["best_quality"] = results[0].BestQuality
 		response["liveness_score"] = results[0].LivenessScore
 		response["liveness_status"] = results[0].LivenessStatus
 		response["liveness_frames"] = results[0].LivenessFrames
@@ -251,6 +413,24 @@ func (s *Server) recognizeImage(w http.ResponseWriter, r *http.Request, img imag
 		}
 	}
 	writeJSON(w, http.StatusOK, response)
+}
+
+func boxFromRectangle(rect image.Rectangle) faceBox {
+	return faceBox{
+		X:      rect.Min.X,
+		Y:      rect.Min.Y,
+		Width:  rect.Dx(),
+		Height: rect.Dy(),
+	}
+}
+
+func anyTrue(values []bool) bool {
+	for _, value := range values {
+		if value {
+			return true
+		}
+	}
+	return false
 }
 
 func recognitionSessionID(r *http.Request) string {
