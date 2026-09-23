@@ -50,6 +50,10 @@ func (s *Store) init(ctx context.Context) error {
             FOREIGN KEY(student_id) REFERENCES students(id) ON DELETE CASCADE,
             UNIQUE(student_id, day)
         )`,
+		`CREATE TABLE IF NOT EXISTS app_settings (
+            key TEXT PRIMARY KEY,
+            value TEXT NOT NULL DEFAULT ''
+        )`,
 		`CREATE TABLE IF NOT EXISTS cameras (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL UNIQUE,

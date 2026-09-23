@@ -251,7 +251,22 @@
       </section>
 
       <section class="page" id="page-settings">
-        <div class="card camera-settings-card">
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h2>人脸签到启动方式</h2>
+              <p class="muted compact">控制每次进入“人脸签到”页面时，是否自动打开默认摄像头并开始自动识别签到。</p>
+            </div>
+            <span class="mode-pill" id="autoStartCheckinState">正在读取...</span>
+          </div>
+          <label class="camera-check">
+            <input id="autoStartCheckin" type="checkbox">
+            进入“人脸签到”时自动打开摄像头并开启自动识别
+          </label>
+          <p class="muted camera-settings-help">关闭时仍可在签到页面手动打开摄像头和“自动识别”；离开签到页面后自动识别会停止，避免后台误签到。</p>
+        </div>
+
+        <div class="card camera-settings-card settings-secondary-card">
           <div class="card-head">
             <div>
               <h2>摄像头管理</h2>
@@ -522,6 +537,7 @@
   <script src="/js/cameras.js"></script>
   <script src="/js/seating.js"></script>
   <script src="/js/recognition.js"></script>
+  <script src="/js/settings.js"></script>
   <script src="/js/enrollment.js"></script>
   <script src="/js/classes.js"></script>
   <script src="/js/seat_editor.js"></script>

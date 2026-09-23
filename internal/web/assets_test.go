@@ -13,6 +13,7 @@ func TestFrontendModulesAreEmbedded(t *testing.T) {
 		"assets/js/cameras.js",
 		"assets/js/seating.js",
 		"assets/js/recognition.js",
+		"assets/js/settings.js",
 		"assets/js/enrollment.js",
 		"assets/js/classes.js",
 		"assets/js/seat_editor.js",
@@ -413,6 +414,71 @@ func TestAttendanceShowsFirstLatestAndRecognitionCount(t *testing.T) {
 	for _, want := range []string{"最近识别", "student.last_seen_at", "student.recognition_count"} {
 		if !strings.Contains(seatingScript, want) {
 			t.Fatalf("seat board latest recognition display missing %q", want)
+		}
+	}
+}
+
+
+func TestAutoStartCheckinSettingUIAndFlow(t *testing.T) {
+	htmlData, err := assets.ReadFile("assets/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	html := string(htmlData)
+	for _, want := range []string{
+		`id="autoStartCheckin"`,
+		`id="autoStartCheckinState"`,
+		`/js/settings.js`,
+		"进入“人脸签到”时自动打开摄像头并开启自动识别",
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("auto check-in setting UI missing %q", want)
+		}
+	}
+
+	settingsData, err := assets.ReadFile("assets/js/settings.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	settingsScript := string(settingsData)
+	for _, want := range []string{
+		"/api/settings",
+		"auto_start_checkin",
+		"enterCheckinPageAutoStart",
+		"setAutoRecognitionEnabled(true)",
+	} {
+		if !strings.Contains(settingsScript, want) {
+			t.Fatalf("auto check-in setting logic missing %q", want)
+		}
+	}
+
+	navigationData, err := assets.ReadFile("assets/js/navigation.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	navigationScript := string(navigationData)
+	for _, want := range []string{
+		"name !== 'checkin'",
+		"stopAutoRecognition()",
+		"enterCheckinPageAutoStart()",
+	} {
+		if !strings.Contains(navigationScript, want) {
+			t.Fatalf("check-in page lifecycle missing %q", want)
+		}
+	}
+
+	recognitionData, err := assets.ReadFile("assets/js/recognition.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	recognitionScript := string(recognitionData)
+	for _, want := range []string{
+		"function stopAutoRecognition()",
+		"async function setAutoRecognitionEnabled(enabled)",
+		"classList.contains('active')",
+	} {
+		if !strings.Contains(recognitionScript, want) {
+			t.Fatalf("auto recognition lifecycle missing %q", want)
 		}
 	}
 }

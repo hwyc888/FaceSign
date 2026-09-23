@@ -642,3 +642,40 @@ func TestCameraAgentConfiguration(t *testing.T) {
 		t.Fatal("expected duplicate agent id to fail")
 	}
 }
+
+
+func TestAppSettingsPersistAutoStartCheckin(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "app-settings.db")
+	s, err := Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+
+	settings, err := s.AppSettings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if settings.AutoStartCheckin {
+		t.Fatal("auto start check-in must default to disabled")
+	}
+	if err := s.UpdateAppSettings(ctx, AppSettings{AutoStartCheckin: true}); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	s, err = Open(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+	settings, err = s.AppSettings(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !settings.AutoStartCheckin {
+		t.Fatal("auto start check-in setting was not persisted")
+	}
+}

@@ -1,17 +1,24 @@
 async function showPage(name) {
+  if (name !== 'checkin' && typeof stopAutoRecognition === 'function') {
+    stopAutoRecognition();
+  }
+
   $$('.nav').forEach(b => b.classList.toggle('active', b.dataset.page === name));
   $$('.page').forEach(p => p.classList.remove('active'));
   $('#page-' + name).classList.add('active');
   $('#pageTitle').textContent = titles[name][0];
   $('#pageHint').textContent = titles[name][1];
 
+  if (name === 'checkin' && typeof enterCheckinPageAutoStart === 'function') {
+    await enterCheckinPageAutoStart();
+  }
   if (name === 'students') {
     await loadStudents();
     startCamera().catch(() => {});
   }
   if (name === 'attendance') loadAttendance();
   if (name === 'settings') {
-    await Promise.all([loadClasses(), loadCameras()]);
+    await Promise.all([loadClasses(), loadCameras(), loadAppSettings()]);
     refreshLocalCameraDevices(false).catch(() => {});
   }
   if (name === 'status') loadHealth();

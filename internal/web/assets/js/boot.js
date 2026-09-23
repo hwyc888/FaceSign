@@ -1,4 +1,7 @@
 loadCameraConfigs().catch(() => {});
+loadAppSettings()
+  .then(() => enterCheckinPageAutoStart())
+  .catch(() => {});
 $('#attendanceDay').value = today();
 updateCameraControls();
 loadHealth();

@@ -136,29 +136,49 @@ async function recognizeBurst() {
 }
 
 async function runAutoRecognitionLoop() {
-  if (!$('#autoScan')?.checked || !cameraOpen) {
+  const checkinActive = $('#page-checkin')?.classList.contains('active');
+  if (!$('#autoScan')?.checked || !cameraOpen || !checkinActive) {
     autoTimer = null;
     return;
   }
   await recognizeFrame({silent: true});
-  if ($('#autoScan')?.checked && cameraOpen) {
+  if ($('#autoScan')?.checked && cameraOpen && $('#page-checkin')?.classList.contains('active')) {
     autoTimer = setTimeout(runAutoRecognitionLoop, 120);
   } else {
     autoTimer = null;
   }
 }
 
+function stopAutoRecognition() {
+  clearTimeout(autoTimer);
+  autoTimer = null;
+  const checkbox = $('#autoScan');
+  if (checkbox) checkbox.checked = false;
+}
+
+async function setAutoRecognitionEnabled(enabled) {
+  stopAutoRecognition();
+  if (!enabled) return;
+  const checkbox = $('#autoScan');
+  if (!checkbox) return;
+  checkbox.checked = true;
+  try {
+    await startCamera();
+    if (checkbox.checked && $('#page-checkin')?.classList.contains('active')) {
+      autoTimer = setTimeout(runAutoRecognitionLoop, 0);
+    }
+  } catch (e) {
+    checkbox.checked = false;
+    throw e;
+  }
+}
+
 $('#startCamera').addEventListener('click', toggleCamera);
 $('#recognize').addEventListener('click', recognizeBurst);
 $('#autoScan').addEventListener('change', async e => {
-  clearTimeout(autoTimer);
-  autoTimer = null;
-  if (e.target.checked) {
-    try {
-      await startCamera();
-      autoTimer = setTimeout(runAutoRecognitionLoop, 0);
-    } catch {
-      e.target.checked = false;
-    }
+  try {
+    await setAutoRecognitionEnabled(e.target.checked);
+  } catch {
+    // startCamera already shows the camera/HTTPS error.
   }
 });
