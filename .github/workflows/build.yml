@@ -116,10 +116,18 @@ jobs:
             'face_recognition_sface_2021dec.onnx',
             'anti-spoof-mn3.onnx',
             'ANTI_SPOOF_LICENSE.txt',
+            'YOLOX_LICENSE.txt',
             'SHA256SUMS',
             'README.md'
           )) {
             Copy-Item (Join-Path 'models' $file) (Join-Path 'dist-full\models' $file) -Force
+          }
+
+          $personModel = 'dist-full\models\yolox_nano.onnx'
+          Invoke-WebRequest -Uri 'https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/yolox_nano.onnx' -OutFile $personModel -UseBasicParsing
+          $personHash = (Get-FileHash $personModel -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($personHash -ne 'c789161ed43c8269fcd4e67c67eeeb4e80c622da2eb296a20bc6007bd18a0b7d') {
+            throw "YOLOX-Nano checksum mismatch: $personHash"
           }
 
       - name: Verify release variants
@@ -129,7 +137,7 @@ jobs:
           if (-not (Test-Path 'dist-full\models' -PathType Container)) { throw 'Full package is missing the models directory' }
 
           $onnxFiles = @(Get-ChildItem -Path 'dist-full\models' -Filter '*.onnx' -File)
-          if ($onnxFiles.Count -ne 3) { throw "Full package must contain exactly 3 ONNX model files, got $($onnxFiles.Count)" }
+          if ($onnxFiles.Count -ne 4) { throw "Full package must contain exactly 4 ONNX model files, got $($onnxFiles.Count)" }
 
           $checksums = Get-Content 'models\SHA256SUMS'
           foreach ($line in $checksums) {
@@ -165,7 +173,7 @@ jobs:
             for ($i = 0; $i -lt 30; $i++) {
               try {
                 $health = Invoke-RestMethod -Uri 'http://127.0.0.1:18082/api/health' -TimeoutSec 3
-                if ($health.ok -and $health.device -eq 'cpu' -and -not $health.python -and -not $health.docker -and $health.liveness -match 'anti-spoof') { $ready = $true; break }
+                if ($health.ok -and $health.device -eq 'cpu' -and -not $health.python -and -not $health.docker -and $health.liveness -match 'anti-spoof' -and $health.person_tracking -match 'YOLOX') { $ready = $true; break }
               } catch { Start-Sleep -Seconds 1 }
             }
             if (-not $ready) { throw 'FaceSign health check failed' }

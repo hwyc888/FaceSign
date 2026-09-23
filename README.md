@@ -2,7 +2,7 @@
 
 Each successful Windows build now publishes **two release artifacts** from the same `FaceSign.exe` build:
 
-- `facesign-windows-amd64-full`: complete offline package. It contains the three pinned ONNX models and is recommended for a new PC, offline deployment, or recovery.
+- `facesign-windows-amd64-full`: complete offline package. It contains the four pinned ONNX models and is recommended for a new PC, offline deployment, or recovery.
 - `facesign-windows-amd64-lite`: lightweight upgrade package. It does not contain ONNX models and is recommended when FaceSign is already installed and `C:\\ProgramData\\FaceSign\\models` already contains valid models.
 
 Both packages contain the same program and native runtime:
@@ -25,6 +25,7 @@ models/
   face_detection_yunet_2023mar.onnx
   face_recognition_sface_2021dec.onnx
   anti-spoof-mn3.onnx
+  yolox_nano.onnx
   SHA256SUMS
   ...
 ```
@@ -94,12 +95,13 @@ For diagnostics:
 
 ## Pinned face models
 
-The model binaries are committed once and are independent from normal program builds:
+The core face/liveness model binaries are pinned in FaceSign history. The person detector is the official YOLOX-Nano release asset, downloaded by the full-package build/installer and verified by its pinned SHA-256:
 
 - Model commit: `de5287c66e9e37e9f804686bf63f5a0974f68f72`
 - YuNet: `models/face_detection_yunet_2023mar.onnx`
 - SFace: `models/face_recognition_sface_2021dec.onnx`
 - Passive liveness: `models/anti-spoof-mn3.onnx`
+- Person detector: official YOLOX-Nano 416 ONNX (`0.1.1rc0`), SHA-256 pinned in `models/SHA256SUMS`
 - Checksums: `models/SHA256SUMS`
 
 This keeps every later Windows program artifact small. If a target PC must be installed offline, download those three model files once from the pinned commit and place them in a `models` folder beside the extracted program package before running `scripts\install.ps1`.
