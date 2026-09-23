@@ -58,53 +58,25 @@ async function fetchCameraFrameBlob(cameraID) {
   return await response.blob();
 }
 
-async function refreshNetworkPreview() {
-  if (!cameraOpen || !activeCamera || activeCamera.kind === 'local' || networkPreviewBusy) return;
-  networkPreviewBusy = true;
-  try {
-    const blob = await fetchCameraFrameBlob(activeCamera.id);
-    const nextURL = URL.createObjectURL(blob);
-    const oldURL = networkPreviewObjectURL;
-    networkPreviewObjectURL = nextURL;
-    ['#cameraNetwork', '#enrollCameraNetwork'].map($).filter(Boolean).forEach(image => {
-      image.src = nextURL;
-    });
-    if (oldURL) setTimeout(() => URL.revokeObjectURL(oldURL), 1200);
-  } finally {
-    networkPreviewBusy = false;
-  }
+function activeNetworkCameraImage() {
+  if ($('#page-students')?.classList.contains('active')) return $('#enrollCameraNetwork');
+  return $('#cameraNetwork');
 }
 
-function networkPreviewIntervalMS() {
-  const fps = Math.max(1, Math.min(Number(activeCamera?.fps || 5), 12));
-  return Math.max(80, Math.round(1000 / fps));
-}
-
-async function runNetworkPreviewLoop() {
-  if (!cameraOpen || !activeCamera || activeCamera.kind === 'local') {
-    networkPreviewTimer = null;
-    return;
-  }
-
-  const startedAt = performance.now();
-  try {
-    await refreshNetworkPreview();
-  } catch (e) {
-    console.warn('network camera preview', e);
-  }
-
-  if (!cameraOpen || !activeCamera || activeCamera.kind === 'local') {
-    networkPreviewTimer = null;
-    return;
-  }
-  const elapsed = performance.now() - startedAt;
-  const delay = Math.max(20, networkPreviewIntervalMS() - elapsed);
-  networkPreviewTimer = setTimeout(runNetworkPreviewLoop, delay);
+function stopNetworkPreview() {
+  ['#cameraNetwork', '#enrollCameraNetwork'].map($).filter(Boolean).forEach(image => {
+    image.removeAttribute('src');
+  });
 }
 
 function startNetworkPreview() {
-  clearTimeout(networkPreviewTimer);
-  networkPreviewTimer = setTimeout(runNetworkPreviewLoop, networkPreviewIntervalMS());
+  if (!cameraOpen || !activeCamera || activeCamera.kind === 'local') return;
+  const target = activeNetworkCameraImage();
+  const url = `/api/cameras/${activeCamera.id}/stream?t=${Date.now()}`;
+  ['#cameraNetwork', '#enrollCameraNetwork'].map($).filter(Boolean).forEach(image => {
+    if (image === target) image.src = url;
+    else image.removeAttribute('src');
+  });
 }
 
 function localVideoConstraints(camera) {
@@ -122,7 +94,7 @@ async function startCamera() {
   if (cameraOpen) {
     if (activeCamera?.kind !== 'local') {
       switchCameraViews(true);
-      await refreshNetworkPreview();
+      startNetworkPreview();
     } else {
       await attachCameraViews();
     }
@@ -136,9 +108,9 @@ async function startCamera() {
 
     if (activeCamera.kind !== 'local') {
       stream = null;
+      await fetchCameraFrameBlob(activeCamera.id);
       cameraOpen = true;
       switchCameraViews(true);
-      await refreshNetworkPreview();
       startNetworkPreview();
     } else {
       switchCameraViews(false);
@@ -179,8 +151,7 @@ async function startCamera() {
   } catch (e) {
     stream = null;
     cameraOpen = false;
-    clearTimeout(networkPreviewTimer);
-    networkPreviewTimer = null;
+    stopNetworkPreview();
     activeCamera = null;
     switchCameraViews(false);
     updateCameraControls();
@@ -195,16 +166,7 @@ function stopCamera() {
     stream = null;
   }
   cameraOpen = false;
-  clearTimeout(networkPreviewTimer);
-  networkPreviewTimer = null;
-  networkPreviewBusy = false;
-  if (networkPreviewObjectURL) {
-    URL.revokeObjectURL(networkPreviewObjectURL);
-    networkPreviewObjectURL = null;
-  }
-  ['#cameraNetwork', '#enrollCameraNetwork'].map($).filter(Boolean).forEach(image => {
-    image.removeAttribute('src');
-  });
+  stopNetworkPreview();
   activeCamera = null;
   switchCameraViews(false);
   resetRecognitionSession();

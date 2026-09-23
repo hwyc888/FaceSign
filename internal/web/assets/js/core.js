@@ -16,9 +16,6 @@ let camerasCache = [];
 let camerasLoaded = false;
 let cameraOpen = false;
 let activeCamera = null;
-let networkPreviewTimer = null;
-let networkPreviewObjectURL = null;
-let networkPreviewBusy = false;
 
 function makeRecognitionSessionID() {
   if (window.crypto && typeof window.crypto.randomUUID === 'function') {

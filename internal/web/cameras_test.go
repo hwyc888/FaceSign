@@ -8,6 +8,8 @@ import (
 	"image/color"
 	"image/jpeg"
 	"log/slog"
+	"mime"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -64,6 +66,66 @@ func TestNetworkCameraFrameProxy(t *testing.T) {
 	}
 	if decoded.Bounds().Dx() != 32 || decoded.Bounds().Dy() != 24 {
 		t.Fatalf("unexpected frame size: %v", decoded.Bounds())
+	}
+}
+
+
+func TestNetworkCameraLiveStream(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/jpeg")
+		img := image.NewRGBA(image.Rect(0, 0, 36, 22))
+		img.Set(3, 3, color.RGBA{G: 255, A: 255})
+		if err := jpeg.Encode(w, img, nil); err != nil {
+			t.Error(err)
+		}
+	}))
+	defer upstream.Close()
+
+	st, err := store.Open(filepath.Join(t.TempDir(), "camera-stream.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	camera, err := st.CreateCamera(context.Background(), store.CameraInput{
+		Name: "Live camera", Kind: "network", Protocol: "http_snapshot",
+		SnapshotURL: upstream.URL, AuthMode: "none",
+		Width: 1280, Height: 720, FPS: 8, TimeoutMS: 2000,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	s := &Server{store: st, logger: slog.Default()}
+	server := httptest.NewServer(http.HandlerFunc(s.cameraAction))
+	defer server.Close()
+
+	resp, err := server.Client().Get(fmt.Sprintf("%s/api/cameras/%d/stream", server.URL, camera.ID))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("stream status=%d", resp.StatusCode)
+	}
+	mediaType, params, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if mediaType != "multipart/x-mixed-replace" || params["boundary"] == "" {
+		t.Fatalf("unexpected stream content type: %s", resp.Header.Get("Content-Type"))
+	}
+
+	reader := multipart.NewReader(resp.Body, params["boundary"])
+	part, err := reader.NextPart()
+	if err != nil {
+		t.Fatal(err)
+	}
+	decoded, _, err := image.Decode(part)
+	if err != nil {
+		t.Fatalf("decode stream frame: %v", err)
+	}
+	if decoded.Bounds().Dx() != 36 || decoded.Bounds().Dy() != 22 {
+		t.Fatalf("unexpected live stream frame size: %v", decoded.Bounds())
 	}
 }
 

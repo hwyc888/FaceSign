@@ -556,25 +556,32 @@ func TestCameraAuthenticationAutoDetectUI(t *testing.T) {
 }
 
 
-func TestNetworkCameraPreviewUsesSharedFrameCadence(t *testing.T) {
+func TestNetworkCameraUsesLiveStreamAndDirectRecognition(t *testing.T) {
 	cameraData, err := assets.ReadFile("assets/js/camera.js")
 	if err != nil {
 		t.Fatal(err)
 	}
 	cameraScript := string(cameraData)
 	for _, want := range []string{
-		"function networkPreviewIntervalMS()",
-		"Math.min(Number(activeCamera?.fps || 5), 12)",
-		"runNetworkPreviewLoop",
-		"setTimeout(runNetworkPreviewLoop",
-		"clearTimeout(networkPreviewTimer)",
+		"function activeNetworkCameraImage()",
+		"function startNetworkPreview()",
+		"function stopNetworkPreview()",
+		"/api/cameras/${activeCamera.id}/stream",
+		"image.src = url",
 	} {
 		if !strings.Contains(cameraScript, want) {
-			t.Fatalf("network preview optimization missing %q", want)
+			t.Fatalf("network live preview missing %q", want)
 		}
 	}
-	if strings.Contains(cameraScript, "Math.min(Number(activeCamera?.fps || 4), 4)") {
-		t.Fatal("network preview is still capped at 4 FPS")
+	for _, obsolete := range []string{
+		"runNetworkPreviewLoop",
+		"networkPreviewTimer",
+		"networkPreviewObjectURL",
+		"networkPreviewBusy",
+	} {
+		if strings.Contains(cameraScript, obsolete) {
+			t.Fatalf("obsolete network preview polling remains: %q", obsolete)
+		}
 	}
 
 	recognitionData, err := assets.ReadFile("assets/js/recognition.js")
@@ -583,12 +590,14 @@ func TestNetworkCameraPreviewUsesSharedFrameCadence(t *testing.T) {
 	}
 	recognitionScript := string(recognitionData)
 	for _, want := range []string{
+		"/api/cameras/${activeCamera.id}/recognize",
+		"api('/api/recognize'",
 		"function recognitionFrameIntervalMS()",
 		"Math.min(Number(activeCamera.fps || 5), 12)",
 		"setTimeout(runAutoRecognitionLoop, recognitionFrameIntervalMS())",
 	} {
 		if !strings.Contains(recognitionScript, want) {
-			t.Fatalf("network recognition cadence missing %q", want)
+			t.Fatalf("network direct recognition flow missing %q", want)
 		}
 	}
 }

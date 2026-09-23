@@ -1,6 +1,7 @@
 package web
 
 import (
+	"image"
 	"net/http"
 	"sort"
 	"strings"
@@ -61,6 +62,10 @@ func (s *Server) recognize(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	s.recognizeImage(w, r, img)
+}
+
+func (s *Server) recognizeImage(w http.ResponseWriter, r *http.Request, img image.Image) {
 	detections, err := s.engine.ExtractAll(img, s.detectionThreshold)
 	if err != nil {
 		writeFaceError(w, err)
