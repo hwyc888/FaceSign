@@ -353,7 +353,7 @@
             </label>
             <label>识别帧率
               <input id="cameraFPS" type="number" min="1" max="60" value="30" required>
-              <small>网络摄像头优先使用 RTSP/MJPEG 连续流：预览最高约 25 FPS；人脸识别只按这里的帧率从共享帧池取样，HTTP Snapshot 仅在连续流异常时回退。</small>
+              <small>网络摄像头优先使用 RTSP/MJPEG 连续流：预览按连续流新帧实时显示，不受识别帧率限制；人脸识别建议 3–5 FPS，并从同一个共享帧池取样，HTTP Snapshot 仅在连续流异常时回退。</small>
             </label>
             <label data-camera-advanced class="hidden">网络超时(ms)（高级）
               <input id="cameraTimeout" type="number" min="500" max="30000" value="3000">
