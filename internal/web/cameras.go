@@ -616,6 +616,17 @@ func (s *Server) cameraStream(w http.ResponseWriter, r *http.Request, item store
 		return
 	}
 
+	var continuous *networkCameraStream
+	var continuousSequence uint64
+	if item.Kind == "network" {
+		continuous = s.ensureNetworkCameraStream(item)
+		if continuous != nil {
+			if pooled, ok := continuous.current(0); ok {
+				continuousSequence = pooled.sequence
+			}
+		}
+	}
+
 	const boundary = "facesign-frame"
 	w.Header().Set("Content-Type", "multipart/x-mixed-replace; boundary="+boundary)
 	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
@@ -640,6 +651,25 @@ func (s *Server) cameraStream(w http.ResponseWriter, r *http.Request, item store
 			return
 		}
 		flusher.Flush()
+
+		if continuous != nil {
+			waitForNext := 750 * time.Millisecond
+			if continuous.error() != nil {
+				waitForNext = 50 * time.Millisecond
+			}
+			next, waitErr := continuous.waitNext(r.Context(), continuousSequence, waitForNext)
+			if waitErr == nil {
+				frame = next.data
+				width = next.width
+				height = next.height
+				continuousSequence = next.sequence
+				consecutiveFailures = 0
+				continue
+			}
+			if r.Context().Err() != nil {
+				return
+			}
+		}
 
 		nextFrame, nextWidth, nextHeight, _, err := s.cameraPreviewSourceFrame(r.Context(), item)
 		if err != nil {
