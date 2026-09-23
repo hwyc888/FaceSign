@@ -127,7 +127,7 @@ jobs:
             $available = ($release.assets | Where-Object { $_.name -match '(?i)win64.*lgpl' } | Select-Object -ExpandProperty name) -join ', '
             throw "Compatible FFmpeg $env:FFMPEG_SERIES win64 LGPL static asset not found. Available: $available"
           }
-          if ($asset.digest -notmatch '^sha256:([0-9a-fA-F]{64})
+          if ($asset.digest -notmatch '^sha256:([0-9a-fA-F]{64})') { throw "FFmpeg asset does not expose a SHA-256 digest: $($asset.digest)" }
           $expectedHash = $matches[1].ToUpperInvariant()
 
           $ffmpegZip = Join-Path $env:RUNNER_TEMP 'facesign-ffmpeg.zip'
