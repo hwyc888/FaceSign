@@ -17,10 +17,96 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/hwyc888/FaceSign/internal/store"
 )
+
+
+type networkCameraFrameCache struct {
+	mu        sync.Mutex
+	frame     []byte
+	width     int
+	height    int
+	fetchedAt time.Time
+}
+
+var sharedCameraTransports = struct {
+	sync.Mutex
+	secure   *http.Transport
+	insecure *http.Transport
+}{}
+
+func cameraHTTPTransport(tlsInsecure bool) *http.Transport {
+	sharedCameraTransports.Lock()
+	defer sharedCameraTransports.Unlock()
+
+	target := &sharedCameraTransports.secure
+	if tlsInsecure {
+		target = &sharedCameraTransports.insecure
+	}
+	if *target != nil {
+		return *target
+	}
+
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.MaxIdleConns = 32
+	transport.MaxIdleConnsPerHost = 8
+	transport.IdleConnTimeout = 60 * time.Second
+	if tlsInsecure {
+		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+	}
+	*target = transport
+	return transport
+}
+
+func networkCameraFrameInterval(camera store.Camera) time.Duration {
+	fps := camera.FPS
+	if fps < 1 {
+		fps = 1
+	}
+	if fps > 12 {
+		fps = 12
+	}
+	return time.Second / time.Duration(fps)
+}
+
+func (s *Server) cachedNetworkCameraFrame(ctx context.Context, camera store.Camera) ([]byte, int, int, error) {
+	s.networkCameraMu.Lock()
+	if s.networkCameraFrames == nil {
+		s.networkCameraFrames = make(map[int64]*networkCameraFrameCache)
+	}
+	cache := s.networkCameraFrames[camera.ID]
+	if cache == nil {
+		cache = &networkCameraFrameCache{}
+		s.networkCameraFrames[camera.ID] = cache
+	}
+	s.networkCameraMu.Unlock()
+
+	cache.mu.Lock()
+	defer cache.mu.Unlock()
+
+	if len(cache.frame) > 0 && time.Since(cache.fetchedAt) < networkCameraFrameInterval(camera) {
+		return cache.frame, cache.width, cache.height, nil
+	}
+
+	frame, width, height, err := fetchNetworkCameraFrame(ctx, camera)
+	if err != nil {
+		return nil, 0, 0, err
+	}
+	cache.frame = frame
+	cache.width = width
+	cache.height = height
+	cache.fetchedAt = time.Now()
+	return cache.frame, cache.width, cache.height, nil
+}
+
+func (s *Server) invalidateNetworkCameraFrame(cameraID int64) {
+	s.networkCameraMu.Lock()
+	defer s.networkCameraMu.Unlock()
+	delete(s.networkCameraFrames, cameraID)
+}
 
 type cameraRequest struct {
 	CameraID      int64   `json:"camera_id,omitempty"`
@@ -333,6 +419,7 @@ func (s *Server) cameraAction(w http.ResponseWriter, r *http.Request) {
 				writeCameraStoreError(w, err)
 				return
 			}
+			s.invalidateNetworkCameraFrame(id)
 			s.decorateCameraAgentState(&item)
 			writeJSON(w, http.StatusOK, item)
 		case http.MethodDelete:
@@ -340,6 +427,7 @@ func (s *Server) cameraAction(w http.ResponseWriter, r *http.Request) {
 				writeCameraStoreError(w, err)
 				return
 			}
+			s.invalidateNetworkCameraFrame(id)
 			writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 		default:
 			methodNotAllowed(w)
@@ -367,7 +455,7 @@ func (s *Server) cameraAction(w http.ResponseWriter, r *http.Request) {
 		var width, height int
 		switch item.Kind {
 		case "network":
-			frame, width, height, err = fetchNetworkCameraFrame(r.Context(), item)
+			frame, width, height, err = s.cachedNetworkCameraFrame(r.Context(), item)
 			if err != nil {
 				writeError(w, http.StatusBadGateway, fmt.Errorf("读取网络摄像头失败: %w", err))
 				return
@@ -418,12 +506,8 @@ func fetchNetworkCameraFrameWithAuth(ctx context.Context, camera store.Camera) (
 		return nil, 0, 0, "", errors.New("没有可用于识别的HTTP/HTTPS抓图地址")
 	}
 
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	if camera.TLSInsecure {
-		transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
-	}
 	client := &http.Client{
-		Transport: transport,
+		Transport: cameraHTTPTransport(camera.TLSInsecure),
 		Timeout: time.Duration(camera.TimeoutMS) * time.Millisecond,
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) >= 5 {

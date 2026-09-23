@@ -25,8 +25,10 @@ type Server struct {
 	static             http.Handler
 	photoImportMu      sync.Mutex
 	photoImports       map[string]*photoImportSession
-	cameraAgentMu      sync.RWMutex
-	cameraAgentFrames  map[string]cameraAgentFrame
+	cameraAgentMu          sync.RWMutex
+	cameraAgentFrames      map[string]cameraAgentFrame
+	networkCameraMu        sync.Mutex
+	networkCameraFrames    map[int64]*networkCameraFrameCache
 }
 
 func New(logger *slog.Logger, st *store.Store, engine *face.Engine, live *liveness.Engine, matchThreshold, detectionThreshold float64, version string) (*Server, error) {
@@ -50,7 +52,8 @@ func New(logger *slog.Logger, st *store.Store, engine *face.Engine, live *livene
 		home:               home,
 		static:             http.FileServer(http.FS(sub)),
 		photoImports:       make(map[string]*photoImportSession),
-		cameraAgentFrames:  make(map[string]cameraAgentFrame),
+		cameraAgentFrames:    make(map[string]cameraAgentFrame),
+		networkCameraFrames:  make(map[int64]*networkCameraFrameCache),
 	}, nil
 }
 

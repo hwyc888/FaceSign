@@ -552,3 +552,41 @@ func TestCameraAuthenticationAutoDetectUI(t *testing.T) {
 		}
 	}
 }
+
+
+func TestNetworkCameraPreviewUsesSharedFrameCadence(t *testing.T) {
+	cameraData, err := assets.ReadFile("assets/js/camera.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cameraScript := string(cameraData)
+	for _, want := range []string{
+		"function networkPreviewIntervalMS()",
+		"Math.min(Number(activeCamera?.fps || 5), 12)",
+		"runNetworkPreviewLoop",
+		"setTimeout(runNetworkPreviewLoop",
+		"clearTimeout(networkPreviewTimer)",
+	} {
+		if !strings.Contains(cameraScript, want) {
+			t.Fatalf("network preview optimization missing %q", want)
+		}
+	}
+	if strings.Contains(cameraScript, "Math.min(Number(activeCamera?.fps || 4), 4)") {
+		t.Fatal("network preview is still capped at 4 FPS")
+	}
+
+	recognitionData, err := assets.ReadFile("assets/js/recognition.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	recognitionScript := string(recognitionData)
+	for _, want := range []string{
+		"function recognitionFrameIntervalMS()",
+		"Math.min(Number(activeCamera.fps || 5), 12)",
+		"setTimeout(runAutoRecognitionLoop, recognitionFrameIntervalMS())",
+	} {
+		if !strings.Contains(recognitionScript, want) {
+			t.Fatalf("network recognition cadence missing %q", want)
+		}
+	}
+}

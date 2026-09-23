@@ -107,6 +107,14 @@ async function recognizeFrame(options = {}) {
   }
 }
 
+function recognitionFrameIntervalMS() {
+  if (activeCamera && activeCamera.kind !== 'local') {
+    const fps = Math.max(1, Math.min(Number(activeCamera.fps || 5), 12));
+    return Math.max(120, Math.round(1000 / fps));
+  }
+  return 120;
+}
+
 async function recognizeBurst() {
   if (manualRecognitionBurst) return;
   manualRecognitionBurst = true;
@@ -127,7 +135,7 @@ async function recognizeBurst() {
         break;
       }
       if (i + 1 < maxFrames && performance.now() - startedAt < 1980) {
-        await new Promise(resolve => setTimeout(resolve, 120));
+        await new Promise(resolve => setTimeout(resolve, recognitionFrameIntervalMS()));
       }
     }
   } finally {
@@ -143,7 +151,7 @@ async function runAutoRecognitionLoop() {
   }
   await recognizeFrame({silent: true});
   if ($('#autoScan')?.checked && cameraOpen && $('#page-checkin')?.classList.contains('active')) {
-    autoTimer = setTimeout(runAutoRecognitionLoop, 120);
+    autoTimer = setTimeout(runAutoRecognitionLoop, recognitionFrameIntervalMS());
   } else {
     autoTimer = null;
   }

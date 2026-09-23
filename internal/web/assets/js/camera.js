@@ -75,13 +75,36 @@ async function refreshNetworkPreview() {
   }
 }
 
+function networkPreviewIntervalMS() {
+  const fps = Math.max(1, Math.min(Number(activeCamera?.fps || 5), 12));
+  return Math.max(80, Math.round(1000 / fps));
+}
+
+async function runNetworkPreviewLoop() {
+  if (!cameraOpen || !activeCamera || activeCamera.kind === 'local') {
+    networkPreviewTimer = null;
+    return;
+  }
+
+  const startedAt = performance.now();
+  try {
+    await refreshNetworkPreview();
+  } catch (e) {
+    console.warn('network camera preview', e);
+  }
+
+  if (!cameraOpen || !activeCamera || activeCamera.kind === 'local') {
+    networkPreviewTimer = null;
+    return;
+  }
+  const elapsed = performance.now() - startedAt;
+  const delay = Math.max(20, networkPreviewIntervalMS() - elapsed);
+  networkPreviewTimer = setTimeout(runNetworkPreviewLoop, delay);
+}
+
 function startNetworkPreview() {
-  clearInterval(networkPreviewTimer);
-  networkPreviewTimer = null;
-  const fps = Math.max(1, Math.min(Number(activeCamera?.fps || 4), 4));
-  networkPreviewTimer = setInterval(() => {
-    refreshNetworkPreview().catch(e => console.warn('network camera preview', e));
-  }, Math.max(250, Math.round(1000 / fps)));
+  clearTimeout(networkPreviewTimer);
+  networkPreviewTimer = setTimeout(runNetworkPreviewLoop, networkPreviewIntervalMS());
 }
 
 function localVideoConstraints(camera) {
@@ -156,7 +179,7 @@ async function startCamera() {
   } catch (e) {
     stream = null;
     cameraOpen = false;
-    clearInterval(networkPreviewTimer);
+    clearTimeout(networkPreviewTimer);
     networkPreviewTimer = null;
     activeCamera = null;
     switchCameraViews(false);
@@ -172,7 +195,7 @@ function stopCamera() {
     stream = null;
   }
   cameraOpen = false;
-  clearInterval(networkPreviewTimer);
+  clearTimeout(networkPreviewTimer);
   networkPreviewTimer = null;
   networkPreviewBusy = false;
   if (networkPreviewObjectURL) {

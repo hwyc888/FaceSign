@@ -366,3 +366,53 @@ func TestCameraConnectionTestReportsAutoDetectedDigest(t *testing.T) {
 		t.Fatalf("auto auth result not reported: %s", bodyText)
 	}
 }
+
+
+func TestNetworkCameraFrameCacheSharesUpstreamFetch(t *testing.T) {
+	var upstreamCalls int
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		upstreamCalls++
+		w.Header().Set("Content-Type", "image/jpeg")
+		img := image.NewRGBA(image.Rect(0, 0, 24, 16))
+		_ = jpeg.Encode(w, img, nil)
+	}))
+	defer upstream.Close()
+
+	st, err := store.Open(filepath.Join(t.TempDir(), "camera-cache.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	camera, err := st.CreateCamera(context.Background(), store.CameraInput{
+		Name: "Cached camera", Kind: "network", Protocol: "http_snapshot",
+		SnapshotURL: upstream.URL, AuthMode: "none",
+		Width: 1280, Height: 720, FPS: 5, TimeoutMS: 2000,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	s := &Server{store: st, logger: slog.Default()}
+	for i := 0; i < 2; i++ {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/cameras/%d/frame", camera.ID), nil)
+		s.cameraAction(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Fatalf("frame %d status=%d body=%s", i+1, rec.Code, rec.Body.String())
+		}
+	}
+	if upstreamCalls != 1 {
+		t.Fatalf("preview and recognition should share a cached upstream frame; calls=%d", upstreamCalls)
+	}
+
+	time.Sleep(networkCameraFrameInterval(camera) + 30*time.Millisecond)
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/cameras/%d/frame", camera.ID), nil)
+	s.cameraAction(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("refreshed frame status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if upstreamCalls != 2 {
+		t.Fatalf("cache should refresh after one frame interval; calls=%d", upstreamCalls)
+	}
+}
