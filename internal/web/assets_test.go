@@ -609,10 +609,12 @@ func TestCameraFrameDimensionsHandlesClosedCamera(t *testing.T) {
 		t.Fatal(err)
 	}
 	cameraScript := string(cameraData)
-	if !strings.Contains(cameraScript, "if (activeCamera && activeCamera.kind !== 'local')") {
+	constGuard := "if (activeCamera && activeCamera.kind !== 'local') {\n    const image = selector === '#enrollCamera'"
+	if !strings.Contains(cameraScript, constGuard) {
 		t.Fatal("cameraFrameDimensions must guard activeCamera before reading network camera dimensions")
 	}
-	if strings.Contains(cameraScript, "if (activeCamera?.kind !== 'local')") {
+	unsafeGuard := "if (activeCamera?.kind !== 'local') {\n    const image = selector === '#enrollCamera'"
+	if strings.Contains(cameraScript, unsafeGuard) {
 		t.Fatal("null camera still enters the network dimension branch")
 	}
 }
