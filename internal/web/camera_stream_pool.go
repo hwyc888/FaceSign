@@ -167,6 +167,41 @@ func (stream *networkCameraStream) waitCurrent(ctx context.Context, maxAge, wait
 	}
 }
 
+
+func (stream *networkCameraStream) waitNext(ctx context.Context, afterSequence uint64, wait time.Duration) (pooledNetworkCameraFrame, error) {
+	if frame, ok := stream.current(0); ok && frame.sequence > afterSequence {
+		return frame, nil
+	}
+	if wait <= 0 {
+		wait = 500 * time.Millisecond
+	}
+
+	timer := time.NewTimer(wait)
+	defer timer.Stop()
+	for {
+		stream.mu.RLock()
+		if stream.frame.sequence > afterSequence && len(stream.frame.data) > 0 {
+			frame := stream.frame
+			stream.mu.RUnlock()
+			return frame, nil
+		}
+		notify := stream.notify
+		lastErr := stream.lastErr
+		stream.mu.RUnlock()
+
+		select {
+		case <-ctx.Done():
+			return pooledNetworkCameraFrame{}, ctx.Err()
+		case <-timer.C:
+			if lastErr != nil {
+				return pooledNetworkCameraFrame{}, lastErr
+			}
+			return pooledNetworkCameraFrame{}, errors.New("等待连续流下一帧超时")
+		case <-notify:
+		}
+	}
+}
+
 func networkCameraContinuousMode(camera store.Camera) string {
 	if camera.Kind != "network" {
 		return ""
@@ -433,6 +468,9 @@ func ffmpegRTSPArgs(camera store.Camera, inputURL string) []string {
 		"-hide_banner",
 		"-loglevel", "error",
 		"-nostdin",
+		"-fflags", "nobuffer",
+		"-flags", "low_delay",
+		"-max_delay", "500000",
 		"-rtsp_transport", "tcp",
 		"-rw_timeout", strconv.FormatInt(timeout.Microseconds(), 10),
 		"-i", inputURL,
