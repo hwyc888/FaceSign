@@ -20,6 +20,7 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 		"ok":              true,
 		"engine":          "YuNet + SFace",
 		"liveness":        "anti-spoof-mn3 passive multi-frame",
+		"person_tracking":  "YOLOX-Nano + IoU/centroid track + best-face scoring",
 		"liveness_frames": livenessMinFrames,
 		"runtime":         face.RuntimeVersion(),
 		"device":          "cpu",
