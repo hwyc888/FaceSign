@@ -118,7 +118,7 @@ jobs:
           $seriesPattern = [regex]::Escape($env:FFMPEG_SERIES)
           $asset = $release.assets |
             Where-Object {
-              $_.name -match "(?i)^ffmpeg-n$seriesPattern(?:\.\d+)*-win64-lgpl-$seriesPattern\.zip$" -and
+              $_.name -match "(?i)^ffmpeg-n$seriesPattern(?:\.\d+)*(?:-latest)?-win64-lgpl-$seriesPattern\.zip$" -and
               $_.name -notmatch '(?i)-shared-'
             } |
             Select-Object -First 1
