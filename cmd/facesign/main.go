@@ -16,6 +16,7 @@ import (
 	"github.com/hwyc888/FaceSign/internal/face"
 	"github.com/hwyc888/FaceSign/internal/liveness"
 	"github.com/hwyc888/FaceSign/internal/models"
+	"github.com/hwyc888/FaceSign/internal/person"
 	"github.com/hwyc888/FaceSign/internal/store"
 	webapp "github.com/hwyc888/FaceSign/internal/web"
 )
@@ -72,7 +73,13 @@ func run(logger *slog.Logger) error {
 	}
 	defer livenessEngine.Close()
 
-	webServer, err := webapp.New(logger, st, engine, livenessEngine, cfg.MatchThreshold, cfg.DetectionThreshold, version)
+	personEngine, err := person.New(modelPaths.Person)
+	if err != nil {
+		return fmt.Errorf("启动人体检测引擎失败: %w", err)
+	}
+	defer personEngine.Close()
+
+	webServer, err := webapp.New(logger, st, engine, livenessEngine, personEngine, cfg.MatchThreshold, cfg.DetectionThreshold, version)
 	if err != nil {
 		return err
 	}
