@@ -84,14 +84,22 @@ async function recognizeFrame(options = {}) {
   if (recognizing) return null;
   recognizing = true;
   try {
-    const blob = await capture();
-    const fd = new FormData();
-    fd.append('file', blob, 'camera.jpg');
-    const r = await api('/api/recognize', {
-      method: 'POST',
-      headers: {'X-FaceSign-Session': recognitionSessionID},
-      body: fd
-    });
+    let r;
+    if (activeCamera && activeCamera.kind !== 'local') {
+      r = await api(`/api/cameras/${activeCamera.id}/recognize`, {
+        method: 'POST',
+        headers: {'X-FaceSign-Session': recognitionSessionID}
+      });
+    } else {
+      const blob = await capture();
+      const fd = new FormData();
+      fd.append('file', blob, 'camera.jpg');
+      r = await api('/api/recognize', {
+        method: 'POST',
+        headers: {'X-FaceSign-Session': recognitionSessionID},
+        body: fd
+      });
+    }
     renderRecognition(r);
     if ((r.verified_count || r.recognized_count || 0) > 0) {
       loadToday();
