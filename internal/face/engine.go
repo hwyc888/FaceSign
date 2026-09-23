@@ -84,9 +84,10 @@ func (e *Engine) Extract(img image.Image, threshold float64) ([]float32, error) 
 	return detected.Feature, nil
 }
 
-// ExtractAll returns one embedding for every face detected in the same frame.
-// Recognition uses this path so a classroom group can check in together.
-func (e *Engine) ExtractAll(img image.Image, threshold float64) ([]Detection, error) {
+// DetectAll returns face geometry without running SFace. Recognition uses
+// this first so low-quality frames can be tracked without wasting embedding
+// inference, then extracts a feature only from the best frame for each track.
+func (e *Engine) DetectAll(img image.Image, threshold float64) ([]Detection, error) {
 	if img == nil || img.Bounds().Dx() < 40 || img.Bounds().Dy() < 40 {
 		return nil, ErrNoFace
 	}
@@ -114,19 +115,44 @@ func (e *Engine) ExtractAll(img image.Image, threshold float64) ([]Detection, er
 
 	out := make([]Detection, 0, len(faces))
 	for _, detected := range faces {
-		aligned := e.recognizer.Align(img, detected.Landmarks)
-		feature, err := e.recognizer.Feature(aligned)
-		if err != nil {
-			return nil, fmt.Errorf("extract face feature: %w", err)
-		}
 		out = append(out, Detection{
 			Rectangle: detected.Rectangle,
 			Landmarks: detected.Landmarks,
 			Score:     detected.Score,
-			Feature:   append([]float32(nil), feature...),
 		})
 	}
 	return out, nil
+}
+
+// Feature extracts one SFace embedding from a previously detected face.
+func (e *Engine) Feature(img image.Image, detected Detection) ([]float32, error) {
+	if img == nil || detected.Rectangle.Empty() {
+		return nil, ErrNoFace
+	}
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	aligned := e.recognizer.Align(img, detected.Landmarks)
+	feature, err := e.recognizer.Feature(aligned)
+	if err != nil {
+		return nil, fmt.Errorf("extract face feature: %w", err)
+	}
+	return append([]float32(nil), feature...), nil
+}
+
+// ExtractAll returns one embedding for every face detected in the same frame.
+func (e *Engine) ExtractAll(img image.Image, threshold float64) ([]Detection, error) {
+	detections, err := e.DetectAll(img, threshold)
+	if err != nil {
+		return nil, err
+	}
+	for i := range detections {
+		feature, err := e.Feature(img, detections[i])
+		if err != nil {
+			return nil, err
+		}
+		detections[i].Feature = feature
+	}
+	return detections, nil
 }
 
 // ExtractEnrollment is slightly more tolerant than recognition. A clearly
