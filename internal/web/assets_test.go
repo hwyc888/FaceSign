@@ -737,7 +737,6 @@ func TestNetworkCameraUIExplainsContinuousStreamPrimaryAndSnapshotFallback(t *te
 		"RTSP 连续流 + HTTP 抓图回退（推荐）",
 		"MJPEG 连续流（主通道）",
 		"HTTP/HTTPS 单帧抓图（兼容模式）",
-		"人脸识别只按这里的帧率从共享帧池取样",
 		"预览按连续流新帧实时显示",
 		"人脸识别建议 3–5 FPS",
 		"HTTP Snapshot 仅在连续流异常时回退",
