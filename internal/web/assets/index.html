@@ -351,8 +351,9 @@
             <label>期望高度
               <input id="cameraHeight" type="number" min="240" max="4320" value="720" required>
             </label>
-            <label>帧率
+            <label>识别帧率
               <input id="cameraFPS" type="number" min="1" max="60" value="30" required>
+              <small>网络摄像头实时预览与识别分开：预览会尽量保持 25 FPS，识别按这里的帧率运行，避免 CPU 做无意义的高帧率推理。</small>
             </label>
             <label data-camera-advanced class="hidden">网络超时(ms)（高级）
               <input id="cameraTimeout" type="number" min="500" max="30000" value="3000">
@@ -393,7 +394,7 @@
 
           <div class="table-wrap camera-table-wrap">
             <table>
-              <thead><tr><th>名称</th><th>类型</th><th>设备 / 地址</th><th>分辨率 / 帧率</th><th>认证</th><th>操作</th></tr></thead>
+              <thead><tr><th>名称</th><th>类型</th><th>设备 / 地址</th><th>分辨率 / 预览 / 识别</th><th>认证</th><th>操作</th></tr></thead>
               <tbody id="camerasBody"><tr><td colspan="6" class="muted">正在读取摄像头设置...</td></tr></tbody>
             </table>
           </div>

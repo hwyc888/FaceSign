@@ -313,7 +313,7 @@ function renderCameraRows() {
       <td><strong>${esc(camera.name)}</strong>${camera.is_default ? '<span class="camera-default-badge">默认</span>' : ''}</td>
       <td>${esc(cameraTypeLabel(camera))}</td>
       <td class="camera-source-cell" title="${esc(cameraSourceLabel(camera))}">${esc(cameraSourceLabel(camera))}</td>
-      <td>${camera.width}×${camera.height} / ${camera.fps} FPS</td>
+      <td>${camera.width}×${camera.height} / ${camera.kind === 'network' ? `预览目标 25 FPS / 识别 ${camera.fps} FPS` : `${camera.fps} FPS`}</td>
       <td>${camera.kind === 'network'
         ? esc(camera.auth_mode === 'auto' ? '自动检测' : camera.auth_mode === 'digest' ? 'Digest' : camera.auth_mode === 'basic' ? 'Basic' : '无认证')
         : camera.kind === 'agent'
