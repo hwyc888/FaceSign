@@ -359,6 +359,28 @@ func TestSeatEditorVisualStatesAreSessionOnly(t *testing.T) {
 }
 
 
+func TestRecognitionClientShowsPersonTracksAndBestFaceQuality(t *testing.T) {
+	data, err := assets.ReadFile("assets/js/recognition.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(data)
+	for _, want := range []string{
+		"tracked_person_count",
+		"waiting_face_count",
+		"quality_score",
+		"best_quality",
+		"等待露脸",
+		"等待更清晰人脸",
+		"person.face_visible",
+		"qualityThreshold",
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("person-track/best-face UI missing %q", want)
+		}
+	}
+}
+
 func TestRecognitionClientUsesFastLivenessCadence(t *testing.T) {
 	data, err := assets.ReadFile("assets/js/recognition.js")
 	if err != nil {
