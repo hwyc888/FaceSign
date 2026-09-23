@@ -1,5 +1,7 @@
 let networkPreviewRetryTimer = null;
 let networkPreviewGeneration = 0;
+let networkPreviewPeer = null;
+let networkPreviewWatchdogTimer = null;
 
 function updateCameraControls() {
   const opened = cameraOpen;
@@ -47,9 +49,8 @@ function switchCameraViews(network) {
   ['#camera', '#enrollCamera'].map($).filter(Boolean).forEach(video => {
     video.classList.toggle('hidden', network);
   });
-  ['#cameraNetwork', '#enrollCameraNetwork'].map($).filter(Boolean).forEach(image => {
-    image.classList.toggle('hidden', !network);
-  });
+  ['#cameraNetwork', '#enrollCameraNetwork', '#cameraNetworkWebRTC', '#enrollCameraNetworkWebRTC']
+    .map($).filter(Boolean).forEach(view => view.classList.add('hidden'));
 }
 
 async function fetchCameraFrameBlob(cameraID) {
@@ -66,42 +67,92 @@ function activeNetworkCameraImage() {
   return $('#cameraNetwork');
 }
 
-function stopNetworkPreview() {
-  networkPreviewGeneration++;
+function activeNetworkCameraVideo() {
+  if ($('#page-students')?.classList.contains('active')) return $('#enrollCameraNetworkWebRTC');
+  return $('#cameraNetworkWebRTC');
+}
+
+function closeNetworkPreviewPeer() {
+  const peer = networkPreviewPeer;
+  networkPreviewPeer = null;
+  if (!peer) return;
+  peer.ontrack = null;
+  peer.onconnectionstatechange = null;
+  try {
+    peer.close();
+  } catch {}
+}
+
+function clearNetworkPreviewTimers() {
   if (networkPreviewRetryTimer) {
     clearTimeout(networkPreviewRetryTimer);
     networkPreviewRetryTimer = null;
   }
+  if (networkPreviewWatchdogTimer) {
+    clearTimeout(networkPreviewWatchdogTimer);
+    networkPreviewWatchdogTimer = null;
+  }
+}
+
+function stopNetworkPreview() {
+  networkPreviewGeneration++;
+  clearNetworkPreviewTimers();
+  closeNetworkPreviewPeer();
+
   ['#cameraNetwork', '#enrollCameraNetwork'].map($).filter(Boolean).forEach(image => {
     image.onerror = null;
     image.removeAttribute('src');
+    image.classList.add('hidden');
+  });
+  ['#cameraNetworkWebRTC', '#enrollCameraNetworkWebRTC'].map($).filter(Boolean).forEach(video => {
+    video.pause();
+    video.srcObject = null;
+    video.classList.add('hidden');
   });
 }
 
-function startNetworkPreview() {
-  if (!cameraOpen || !activeCamera || activeCamera.kind === 'local') return;
-  const target = activeNetworkCameraImage();
-  if (!target) return;
+function waitForICEGatheringComplete(peer, timeoutMS = 4000) {
+  if (peer.iceGatheringState === 'complete') return Promise.resolve();
+  return new Promise((resolve, reject) => {
+    let finished = false;
+    const finish = error => {
+      if (finished) return;
+      finished = true;
+      clearTimeout(timer);
+      peer.removeEventListener('icegatheringstatechange', onChange);
+      if (error) reject(error);
+      else resolve();
+    };
+    const onChange = () => {
+      if (peer.iceGatheringState === 'complete') finish();
+    };
+    const timer = setTimeout(() => finish(new Error('WebRTC ICE 候选收集超时')), timeoutMS);
+    peer.addEventListener('icegatheringstatechange', onChange);
+  });
+}
 
-  const generation = ++networkPreviewGeneration;
-  if (networkPreviewRetryTimer) {
-    clearTimeout(networkPreviewRetryTimer);
-    networkPreviewRetryTimer = null;
+function startMJPEGPreviewFallback(generation, image, video, reason = '') {
+  if (generation !== networkPreviewGeneration || !cameraOpen || !activeCamera || activeCamera.kind === 'local') {
+    return;
   }
 
-  ['#cameraNetwork', '#enrollCameraNetwork'].map($).filter(Boolean).forEach(image => {
-    image.onerror = null;
-    if (image !== target) image.removeAttribute('src');
-  });
+  clearNetworkPreviewTimers();
+  closeNetworkPreviewPeer();
+  if (video) {
+    video.pause();
+    video.srcObject = null;
+    video.classList.add('hidden');
+  }
+  image.classList.remove('hidden');
 
   const reconnect = () => {
     if (generation !== networkPreviewGeneration || !cameraOpen || !activeCamera || activeCamera.kind === 'local') {
       return;
     }
-    target.src = `/api/cameras/${activeCamera.id}/stream?t=${Date.now()}`;
+    image.src = `/api/cameras/${activeCamera.id}/stream?t=${Date.now()}`;
   };
 
-  target.onerror = () => {
+  image.onerror = () => {
     if (generation !== networkPreviewGeneration || !cameraOpen) return;
     if (networkPreviewRetryTimer) clearTimeout(networkPreviewRetryTimer);
     networkPreviewRetryTimer = setTimeout(() => {
@@ -109,8 +160,105 @@ function startNetworkPreview() {
       reconnect();
     }, 800);
   };
-
   reconnect();
+
+  if (reason) {
+    console.warn('WebRTC H.264 preview unavailable; using MJPEG fallback:', reason);
+  }
+}
+
+async function startWebRTCH264Preview(generation, image, video) {
+  if (!window.RTCPeerConnection) throw new Error('当前浏览器不支持 WebRTC');
+  const peer = new RTCPeerConnection();
+  networkPreviewPeer = peer;
+  peer.addTransceiver('video', {direction: 'recvonly'});
+
+  peer.ontrack = event => {
+    if (generation !== networkPreviewGeneration || peer !== networkPreviewPeer) return;
+    const remote = event.streams?.[0] || new MediaStream([event.track]);
+    video.srcObject = remote;
+    image.classList.add('hidden');
+    video.classList.remove('hidden');
+    video.play().catch(error => console.warn('WebRTC preview play failed', error));
+  };
+
+  peer.onconnectionstatechange = () => {
+    if (generation !== networkPreviewGeneration || peer !== networkPreviewPeer) return;
+    const state = peer.connectionState;
+    if (state === 'failed' || state === 'closed') {
+      startMJPEGPreviewFallback(generation, image, video, `WebRTC 状态：${state}`);
+      return;
+    }
+    if (state === 'disconnected') {
+      if (networkPreviewRetryTimer) clearTimeout(networkPreviewRetryTimer);
+      networkPreviewRetryTimer = setTimeout(() => {
+        networkPreviewRetryTimer = null;
+        if (generation === networkPreviewGeneration && peer === networkPreviewPeer && peer.connectionState === 'disconnected') {
+          startMJPEGPreviewFallback(generation, image, video, 'WebRTC 连接中断');
+        }
+      }, 1500);
+    }
+  };
+
+  const offer = await peer.createOffer();
+  await peer.setLocalDescription(offer);
+  await waitForICEGatheringComplete(peer);
+  if (generation !== networkPreviewGeneration || peer !== networkPreviewPeer) return;
+
+  const local = peer.localDescription;
+  if (!local) throw new Error('WebRTC offer 未生成');
+  const response = await fetch(`/api/cameras/${activeCamera.id}/webrtc`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    cache: 'no-store',
+    body: JSON.stringify({type: local.type, sdp: local.sdp})
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || `WebRTC 返回 HTTP ${response.status}`);
+  }
+  const answer = await response.json();
+  await peer.setRemoteDescription(answer);
+
+  networkPreviewWatchdogTimer = setTimeout(() => {
+    networkPreviewWatchdogTimer = null;
+    if (generation !== networkPreviewGeneration || peer !== networkPreviewPeer) return;
+    if (!video.videoWidth || !video.videoHeight || video.readyState < 2) {
+      startMJPEGPreviewFallback(generation, image, video, 'WebRTC 已连接但未收到可播放 H.264 画面');
+    }
+  }, 6000);
+}
+
+function startNetworkPreview() {
+  if (!cameraOpen || !activeCamera || activeCamera.kind === 'local') return;
+  const image = activeNetworkCameraImage();
+  const video = activeNetworkCameraVideo();
+  if (!image || !video) return;
+
+  const generation = ++networkPreviewGeneration;
+  clearNetworkPreviewTimers();
+  closeNetworkPreviewPeer();
+
+  ['#cameraNetwork', '#enrollCameraNetwork'].map($).filter(Boolean).forEach(view => {
+    view.onerror = null;
+    view.removeAttribute('src');
+    view.classList.add('hidden');
+  });
+  ['#cameraNetworkWebRTC', '#enrollCameraNetworkWebRTC'].map($).filter(Boolean).forEach(view => {
+    view.pause();
+    view.srcObject = null;
+    view.classList.add('hidden');
+  });
+
+  if (String(activeCamera.protocol || '').toLowerCase() !== 'rtsp') {
+    startMJPEGPreviewFallback(generation, image, video);
+    return;
+  }
+
+  startWebRTCH264Preview(generation, image, video).catch(error => {
+    if (generation !== networkPreviewGeneration) return;
+    startMJPEGPreviewFallback(generation, image, video, error.message);
+  });
 }
 
 function localVideoConstraints(camera) {
@@ -244,6 +392,10 @@ async function attachCameraViews() {
 
 function cameraFrameDimensions(selector = '#camera') {
   if (activeCamera && activeCamera.kind !== 'local') {
+    const webrtcVideo = selector === '#enrollCamera' ? $('#enrollCameraNetworkWebRTC') : $('#cameraNetworkWebRTC');
+    if (webrtcVideo && !webrtcVideo.classList.contains('hidden') && webrtcVideo.videoWidth && webrtcVideo.videoHeight) {
+      return {width: webrtcVideo.videoWidth, height: webrtcVideo.videoHeight};
+    }
     const image = selector === '#enrollCamera' ? $('#enrollCameraNetwork') : $('#cameraNetwork');
     return {
       width: image?.naturalWidth || Number(activeCamera.width || 1280),
