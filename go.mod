@@ -4,6 +4,7 @@ go 1.26.0
 
 require (
 	github.com/leandroveronezi/go-onnxface v0.3.0
+	github.com/pion/webrtc/v4 v4.2.20
 	github.com/yalue/onnxruntime_go v1.31.0
 	golang.org/x/crypto v0.57.0
 	golang.org/x/image v0.44.0
