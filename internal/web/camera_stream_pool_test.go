@@ -81,9 +81,11 @@ func TestMJPEGContinuousStreamFeedsSharedPool(t *testing.T) {
 	if !ok {
 		t.Fatal("continuous stream did not publish a frame")
 	}
-	time.Sleep(140 * time.Millisecond)
-	second, ok := stream.current(networkCameraStreamFreshFor)
-	if !ok || second.sequence <= first.sequence {
+	second, err := stream.waitNext(ctx, first.sequence, 500*time.Millisecond)
+	if err != nil {
+		t.Fatalf("wait for next continuous frame: %v", err)
+	}
+	if second.sequence <= first.sequence {
 		t.Fatalf("shared pool did not keep advancing: first=%d second=%d", first.sequence, second.sequence)
 	}
 
