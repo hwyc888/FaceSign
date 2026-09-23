@@ -592,3 +592,60 @@ func TestNetworkCameraPreviewUsesSharedFrameCadence(t *testing.T) {
 		}
 	}
 }
+
+
+func TestNetworkCameraPresetSimpleConfiguration(t *testing.T) {
+	htmlData, err := assets.ReadFile("assets/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	html := string(htmlData)
+	for _, want := range []string{
+		`id="cameraPreset"`,
+		`id="cameraIP"`,
+		"只填写 IP 地址",
+		"海康 Hikvision",
+		"大华 Dahua",
+		"宇视 Uniview",
+		"VIVOTEK / 晶睿",
+		"AXIS",
+		"其他品牌 / 自定义（高级）",
+		`id="cameraAdvancedToggle"`,
+		"data-camera-advanced",
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("simple network camera setup UI missing %q", want)
+		}
+	}
+
+	jsData, err := assets.ReadFile("assets/js/cameras.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(jsData)
+	for _, want := range []string{
+		"const CAMERA_PRESETS",
+		"normalizeCameraIP",
+		"cameraPresetFromCamera",
+		"cameraIPFromCamera",
+		"cameraNetworkDisplay",
+		"/Streaming/channels/101",
+		"/ISAPI/Streaming/channels/1/picture",
+		"/cam/realmonitor?channel=1&subtype=0",
+		"/cgi-bin/snapshot.cgi?channel=1",
+		"/media/video1",
+		"/LAPI/V1.0/Channels/1/Media/Video/Streams/0/Snapshot",
+		"/live.sdp",
+		"/cgi-bin/viewer/video.jpg?streamid=0",
+		"/axis-media/media.amp",
+		"/axis-cgi/jpg/image.cgi?camera=1",
+		"applyCameraPreset({requireIP: true})",
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("network camera preset logic missing %q", want)
+		}
+	}
+	if !strings.Contains(script, "不要带 http://、端口或路径") {
+		t.Fatal("IP-only validation guidance missing")
+	}
+}

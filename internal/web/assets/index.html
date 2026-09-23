@@ -291,37 +291,58 @@
             <label data-camera-local>本机设备
               <select id="cameraDevice"><option value="">系统默认摄像头</option></select>
             </label>
-            <label data-camera-network class="hidden">网络协议
-              <select id="cameraProtocol">
-                <option value="http_snapshot">HTTP/HTTPS 单帧抓图</option>
-                <option value="mjpeg">MJPEG 视频流</option>
-                <option value="rtsp">RTSP + HTTP/HTTPS 抓图</option>
+            <label data-camera-network class="hidden">常用品牌 / 参数预设
+              <select id="cameraPreset">
+                <option value="hikvision">海康 Hikvision</option>
+                <option value="dahua">大华 Dahua</option>
+                <option value="uniview">宇视 Uniview</option>
+                <option value="vivotek">VIVOTEK / 晶睿</option>
+                <option value="axis">AXIS</option>
+                <option value="custom">其他品牌 / 自定义（高级）</option>
               </select>
+              <small>选择品牌后，FaceSign 会自动配置视频流、抓图路径和认证方式。</small>
             </label>
-            <label id="cameraStreamGroup" data-camera-network class="hidden">视频流地址
-              <input id="cameraStreamURL" placeholder="MJPEG 使用 http(s) 地址；RTSP 示例 rtsp://192.168.1.64/...">
-            </label>
-            <label id="cameraSnapshotGroup" data-camera-network class="hidden camera-wide">HTTP/HTTPS 抓图地址
-              <input id="cameraSnapshotURL" placeholder="例如：http://192.168.1.64/ISAPI/Streaming/channels/101/picture">
-              <small id="cameraSnapshotHelp">填写返回单张JPEG/PNG图片的HTTP/HTTPS地址。</small>
-            </label>
-            <label data-camera-network class="hidden">认证方式
-              <select id="cameraAuthMode">
-                <option value="auto">自动检测（推荐）</option>
-                <option value="none">无认证</option>
-                <option value="basic">Basic</option>
-                <option value="digest">Digest</option>
-              </select>
-              <small>自动检测会根据摄像头返回的认证挑战自动选择 Digest / Basic / 无认证。</small>
+            <label data-camera-network class="hidden">摄像头 IP 地址
+              <input id="cameraIP" inputmode="decimal" autocomplete="off" placeholder="例如：192.168.1.64">
+              <small><strong>只填写 IP 地址</strong>，不要填写 http://、端口、斜杠或后面的参数。</small>
             </label>
             <label data-camera-network class="hidden">用户名
-              <input id="cameraUsername" autocomplete="off">
+              <input id="cameraUsername" autocomplete="off" placeholder="例如：admin">
             </label>
             <label data-camera-network class="hidden">密码
               <input id="cameraPassword" type="password" autocomplete="new-password" placeholder="网络摄像头密码">
             </label>
             <label id="cameraClearPasswordWrap" data-camera-network class="camera-check hidden">
               <input id="cameraClearPassword" type="checkbox"> 清除已保存密码
+            </label>
+            <div data-camera-network class="camera-simple-summary hidden camera-wide">
+              <div>
+                <strong id="cameraPresetTitle">系统自动配置摄像头参数</strong>
+                <span id="cameraPresetSummary">请选择品牌并填写 IP 地址。</span>
+              </div>
+              <button id="cameraAdvancedToggle" type="button">查看高级参数</button>
+            </div>
+            <label data-camera-advanced class="hidden">网络协议
+              <select id="cameraProtocol">
+                <option value="http_snapshot">HTTP/HTTPS 单帧抓图</option>
+                <option value="mjpeg">MJPEG 视频流</option>
+                <option value="rtsp">RTSP + HTTP/HTTPS 抓图</option>
+              </select>
+            </label>
+            <label id="cameraStreamGroup" data-camera-advanced class="hidden">视频流地址（高级）
+              <input id="cameraStreamURL" placeholder="系统会根据品牌和 IP 自动生成">
+            </label>
+            <label id="cameraSnapshotGroup" data-camera-advanced class="hidden camera-wide">HTTP/HTTPS 抓图地址（高级）
+              <input id="cameraSnapshotURL" placeholder="系统会根据品牌和 IP 自动生成">
+              <small id="cameraSnapshotHelp">普通用户无需填写；只有非标准端口或特殊型号才需要修改。</small>
+            </label>
+            <label data-camera-advanced class="hidden">认证方式（高级）
+              <select id="cameraAuthMode">
+                <option value="auto">自动检测（推荐）</option>
+                <option value="none">无认证</option>
+                <option value="basic">Basic</option>
+                <option value="digest">Digest</option>
+              </select>
             </label>
             <label>期望宽度
               <input id="cameraWidth" type="number" min="320" max="7680" value="1280" required>
@@ -332,10 +353,10 @@
             <label>帧率
               <input id="cameraFPS" type="number" min="1" max="60" value="30" required>
             </label>
-            <label data-camera-network class="hidden">网络超时(ms)
+            <label data-camera-advanced class="hidden">网络超时(ms)（高级）
               <input id="cameraTimeout" type="number" min="500" max="30000" value="3000">
             </label>
-            <label data-camera-network class="camera-check hidden">
+            <label data-camera-advanced class="camera-check hidden">
               <input id="cameraTLSInsecure" type="checkbox"> 允许自签名 HTTPS 证书
             </label>
             <label data-camera-agent class="hidden">Agent ID

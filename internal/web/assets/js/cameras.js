@@ -2,9 +2,127 @@ let editingCameraID = 0;
 let localCameraDevices = [];
 let cameraTestPreviewURL = null;
 
+const CAMERA_PRESETS = {
+  hikvision: {
+    label: '海康 Hikvision',
+    username: 'admin',
+    stream: ip => `rtsp://${ip}:554/Streaming/channels/101`,
+    snapshot: ip => `http://${ip}/ISAPI/Streaming/channels/1/picture`
+  },
+  dahua: {
+    label: '大华 Dahua',
+    username: 'admin',
+    stream: ip => `rtsp://${ip}:554/cam/realmonitor?channel=1&subtype=0`,
+    snapshot: ip => `http://${ip}/cgi-bin/snapshot.cgi?channel=1`
+  },
+  uniview: {
+    label: '宇视 Uniview',
+    username: 'admin',
+    stream: ip => `rtsp://${ip}:554/media/video1`,
+    snapshot: ip => `http://${ip}/LAPI/V1.0/Channels/1/Media/Video/Streams/0/Snapshot`
+  },
+  vivotek: {
+    label: 'VIVOTEK / 晶睿',
+    username: 'root',
+    stream: ip => `rtsp://${ip}:554/live.sdp`,
+    snapshot: ip => `http://${ip}/cgi-bin/viewer/video.jpg?streamid=0`
+  },
+  axis: {
+    label: 'AXIS',
+    username: 'root',
+    stream: ip => `rtsp://${ip}:554/axis-media/media.amp`,
+    snapshot: ip => `http://${ip}/axis-cgi/jpg/image.cgi?camera=1`
+  }
+};
+
+let cameraAdvancedOpen = false;
+
+function normalizeCameraIP(value) {
+  const ip = String(value || '').trim();
+  if (!ip) return '';
+  if (ip.includes('://') || /[\\/?#:\s]/.test(ip)) {
+    throw new Error('IP 地址只填写数字和点，例如 192.168.1.64；不要带 http://、端口或路径');
+  }
+  const parts = ip.split('.');
+  if (parts.length !== 4 || parts.some(part => !/^\d{1,3}$/.test(part) || Number(part) > 255)) {
+    throw new Error('请输入正确的 IPv4 地址，例如 192.168.1.64');
+  }
+  return parts.map(part => String(Number(part))).join('.');
+}
+
+function cameraPresetFromCamera(camera) {
+  const stream = String(camera?.stream_url || '').toLowerCase();
+  const snapshot = String(camera?.snapshot_url || '').toLowerCase();
+  if (snapshot.includes('/isapi/streaming/channels/') || stream.includes('/streaming/channels/')) return 'hikvision';
+  if (snapshot.includes('/cgi-bin/snapshot.cgi') || stream.includes('/cam/realmonitor')) return 'dahua';
+  if (snapshot.includes('/lapi/v1.0/channels/') || stream.includes('/media/video1')) return 'uniview';
+  if (snapshot.includes('/cgi-bin/viewer/video.jpg') || stream.includes('/live.sdp')) return 'vivotek';
+  if (snapshot.includes('/axis-cgi/jpg/image.cgi') || stream.includes('/axis-media/media.amp')) return 'axis';
+  return 'custom';
+}
+
+function cameraIPFromCamera(camera) {
+  for (const raw of [camera?.snapshot_url, camera?.stream_url]) {
+    if (!raw) continue;
+    try {
+      const host = new URL(raw).hostname;
+      if (host) return host;
+    } catch {}
+  }
+  return '';
+}
+
+function applyCameraPreset({requireIP = false} = {}) {
+  if ($('#cameraKind')?.value !== 'network') return;
+  const presetID = $('#cameraPreset')?.value || 'hikvision';
+  const preset = CAMERA_PRESETS[presetID];
+  if (!preset) {
+    $('#cameraPresetSummary').textContent = '自定义模式：请在高级参数中填写设备实际地址。';
+    return;
+  }
+
+  let ip = '';
+  try {
+    ip = normalizeCameraIP($('#cameraIP').value);
+  } catch (e) {
+    $('#cameraPresetSummary').textContent = e.message;
+    if (requireIP) throw e;
+    return;
+  }
+  if (!ip) {
+    $('#cameraStreamURL').value = '';
+    $('#cameraSnapshotURL').value = '';
+    $('#cameraPresetSummary').textContent = `已选择 ${preset.label}；现在只需填写摄像头 IP、用户名和密码。`;
+    if (requireIP) throw new Error('请填写摄像头 IP 地址');
+    return;
+  }
+
+  $('#cameraProtocol').value = 'rtsp';
+  $('#cameraStreamURL').value = preset.stream(ip);
+  $('#cameraSnapshotURL').value = preset.snapshot(ip);
+  $('#cameraAuthMode').value = 'auto';
+  if (!$('#cameraUsername').value.trim()) {
+    $('#cameraUsername').placeholder = `常用用户名：${preset.username}`;
+  }
+  $('#cameraPresetTitle').textContent = `${preset.label} · 已自动配置`;
+  $('#cameraPresetSummary').textContent = `IP：${ip}；RTSP、抓图路径和认证方式已由 FaceSign 自动生成，无需手工填写。`;
+}
+
+function cameraNetworkDisplay(camera) {
+  const presetID = cameraPresetFromCamera(camera);
+  const ip = cameraIPFromCamera(camera);
+  const preset = CAMERA_PRESETS[presetID];
+  if (ip && preset) return `${ip} · ${preset.label}`;
+  if (ip) return ip;
+  return camera.snapshot_url || camera.stream_url || '-';
+}
+
 
 function cameraFormPayload() {
   const kind = $('#cameraKind').value;
+  if (kind === 'network' && $('#cameraPreset').value !== 'custom') {
+    applyCameraPreset({requireIP: true});
+  }
   const payload = {
     camera_id: editingCameraID || 0,
     name: $('#cameraName').value.trim() || '连接测试',
@@ -180,7 +298,7 @@ function cameraSourceLabel(camera) {
     return found?.label || ('设备 ID ' + camera.device_id.slice(0, 12) + '…');
   }
   if (camera.kind === 'agent') return camera.agent_id || '-';
-  return camera.snapshot_url || camera.stream_url || '-';
+  return cameraNetworkDisplay(camera);
 }
 
 function renderCameraRows() {
@@ -265,17 +383,27 @@ function updateCameraFormVisibility() {
   const local = kind === 'local';
   const network = kind === 'network';
   const agent = kind === 'agent';
-  $$('[data-camera-local]').forEach(el => el.classList.toggle('hidden', !local));
-  $$('[data-camera-network]').forEach(el => el.classList.toggle('hidden', !network));
-  $$('[data-camera-agent]').forEach(el => el.classList.toggle('hidden', !agent));
+  const custom = network && $('#cameraPreset')?.value === 'custom';
+  const showAdvanced = network && (custom || cameraAdvancedOpen);
+
+  $('[data-camera-local]').forEach(el => el.classList.toggle('hidden', !local));
+  $('[data-camera-network]').forEach(el => el.classList.toggle('hidden', !network));
+  $('[data-camera-agent]').forEach(el => el.classList.toggle('hidden', !agent));
+  $('[data-camera-advanced]').forEach(el => el.classList.toggle('hidden', !showAdvanced));
+
   const protocol = $('#cameraProtocol').value;
-  $('#cameraStreamGroup').classList.toggle('hidden', !network || protocol === 'http_snapshot');
-  $('#cameraSnapshotGroup').classList.toggle('hidden', !network);
+  $('#cameraStreamGroup').classList.toggle('hidden', !showAdvanced || protocol === 'http_snapshot');
+  $('#cameraSnapshotGroup').classList.toggle('hidden', !showAdvanced);
+  $('#cameraAdvancedToggle').textContent = showAdvanced && !custom ? '隐藏高级参数' : '查看高级参数';
+  $('#cameraAdvancedToggle').classList.toggle('hidden', custom);
+
   $('#cameraSnapshotHelp').textContent = protocol === 'rtsp'
-    ? 'RTSP用于保存主/子码流参数；FaceSign识别需要填写同一摄像机的HTTP/HTTPS抓图地址。'
+    ? '普通用户无需修改。RTSP用于保存视频流参数，人脸识别使用同一设备的HTTP/HTTPS抓图地址。'
     : protocol === 'mjpeg'
-      ? 'MJPEG可直接取帧；如另有JPEG抓图地址，填写后会优先使用抓图地址。'
-      : '填写返回单张JPEG/PNG图片的HTTP/HTTPS地址。';
+      ? '普通用户无需修改。MJPEG可直接取帧；如另有JPEG抓图地址会优先使用抓图地址。'
+      : '普通用户无需修改。这里必须是直接返回JPEG/PNG图片的地址。';
+
+  if (network && !custom) applyCameraPreset();
 }
 
 function resetCameraForm() {
@@ -283,7 +411,10 @@ function resetCameraForm() {
   $('#cameraForm').reset();
   $('#cameraEditID').value = '';
   $('#cameraKind').value = 'local';
-  $('#cameraProtocol').value = 'http_snapshot';
+  $('#cameraPreset').value = 'hikvision';
+  $('#cameraIP').value = '';
+  cameraAdvancedOpen = false;
+  $('#cameraProtocol').value = 'rtsp';
   $('#cameraAuthMode').value = 'auto';
   $('#cameraWidth').value = '1280';
   $('#cameraHeight').value = '720';
@@ -310,6 +441,10 @@ function editCamera(id) {
   $('#cameraName').value = camera.name;
   $('#cameraKind').value = camera.kind;
   renderLocalCameraDeviceOptions(camera.device_id || '');
+  const presetID = camera.kind === 'network' ? cameraPresetFromCamera(camera) : 'hikvision';
+  $('#cameraPreset').value = presetID;
+  $('#cameraIP').value = camera.kind === 'network' ? cameraIPFromCamera(camera) : '';
+  cameraAdvancedOpen = presetID === 'custom';
   $('#cameraProtocol').value = camera.protocol === 'browser' ? 'http_snapshot' : camera.protocol;
   $('#cameraStreamURL').value = camera.stream_url || '';
   $('#cameraSnapshotURL').value = camera.snapshot_url || '';
@@ -414,7 +549,11 @@ async function testCamera(id) {
 }
 
 $('#cameraKind').addEventListener('change', () => {
-  if ($('#cameraKind').value === 'network' && !editingCameraID) $('#cameraFPS').value = '5';
+  if ($('#cameraKind').value === 'network' && !editingCameraID) {
+    $('#cameraFPS').value = '8';
+    $('#cameraPreset').value = 'hikvision';
+    cameraAdvancedOpen = false;
+  }
   if ($('#cameraKind').value === 'agent' && !editingCameraID) $('#cameraFPS').value = '2';
   if ($('#cameraKind').value === 'local' && !editingCameraID) $('#cameraFPS').value = '30';
   updateCameraFormVisibility();
@@ -470,6 +609,21 @@ function markCameraTestStale() {
 
 $('#cameraForm').addEventListener('input', markCameraTestStale);
 $('#cameraForm').addEventListener('change', markCameraTestStale);
+$('#cameraIP').addEventListener('input', () => {
+  if ($('#cameraPreset').value !== 'custom') applyCameraPreset();
+});
+$('#cameraPreset').addEventListener('change', () => {
+  cameraAdvancedOpen = $('#cameraPreset').value === 'custom';
+  if ($('#cameraPreset').value !== 'custom') {
+    $('#cameraAuthMode').value = 'auto';
+    applyCameraPreset();
+  }
+  updateCameraFormVisibility();
+});
+$('#cameraAdvancedToggle').addEventListener('click', () => {
+  cameraAdvancedOpen = !cameraAdvancedOpen;
+  updateCameraFormVisibility();
+});
 $('#cameraProtocol').addEventListener('change', updateCameraFormVisibility);
 $('#testCameraConfig').addEventListener('click', testCurrentCameraConfig);
 $('#refreshLocalCameras').addEventListener('click', () => refreshLocalCameraDevices(true).catch(e => toast(e.message)));
@@ -477,11 +631,10 @@ $('#cancelCameraEdit').addEventListener('click', resetCameraForm);
 
 $('#cameraForm').addEventListener('submit', async event => {
   event.preventDefault();
-  const kind = $('#cameraKind').value;
-  const payload = cameraFormPayload();
-  delete payload.camera_id;
 
   try {
+    const payload = cameraFormPayload();
+    delete payload.camera_id;
     if (editingCameraID) {
       await api(`/api/cameras/${editingCameraID}`, {
         method: 'PUT',

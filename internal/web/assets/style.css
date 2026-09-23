@@ -369,3 +369,9 @@ pre{background:#0b1220;color:#d8e2f3;border-radius:12px;padding:16px;overflow:au
 .camera-test-check.error .camera-test-check-icon{background:#fee2e2;color:#dc2626}
 .camera-test-check.pending{color:#667085;background:#f8fafc}
 .camera-test-check.pending .camera-test-check-icon{background:#e9eef5;color:#667085}
+
+.camera-simple-summary{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:12px 14px;border:1px solid #d7e3f4;border-radius:10px;background:#f6f9fe}
+.camera-simple-summary>div{display:grid;gap:4px;min-width:0}
+.camera-simple-summary strong{color:#173b70}
+.camera-simple-summary span{font-size:12px;color:#667085;line-height:1.5}
+.camera-simple-summary button{flex:0 0 auto}
