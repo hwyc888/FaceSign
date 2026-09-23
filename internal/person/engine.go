@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"image"
+	"image/color"
 	"math"
 	"os"
 	"sort"
@@ -138,7 +139,7 @@ func fillYOLOXInput(dst []float32, img image.Image) float64 {
 	canvas := image.NewRGBA(image.Rect(0, 0, inputSize, inputSize))
 	for y := 0; y < inputSize; y++ {
 		for x := 0; x < inputSize; x++ {
-			canvas.SetRGBA(x, y, image.RGBA{R: 114, G: 114, B: 114, A: 255})
+			canvas.SetRGBA(x, y, color.RGBA{R: 114, G: 114, B: 114, A: 255})
 		}
 	}
 	xdraw.BiLinear.Scale(
