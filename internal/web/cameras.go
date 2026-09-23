@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"image"
 	"image/jpeg"
+	_ "image/png"
 	"io"
 	"net/http"
 	"strconv"
@@ -61,6 +62,8 @@ func cameraHTTPTransport(tlsInsecure bool) *http.Transport {
 	return transport
 }
 
+const networkCameraPreviewFPS = 25
+
 func networkCameraFrameInterval(camera store.Camera) time.Duration {
 	fps := camera.FPS
 	if fps < 1 {
@@ -72,7 +75,25 @@ func networkCameraFrameInterval(camera store.Camera) time.Duration {
 	return time.Second / time.Duration(fps)
 }
 
+func cameraPreviewFrameInterval(camera store.Camera) time.Duration {
+	fps := camera.FPS
+	if camera.Kind == "network" {
+		fps = networkCameraPreviewFPS
+	}
+	if fps < 1 {
+		fps = 1
+	}
+	if fps > 30 {
+		fps = 30
+	}
+	return time.Second / time.Duration(fps)
+}
+
 func (s *Server) cachedNetworkCameraFrame(ctx context.Context, camera store.Camera) ([]byte, int, int, error) {
+	return s.cachedNetworkCameraFrameFor(ctx, camera, networkCameraFrameInterval(camera))
+}
+
+func (s *Server) cachedNetworkCameraFrameFor(ctx context.Context, camera store.Camera, maxAge time.Duration) ([]byte, int, int, error) {
 	s.networkCameraMu.Lock()
 	if s.networkCameraFrames == nil {
 		s.networkCameraFrames = make(map[int64]*networkCameraFrameCache)
@@ -87,7 +108,7 @@ func (s *Server) cachedNetworkCameraFrame(ctx context.Context, camera store.Came
 	cache.mu.Lock()
 	defer cache.mu.Unlock()
 
-	if len(cache.frame) > 0 && time.Since(cache.fetchedAt) < networkCameraFrameInterval(camera) {
+	if maxAge > 0 && len(cache.frame) > 0 && time.Since(cache.fetchedAt) < maxAge {
 		return cache.frame, cache.width, cache.height, nil
 	}
 
@@ -519,6 +540,17 @@ func (s *Server) cameraSourceFrame(ctx context.Context, item store.Camera) ([]by
 	}
 }
 
+func (s *Server) cameraPreviewSourceFrame(ctx context.Context, item store.Camera) ([]byte, int, int, int, error) {
+	if item.Kind == "network" {
+		frame, width, height, err := s.cachedNetworkCameraFrameFor(ctx, item, 0)
+		if err != nil {
+			return nil, 0, 0, http.StatusBadGateway, fmt.Errorf("读取网络摄像头失败: %w", err)
+		}
+		return frame, width, height, http.StatusOK, nil
+	}
+	return s.cameraSourceFrame(ctx, item)
+}
+
 func (s *Server) cameraStream(w http.ResponseWriter, r *http.Request, item store.Camera) {
 	flusher, ok := w.(http.Flusher)
 	if !ok {
@@ -526,7 +558,7 @@ func (s *Server) cameraStream(w http.ResponseWriter, r *http.Request, item store
 		return
 	}
 
-	frame, width, height, status, err := s.cameraSourceFrame(r.Context(), item)
+	frame, width, height, status, err := s.cameraPreviewSourceFrame(r.Context(), item)
 	if err != nil {
 		writeError(w, status, err)
 		return
@@ -539,8 +571,9 @@ func (s *Server) cameraStream(w http.ResponseWriter, r *http.Request, item store
 	w.Header().Set("X-Accel-Buffering", "no")
 	w.WriteHeader(http.StatusOK)
 
-	interval := networkCameraFrameInterval(item)
+	interval := cameraPreviewFrameInterval(item)
 	for {
+		cycleStarted := time.Now()
 		if _, err := fmt.Fprintf(w,
 			"--%s\r\nContent-Type: image/jpeg\r\nContent-Length: %d\r\nX-Camera-Width: %d\r\nX-Camera-Height: %d\r\n\r\n",
 			boundary, len(frame), width, height,
@@ -555,18 +588,24 @@ func (s *Server) cameraStream(w http.ResponseWriter, r *http.Request, item store
 		}
 		flusher.Flush()
 
-		timer := time.NewTimer(interval)
+		frame, width, height, _, err = s.cameraPreviewSourceFrame(r.Context(), item)
+		if err != nil {
+			if r.Context().Err() == nil {
+				s.logger.Warn("camera stream stopped", "camera_id", item.ID, "camera", item.Name, "error", err)
+			}
+			return
+		}
+
+		delay := interval - time.Since(cycleStarted)
+		if delay <= 0 {
+			continue
+		}
+		timer := time.NewTimer(delay)
 		select {
 		case <-r.Context().Done():
 			timer.Stop()
 			return
 		case <-timer.C:
-		}
-
-		frame, width, height, _, err = s.cameraSourceFrame(r.Context(), item)
-		if err != nil {
-			s.logger.Warn("camera stream stopped", "camera_id", item.ID, "camera", item.Name, "error", err)
-			return
 		}
 	}
 }
@@ -618,24 +657,34 @@ func fetchNetworkCameraFrameWithAuth(ctx context.Context, camera store.Camera) (
 		return nil, 0, 0, detectedAuth, fmt.Errorf("摄像头返回 HTTP %d", response.StatusCode)
 	}
 
+	const maxFrameBytes = 16 << 20
 	var data []byte
 	if mjpeg || strings.Contains(strings.ToLower(response.Header.Get("Content-Type")), "multipart/x-mixed-replace") {
-		data, err = readFirstJPEG(response.Body, 16<<20)
+		data, err = readFirstJPEG(response.Body, maxFrameBytes)
 		if err != nil {
 			return nil, 0, 0, detectedAuth, err
 		}
 	} else {
-		img, _, err := image.Decode(io.LimitReader(response.Body, 16<<20))
+		data, err = io.ReadAll(io.LimitReader(response.Body, maxFrameBytes+1))
 		if err != nil {
-			return nil, 0, 0, detectedAuth, fmt.Errorf("摄像头返回的不是可识别图片: %w", err)
+			return nil, 0, 0, detectedAuth, err
 		}
-		frame, width, height, err := encodeJPEG(img)
-		return frame, width, height, detectedAuth, err
+		if len(data) > maxFrameBytes {
+			return nil, 0, 0, detectedAuth, errors.New("摄像头图像超过16MB限制")
+		}
+	}
+
+	config, format, err := image.DecodeConfig(bytes.NewReader(data))
+	if err != nil {
+		return nil, 0, 0, detectedAuth, fmt.Errorf("摄像头返回的不是可识别图片: %w", err)
+	}
+	if strings.EqualFold(format, "jpeg") {
+		return data, config.Width, config.Height, detectedAuth, nil
 	}
 
 	img, _, err := image.Decode(bytes.NewReader(data))
 	if err != nil {
-		return nil, 0, 0, detectedAuth, fmt.Errorf("MJPEG帧解码失败: %w", err)
+		return nil, 0, 0, detectedAuth, fmt.Errorf("摄像头返回的不是可识别图片: %w", err)
 	}
 	frame, width, height, err := encodeJPEG(img)
 	return frame, width, height, detectedAuth, err
