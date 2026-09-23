@@ -636,7 +636,7 @@ func TestNetworkCameraUsesLiveStreamAndDirectRecognition(t *testing.T) {
 		"/api/cameras/${activeCamera.id}/recognize",
 		"api('/api/recognize'",
 		"function recognitionFrameIntervalMS()",
-		"Math.min(Number(activeCamera.fps || 5), 12)",
+		"Math.min(Number(activeCamera.fps || 5), 5)",
 		"setTimeout(runAutoRecognitionLoop, recognitionFrameIntervalMS())",
 	} {
 		if !strings.Contains(recognitionScript, want) {
@@ -738,6 +738,8 @@ func TestNetworkCameraUIExplainsContinuousStreamPrimaryAndSnapshotFallback(t *te
 		"MJPEG 连续流（主通道）",
 		"HTTP/HTTPS 单帧抓图（兼容模式）",
 		"人脸识别只按这里的帧率从共享帧池取样",
+		"预览按连续流新帧实时显示",
+		"人脸识别建议 3–5 FPS",
 		"HTTP Snapshot 仅在连续流异常时回退",
 	} {
 		if !strings.Contains(html, want) {
