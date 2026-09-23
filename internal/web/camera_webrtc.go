@@ -47,6 +47,14 @@ func (s *Server) cameraWebRTCOffer(w http.ResponseWriter, r *http.Request, camer
 		return
 	}
 
+	probeCtx, probeCancel := context.WithTimeout(r.Context(), cameraWebRTCProbeTimeout(camera))
+	err := probeRTSPH264(probeCtx, camera)
+	probeCancel()
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, fmt.Errorf("WebRTC H.264 预览不可用: %w", err))
+		return
+	}
+
 	peer, err := webrtc.NewPeerConnection(webrtc.Configuration{})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, fmt.Errorf("创建 WebRTC 连接失败: %w", err))
@@ -143,18 +151,6 @@ func (s *Server) cameraWebRTCOffer(w http.ResponseWriter, r *http.Request, camer
 		case <-connected:
 		case <-time.After(12 * time.Second):
 			s.logger.Warn("camera WebRTC connection timeout", "camera_id", camera.ID, "camera", camera.Name)
-			return
-		}
-
-		probeCtx, probeCancel := context.WithTimeout(streamCtx, cameraWebRTCProbeTimeout(camera))
-		err := probeRTSPH264(probeCtx, camera)
-		probeCancel()
-		if err != nil {
-			s.logger.Warn("camera WebRTC H264 probe failed",
-				"camera_id", camera.ID,
-				"camera", camera.Name,
-				"error", err,
-			)
 			return
 		}
 
