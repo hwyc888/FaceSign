@@ -95,7 +95,7 @@ For diagnostics:
 
 ## Pinned face models
 
-The model binaries are committed once and are independent from normal program builds:
+The core face/liveness model binaries are pinned in FaceSign history. The person detector is the official YOLOX-Nano release asset, downloaded by the full-package build/installer and verified by its pinned SHA-256:
 
 - Model commit: `de5287c66e9e37e9f804686bf63f5a0974f68f72`
 - YuNet: `models/face_detection_yunet_2023mar.onnx`
