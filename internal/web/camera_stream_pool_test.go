@@ -100,6 +100,37 @@ func TestMJPEGContinuousStreamFeedsSharedPool(t *testing.T) {
 	}
 }
 
+func TestNetworkCameraPreviewBufferPreservesShortBursts(t *testing.T) {
+	stream := newNetworkCameraStream(store.Camera{ID: 91, Name: "Buffered preview"}, "buffered")
+	for i := 0; i < 6; i++ {
+		img := image.NewRGBA(image.Rect(0, 0, 20+i, 12))
+		var frame bytes.Buffer
+		if err := jpeg.Encode(&frame, img, nil); err != nil {
+			t.Fatal(err)
+		}
+		if err := stream.publish(frame.Bytes(), "rtsp"); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	next, err := stream.waitNext(ctx, 2, 10*time.Millisecond)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.sequence != 3 {
+		t.Fatalf("preview buffer should preserve the next frame in a short burst: got sequence=%d want=3", next.sequence)
+	}
+	next, err = stream.waitNext(ctx, next.sequence, 10*time.Millisecond)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if next.sequence != 4 {
+		t.Fatalf("preview buffer should advance sequentially: got sequence=%d want=4", next.sequence)
+	}
+}
+
 func TestRTSPFailureFallsBackToSnapshot(t *testing.T) {
 	t.Setenv("FACESIGN_FFMPEG", filepath.Join(t.TempDir(), "missing-ffmpeg"))
 
@@ -170,7 +201,17 @@ func TestFFmpegRTSPInputAddsCredentialsWithoutChangingStoredURL(t *testing.T) {
 	}
 
 	args := strings.Join(ffmpegRTSPArgs(camera, input), " ")
-	for _, want := range []string{"-rtsp_transport tcp", "-rw_timeout", "-c:v mjpeg", "-f image2pipe", "pipe:1"} {
+	for _, want := range []string{
+		"-rtsp_transport tcp",
+		"-rw_timeout",
+		"-vf scale=1280:720:force_original_aspect_ratio=decrease:force_divisible_by=2",
+		"-c:v mjpeg",
+		"-q:v 7",
+		"-fps_mode passthrough",
+		"-flush_packets 1",
+		"-f image2pipe",
+		"pipe:1",
+	} {
 		if !strings.Contains(args, want) {
 			t.Fatalf("ffmpeg RTSP args missing %q: %s", want, args)
 		}
