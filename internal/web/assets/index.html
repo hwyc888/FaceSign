@@ -34,6 +34,7 @@
           <div class="card camera-card">
             <div class="video-wrap">
               <video id="camera" autoplay playsinline muted></video>
+              <video id="cameraNetworkWebRTC" class="network-camera-view hidden" autoplay playsinline muted></video>
               <img id="cameraNetwork" class="network-camera-view hidden" alt="网络摄像头实时画面">
               <canvas id="faceOverlay" class="face-overlay"></canvas>
               <canvas id="canvas" hidden></canvas>
@@ -93,6 +94,7 @@
             <div class="capture-main">
               <div class="enroll-video-wrap">
                 <video id="enrollCamera" autoplay playsinline muted></video>
+                <video id="enrollCameraNetworkWebRTC" class="network-camera-view hidden" autoplay playsinline muted></video>
                 <img id="enrollCameraNetwork" class="network-camera-view hidden" alt="网络摄像头实时画面">
                 <div class="capture-topbar">
                   <span class="capture-state neutral" id="enrollLiveState">摄像头已关闭</span>
@@ -353,7 +355,7 @@
             </label>
             <label>识别帧率
               <input id="cameraFPS" type="number" min="1" max="60" value="30" required>
-              <small>网络摄像头优先使用 RTSP/MJPEG 连续流：预览按连续流新帧实时显示，不受识别帧率限制；人脸识别建议 3–5 FPS，并从同一个共享帧池取样，HTTP Snapshot 仅在连续流异常时回退。</small>
+              <small>RTSP 网络摄像头优先使用 WebRTC/H.264 实时预览，由浏览器硬件解码；WebRTC 不可用、摄像头不是 H.264 或连接异常时自动回退 MJPEG。人脸识别仍建议 3–5 FPS，HTTP Snapshot 仅作最终兼容回退。</small>
             </label>
             <label data-camera-advanced class="hidden">网络超时(ms)（高级）
               <input id="cameraTimeout" type="number" min="500" max="30000" value="3000">
