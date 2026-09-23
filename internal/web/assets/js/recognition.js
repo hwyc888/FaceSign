@@ -179,12 +179,17 @@ async function recognizeBurst() {
       if (!result) break;
       maxFrames = Math.max(3, Number(result.liveness_max_frames || maxFrames));
       const faces = Array.isArray(result.faces) ? result.faces : [];
-      if (faces.length && faces.every(face =>
+      const qualityThreshold = Number(result.face_quality_threshold || 0.45);
+      const terminalFaces = faces.length && faces.every(face =>
         face.recognized ||
         face.status === '疑似照片/屏幕' ||
         face.liveness_timed_out ||
-        !face.matched
-      )) {
+        (!face.matched && Number(face.quality_score || 0) >= qualityThreshold)
+      );
+      const waitingPerson = Array.isArray(result.persons) && result.persons.some(person =>
+        !person.face_visible || Number(person.face_quality || 0) < qualityThreshold
+      );
+      if (terminalFaces && !waitingPerson) {
         break;
       }
       if (i + 1 < maxFrames && performance.now() - startedAt < 1980) {
