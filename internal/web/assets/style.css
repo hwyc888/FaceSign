@@ -359,6 +359,7 @@ pre{background:#0b1220;color:#d8e2f3;border-radius:12px;padding:16px;overflow:au
 .camera-test-headline.neutral{color:#667085}
 .camera-test-headline.testing{color:#2563eb}
 .camera-test-headline.success{color:#166534}
+.camera-test-headline.warning{color:#b45309}
 .camera-test-headline.error{color:#b42318}
 .camera-test-checks{display:grid;gap:7px;margin-top:10px}
 .camera-test-check{display:grid;grid-template-columns:24px 86px minmax(0,1fr);gap:7px;align-items:start;padding:8px 10px;border-radius:9px;border:1px solid #e4e8f0;background:#fff;font-size:12px;line-height:1.45}

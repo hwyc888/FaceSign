@@ -82,6 +82,11 @@ if ($oldTask) {
 }
 Get-Process -Name 'FaceSign' -ErrorAction SilentlyContinue |
   Stop-Process -Force -ErrorAction SilentlyContinue
+
+$installedFFmpeg = Join-Path $InstallDir 'ffmpeg.exe'
+Get-CimInstance Win32_Process -Filter "Name='ffmpeg.exe'" -ErrorAction SilentlyContinue |
+  Where-Object { $_.ExecutablePath -and ([string]::Equals($_.ExecutablePath, $installedFFmpeg, [System.StringComparison]::OrdinalIgnoreCase)) } |
+  ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 Start-Sleep -Milliseconds 700
 
 $remaining = Get-Process -Name 'FaceSign' -ErrorAction SilentlyContinue
@@ -93,6 +98,16 @@ New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 Copy-Item (Join-Path $source 'FaceSign.exe') $InstallDir -Force
 Copy-Item (Join-Path $source 'FaceSignManager.exe') $InstallDir -Force
 Copy-Item (Join-Path $source 'onnxruntime.dll') $InstallDir -Force
+$sourceFFmpeg = Join-Path $source 'ffmpeg.exe'
+if (-not (Test-Path $sourceFFmpeg -PathType Leaf)) {
+  throw 'Release package is missing ffmpeg.exe; RTSP continuous streaming runtime is required.'
+}
+Copy-Item $sourceFFmpeg $InstallDir -Force
+$sourceLicenses = Join-Path $source 'licenses'
+if (Test-Path $sourceLicenses -PathType Container) {
+  New-Item -ItemType Directory -Force -Path (Join-Path $InstallDir 'licenses') | Out-Null
+  Copy-Item (Join-Path $sourceLicenses '*') (Join-Path $InstallDir 'licenses') -Recurse -Force
+}
 foreach ($dll in @('msvcp140.dll','msvcp140_1.dll','vcruntime140.dll','vcruntime140_1.dll','libgcc_s_seh-1.dll','libwinpthread-1.dll')) {
   $p = Join-Path $source $dll
   if (Test-Path $p) { Copy-Item $p $InstallDir -Force }

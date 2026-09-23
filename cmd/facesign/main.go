@@ -83,6 +83,7 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
+	defer webServer.Close()
 
 	appHandler := tlsBootstrapHandler(webServer.Handler(), tlsIdentity.CACertPath)
 	httpHandler := http.Handler(appHandler)

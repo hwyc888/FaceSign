@@ -324,9 +324,9 @@
             </div>
             <label data-camera-advanced class="hidden">网络协议
               <select id="cameraProtocol">
-                <option value="http_snapshot">HTTP/HTTPS 单帧抓图</option>
-                <option value="mjpeg">MJPEG 视频流</option>
-                <option value="rtsp">RTSP + HTTP/HTTPS 抓图</option>
+                <option value="http_snapshot">HTTP/HTTPS 单帧抓图（兼容模式）</option>
+                <option value="mjpeg">MJPEG 连续流（主通道）</option>
+                <option value="rtsp">RTSP 连续流 + HTTP 抓图回退（推荐）</option>
               </select>
             </label>
             <label id="cameraStreamGroup" data-camera-advanced class="hidden">视频流地址（高级）
@@ -353,7 +353,7 @@
             </label>
             <label>识别帧率
               <input id="cameraFPS" type="number" min="1" max="60" value="30" required>
-              <small>网络摄像头实时预览与识别分开：预览会尽量保持 25 FPS，识别按这里的帧率运行，避免 CPU 做无意义的高帧率推理。</small>
+              <small>网络摄像头优先使用 RTSP/MJPEG 连续流：预览最高约 25 FPS；人脸识别只按这里的帧率从共享帧池取样，HTTP Snapshot 仅在连续流异常时回退。</small>
             </label>
             <label data-camera-advanced class="hidden">网络超时(ms)（高级）
               <input id="cameraTimeout" type="number" min="500" max="30000" value="3000">
@@ -386,7 +386,7 @@
           <div class="camera-test-box">
             <div>
               <div id="cameraTestHeadline" class="camera-test-headline neutral">尚未测试连接</div>
-              <div id="cameraTestResult" class="muted">填写摄像头参数后点击“测试连接”，系统会检查参数、网络、认证和图像抓取。</div>
+              <div id="cameraTestResult" class="muted">填写摄像头参数后点击“测试连接”，系统会优先检查 RTSP/MJPEG 连续流；连续流失败时再验证 HTTP Snapshot 回退。</div>
               <div id="cameraTestChecks" class="camera-test-checks"></div>
             </div>
             <img id="cameraTestPreview" class="camera-test-preview hidden" alt="摄像头测试画面">

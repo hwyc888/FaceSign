@@ -11,6 +11,7 @@ permissions:
 
 env:
   ORT_VERSION: '1.26.0'
+  FFMPEG_ASSET_NAME: 'ffmpeg-n8.1-latest-win64-lgpl-8.1.zip'
 
 jobs:
   build-windows:
@@ -103,6 +104,50 @@ jobs:
           & dist-agent\FaceSignCameraAgent.exe --version
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+      - name: Bundle FFmpeg RTSP runtime
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          $headers = @{
+            Authorization = "Bearer $env:GH_TOKEN"
+            Accept = 'application/vnd.github+json'
+            'X-GitHub-Api-Version' = '2022-11-28'
+          }
+          $release = Invoke-RestMethod -Headers $headers -Uri 'https://api.github.com/repos/BtbN/FFmpeg-Builds/releases/latest'
+          $asset = $release.assets | Where-Object { $_.name -eq $env:FFMPEG_ASSET_NAME } | Select-Object -First 1
+          if (-not $asset) { throw "FFmpeg release asset not found: $env:FFMPEG_ASSET_NAME" }
+          if ($asset.digest -notmatch '^sha256:([0-9a-fA-F]{64})$') { throw "FFmpeg asset does not expose a SHA-256 digest: $($asset.digest)" }
+          $expectedHash = $matches[1].ToUpperInvariant()
+
+          $ffmpegZip = Join-Path $env:RUNNER_TEMP 'facesign-ffmpeg.zip'
+          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $ffmpegZip -UseBasicParsing
+          $actualHash = (Get-FileHash $ffmpegZip -Algorithm SHA256).Hash
+          if ($actualHash -ne $expectedHash) {
+            throw "FFmpeg archive checksum mismatch: expected $expectedHash got $actualHash"
+          }
+
+          $ffmpegDir = Join-Path $env:RUNNER_TEMP 'facesign-ffmpeg'
+          Remove-Item $ffmpegDir -Recurse -Force -ErrorAction SilentlyContinue
+          Expand-Archive -Path $ffmpegZip -DestinationPath $ffmpegDir -Force
+          $ffmpegExe = Get-ChildItem -Path $ffmpegDir -Filter 'ffmpeg.exe' -File -Recurse | Select-Object -First 1
+          if (-not $ffmpegExe) { throw 'FFmpeg archive did not contain ffmpeg.exe' }
+          Copy-Item $ffmpegExe.FullName 'dist\ffmpeg.exe' -Force
+
+          New-Item -ItemType Directory -Force -Path 'dist\licenses' | Out-Null
+          Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/FFmpeg/FFmpeg/n8.1/COPYING.LGPLv2.1' -OutFile 'dist\licenses\FFMPEG_LGPLv2.1.txt' -UseBasicParsing
+          Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/FFmpeg/FFmpeg/n8.1/COPYING.LGPLv3' -OutFile 'dist\licenses\FFMPEG_LGPLv3.txt' -UseBasicParsing
+          @"
+          FaceSign bundles an FFmpeg 8.1 LGPL Windows runtime for RTSP H.264/H.265 decoding.
+          Build source: https://github.com/BtbN/FFmpeg-Builds
+          Asset: $($asset.name)
+          Asset SHA-256: $expectedHash
+          FFmpeg source/license information: https://ffmpeg.org/
+          "@ | Set-Content -Path 'dist\licenses\FFMPEG_NOTICE.txt' -Encoding UTF8
+
+          & 'dist\ffmpeg.exe' -hide_banner -version
+          if ($LASTEXITCODE -ne 0) { throw 'Bundled ffmpeg.exe could not start' }
+
       - name: Create full and lightweight packages
         shell: pwsh
         run: |
@@ -157,6 +202,17 @@ jobs:
           $liteManager = (Get-FileHash 'dist-lite\FaceSignManager.exe' -Algorithm SHA256).Hash
           if ($fullManager -ne $liteManager) { throw 'Full and lightweight packages must contain the same FaceSignManager.exe' }
 
+          foreach ($variant in @('dist-full','dist-lite')) {
+            $ffmpeg = Join-Path $variant 'ffmpeg.exe'
+            if (-not (Test-Path $ffmpeg -PathType Leaf)) { throw "$variant is missing ffmpeg.exe for RTSP decoding" }
+            if (-not (Test-Path (Join-Path $variant 'licenses\FFMPEG_NOTICE.txt') -PathType Leaf)) { throw "$variant is missing FFmpeg notices" }
+            & $ffmpeg -hide_banner -version | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "$variant ffmpeg.exe failed to start" }
+          }
+          $fullFFmpeg = (Get-FileHash 'dist-full\ffmpeg.exe' -Algorithm SHA256).Hash
+          $liteFFmpeg = (Get-FileHash 'dist-lite\ffmpeg.exe' -Algorithm SHA256).Hash
+          if ($fullFFmpeg -ne $liteFFmpeg) { throw 'Full and lightweight packages must contain the same ffmpeg.exe' }
+
       - name: Smoke test recognition
         shell: pwsh
         run: |
@@ -185,6 +241,10 @@ jobs:
             if ($httpsVersion.version -ne $env:GITHUB_SHA) { throw "Unexpected HTTPS FaceSign version: $($httpsVersion.version)" }
             if (-not (Test-Path 'dist-full\scripts\install-client-ca.ps1' -PathType Leaf)) { throw 'Client CA installer is missing from full package' }
             if (-not (Test-Path (Join-Path $smokeAssets 'models') -PathType Container)) { throw 'Full release smoke test is missing bundled models' }
+            if (-not (Test-Path (Join-Path $smokeAssets 'ffmpeg.exe') -PathType Leaf)) { throw 'Full release smoke test is missing ffmpeg.exe' }
+            $ffmpegSmoke = Join-Path $env:RUNNER_TEMP 'ffmpeg-smoke.mjpg'
+            & (Join-Path $smokeAssets 'ffmpeg.exe') -hide_banner -loglevel error -f lavfi -i 'testsrc=size=160x90:rate=5' -frames:v 2 -c:v mjpeg -f image2pipe -y $ffmpegSmoke
+            if ($LASTEXITCODE -ne 0 -or -not (Test-Path $ffmpegSmoke -PathType Leaf) -or (Get-Item $ffmpegSmoke).Length -le 100) { throw 'Bundled FFmpeg MJPEG output smoke test failed' }
             $versionInfo = Invoke-RestMethod -Uri 'http://127.0.0.1:18082/api/version' -TimeoutSec 3
             if ($versionInfo.version -ne $env:GITHUB_SHA) { throw "Unexpected FaceSign version: $($versionInfo.version)" }
             $homeHeaders = Join-Path $env:RUNNER_TEMP 'home.headers'

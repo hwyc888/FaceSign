@@ -125,8 +125,9 @@ func (s *Server) cachedNetworkCameraFrameFor(ctx context.Context, camera store.C
 
 func (s *Server) invalidateNetworkCameraFrame(cameraID int64) {
 	s.networkCameraMu.Lock()
-	defer s.networkCameraMu.Unlock()
 	delete(s.networkCameraFrames, cameraID)
+	s.networkCameraMu.Unlock()
+	s.stopNetworkCameraStream(cameraID)
 }
 
 type cameraRequest struct {
@@ -165,6 +166,8 @@ type cameraTestResult struct {
 	Width         int               `json:"width,omitempty"`
 	Height        int               `json:"height,omitempty"`
 	DetectedAuth  string            `json:"detected_auth,omitempty"`
+	PrimaryMode   string            `json:"primary_mode,omitempty"`
+	FallbackUsed  bool              `json:"fallback_used,omitempty"`
 	PreviewBase64 string            `json:"preview_base64,omitempty"`
 	Checks        []cameraTestCheck `json:"checks"`
 }
@@ -313,6 +316,34 @@ func (s *Server) cameraTest(w http.ResponseWriter, r *http.Request) {
 
 	camera := cameraFromNormalizedInput(normalized)
 	started := time.Now()
+	var primaryErr error
+	if mode := networkCameraContinuousMode(camera); mode != "" {
+		frame, width, height, source, err := s.probeNetworkCameraPrimaryFrame(r.Context(), camera)
+		if err == nil {
+			modeLabel := "MJPEG"
+			if source == "rtsp" {
+				modeLabel = "RTSP"
+			}
+			writeJSON(w, http.StatusOK, cameraTestResult{
+				OK: true,
+				Message: modeLabel + " 连续流连接成功，预览将使用连续流；人脸识别从共享帧池低帧率取样",
+				ElapsedMS: time.Since(started).Milliseconds(),
+				Width: width,
+				Height: height,
+				PrimaryMode: source,
+				PreviewBase64: base64.StdEncoding.EncodeToString(frame),
+				Checks: []cameraTestCheck{
+					cameraTestCheckItem("参数检查", "ok", "参数格式有效"),
+					cameraTestCheckItem("连续流主通道", "ok", modeLabel+" 已持续输出视频帧"),
+					cameraTestCheckItem("共享帧池", "ok", fmt.Sprintf("已收到 %d×%d 实时帧；预览和识别共用同一帧池", width, height)),
+					cameraTestCheckItem("HTTP抓图回退", "ok", "已保留为连续流断开时的备用通道"),
+				},
+			})
+			return
+		}
+		primaryErr = err
+	}
+
 	frame, width, height, detectedAuth, err := fetchNetworkCameraFrameWithAuth(r.Context(), camera)
 	elapsed := time.Since(started)
 	reportedAuth := ""
@@ -321,7 +352,13 @@ func (s *Server) cameraTest(w http.ResponseWriter, r *http.Request) {
 	}
 	if err != nil {
 		authRequired := detectedAuth == "basic" || detectedAuth == "digest" || camera.AuthMode == "basic" || camera.AuthMode == "digest"
-		writeJSON(w, http.StatusOK, cameraTestFailure(err, elapsed, authRequired, reportedAuth))
+		result := cameraTestFailure(err, elapsed, authRequired, reportedAuth)
+		if primaryErr != nil {
+			result.Checks = append([]cameraTestCheck{
+				cameraTestCheckItem("连续流主通道", "error", "连续流失败："+primaryErr.Error()),
+			}, result.Checks...)
+		}
+		writeJSON(w, http.StatusOK, result)
 		return
 	}
 
@@ -336,13 +373,15 @@ func (s *Server) cameraTest(w http.ResponseWriter, r *http.Request) {
 	case camera.AuthMode != "none":
 		authMessage = "认证通过（" + strings.ToUpper(camera.AuthMode) + "）"
 	}
-	writeJSON(w, http.StatusOK, cameraTestResult{
+
+	result := cameraTestResult{
 		OK: true,
 		Message: "网络摄像头连接成功，已成功读取实时图像",
 		ElapsedMS: elapsed.Milliseconds(),
 		Width: width,
 		Height: height,
 		DetectedAuth: reportedAuth,
+		PrimaryMode: "snapshot",
 		PreviewBase64: base64.StdEncoding.EncodeToString(frame),
 		Checks: []cameraTestCheck{
 			cameraTestCheckItem("参数检查", "ok", "参数格式有效"),
@@ -350,7 +389,19 @@ func (s *Server) cameraTest(w http.ResponseWriter, r *http.Request) {
 			cameraTestCheckItem("身份认证", "ok", authMessage),
 			cameraTestCheckItem("图像抓取", "ok", fmt.Sprintf("成功读取 %d×%d 图像", width, height)),
 		},
-	})
+	}
+	if primaryErr != nil {
+		result.FallbackUsed = true
+		result.PrimaryMode = "snapshot-fallback"
+		result.Message = "连续流当前不可用，但 HTTP Snapshot 回退成功；签到可继续使用，画面流畅度会降低"
+		result.Checks = append([]cameraTestCheck{
+			cameraTestCheckItem("连续流主通道", "error", "连续流失败："+primaryErr.Error()),
+		}, result.Checks...)
+		result.Checks = append(result.Checks,
+			cameraTestCheckItem("HTTP抓图回退", "ok", "已自动切换到 HTTP Snapshot；连续流恢复后会自动切回"),
+		)
+	}
+	writeJSON(w, http.StatusOK, result)
 }
 
 func (in cameraRequest) storeInput(password, agentSecretHash string) store.CameraInput {
@@ -524,7 +575,7 @@ func (s *Server) cameraAction(w http.ResponseWriter, r *http.Request) {
 func (s *Server) cameraSourceFrame(ctx context.Context, item store.Camera) ([]byte, int, int, int, error) {
 	switch item.Kind {
 	case "network":
-		frame, width, height, err := s.cachedNetworkCameraFrame(ctx, item)
+		frame, width, height, _, err := s.networkCameraFrame(ctx, item)
 		if err != nil {
 			return nil, 0, 0, http.StatusBadGateway, fmt.Errorf("读取网络摄像头失败: %w", err)
 		}
@@ -542,7 +593,7 @@ func (s *Server) cameraSourceFrame(ctx context.Context, item store.Camera) ([]by
 
 func (s *Server) cameraPreviewSourceFrame(ctx context.Context, item store.Camera) ([]byte, int, int, int, error) {
 	if item.Kind == "network" {
-		frame, width, height, err := s.cachedNetworkCameraFrame(ctx, item)
+		frame, width, height, _, err := s.networkCameraFrame(ctx, item)
 		if err != nil {
 			return nil, 0, 0, http.StatusBadGateway, fmt.Errorf("读取网络摄像头失败: %w", err)
 		}
@@ -552,6 +603,7 @@ func (s *Server) cameraPreviewSourceFrame(ctx context.Context, item store.Camera
 }
 
 func (s *Server) cameraStream(w http.ResponseWriter, r *http.Request, item store.Camera) {
+	_ = http.NewResponseController(w).SetWriteDeadline(time.Time{})
 	flusher, ok := w.(http.Flusher)
 	if !ok {
 		writeError(w, http.StatusInternalServerError, errors.New("当前HTTP服务不支持实时摄像头流"))

@@ -149,7 +149,7 @@ function cameraFormPayload() {
   return payload;
 }
 
-function resetCameraTestPanel(message = '填写摄像头参数后点击“测试连接”，系统会检查参数、网络、认证和图像抓取。') {
+function resetCameraTestPanel(message = '填写摄像头参数后点击“测试连接”，系统会优先检查 RTSP/MJPEG 连续流；连续流失败时再验证 HTTP Snapshot 回退。') {
   const headline = $('#cameraTestHeadline');
   if (headline) {
     headline.textContent = '尚未测试连接';
@@ -175,15 +175,26 @@ function renderCameraConnectionTest(result) {
   const summary = $('#cameraTestResult');
   const checks = $('#cameraTestChecks');
   if (headline) {
-    headline.textContent = result.ok ? '连接成功' : '连接失败';
-    headline.className = 'camera-test-headline ' + (result.ok ? 'success' : 'error');
+    if (result.ok && result.fallback_used) {
+      headline.textContent = '连接成功（抓图回退）';
+      headline.className = 'camera-test-headline warning';
+    } else if (result.ok && (result.primary_mode === 'rtsp' || result.primary_mode === 'mjpeg')) {
+      headline.textContent = '连续流连接成功';
+      headline.className = 'camera-test-headline success';
+    } else {
+      headline.textContent = result.ok ? '连接成功' : '连接失败';
+      headline.className = 'camera-test-headline ' + (result.ok ? 'success' : 'error');
+    }
   }
   if (summary) {
     const authSuffix = result.detected_auth
       ? ` · 自动检测认证：${result.detected_auth === 'none' ? '无需认证' : result.detected_auth.toUpperCase()}`
       : '';
+    const sourceSuffix = result.primary_mode
+      ? ` · 当前通道：${result.primary_mode === 'rtsp' ? 'RTSP连续流' : result.primary_mode === 'mjpeg' ? 'MJPEG连续流' : result.primary_mode === 'snapshot-fallback' ? 'HTTP抓图回退' : 'HTTP抓图'}`
+      : '';
     const suffix = result.elapsed_ms > 0 ? ` · ${result.elapsed_ms} ms` : '';
-    summary.textContent = (result.message || (result.ok ? '连接成功' : '连接失败')) + authSuffix + suffix;
+    summary.textContent = (result.message || (result.ok ? '连接成功' : '连接失败')) + authSuffix + sourceSuffix + suffix;
   }
   if (checks) {
     checks.innerHTML = (result.checks || []).map(check => `

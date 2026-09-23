@@ -724,3 +724,40 @@ func TestNetworkCameraPresetSimpleConfiguration(t *testing.T) {
 		t.Fatal("IP-only validation guidance missing")
 	}
 }
+
+
+func TestNetworkCameraUIExplainsContinuousStreamPrimaryAndSnapshotFallback(t *testing.T) {
+	htmlData, err := assets.ReadFile("assets/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	html := string(htmlData)
+	for _, want := range []string{
+		"RTSP 连续流 + HTTP 抓图回退（推荐）",
+		"MJPEG 连续流（主通道）",
+		"HTTP/HTTPS 单帧抓图（兼容模式）",
+		"人脸识别只按这里的帧率从共享帧池取样",
+		"HTTP Snapshot 仅在连续流异常时回退",
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("continuous camera UI missing %q", want)
+		}
+	}
+
+	jsData, err := assets.ReadFile("assets/js/cameras.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(jsData)
+	for _, want := range []string{
+		"result.fallback_used",
+		"result.primary_mode === 'rtsp'",
+		"连续流连接成功",
+		"连接成功（抓图回退）",
+		"当前通道：",
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("continuous camera diagnostics UI missing %q", want)
+		}
+	}
+}
