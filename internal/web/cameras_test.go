@@ -169,6 +169,95 @@ func TestNetworkCameraLiveStream(t *testing.T) {
 	}
 }
 
+
+func TestNetworkCameraContinuousPreviewAdvancesWithoutDuplicatePollingFrames(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "multipart/x-mixed-replace; boundary=frame")
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			t.Error("test server does not support flushing")
+			return
+		}
+		for i := 0; ; i++ {
+			img := image.NewRGBA(image.Rect(0, 0, 40+(i%20), 24))
+			var frame bytes.Buffer
+			if err := jpeg.Encode(&frame, img, &jpeg.Options{Quality: 80}); err != nil {
+				t.Error(err)
+				return
+			}
+			if _, err := fmt.Fprintf(w, "--frame\r\nContent-Type: image/jpeg\r\nContent-Length: %d\r\n\r\n", frame.Len()); err != nil {
+				return
+			}
+			if _, err := w.Write(frame.Bytes()); err != nil {
+				return
+			}
+			if _, err := w.Write([]byte("\r\n")); err != nil {
+				return
+			}
+			flusher.Flush()
+			select {
+			case <-r.Context().Done():
+				return
+			case <-time.After(35 * time.Millisecond):
+			}
+		}
+	}))
+	defer upstream.Close()
+
+	st, err := store.Open(filepath.Join(t.TempDir(), "camera-continuous-preview.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	camera, err := st.CreateCamera(context.Background(), store.CameraInput{
+		Name: "Continuous preview", Kind: "network", Protocol: "mjpeg",
+		StreamURL: upstream.URL, AuthMode: "none",
+		Width: 1280, Height: 720, FPS: 5, TimeoutMS: 1000,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	s := &Server{store: st, logger: slog.Default()}
+	defer s.stopAllNetworkCameraStreams()
+	server := httptest.NewServer(http.HandlerFunc(s.cameraAction))
+	defer server.Close()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("%s/api/cameras/%d/stream", server.URL, camera.ID), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp, err := server.Client().Do(req)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	_, params, err := mime.ParseMediaType(resp.Header.Get("Content-Type"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reader := multipart.NewReader(resp.Body, params["boundary"])
+	widths := make([]int, 0, 2)
+	for len(widths) < 2 {
+		part, err := reader.NextPart()
+		if err != nil {
+			t.Fatal(err)
+		}
+		img, _, err := image.Decode(part)
+		_ = part.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		widths = append(widths, img.Bounds().Dx())
+	}
+	if widths[0] == widths[1] {
+		t.Fatalf("continuous preview repeated the same pooled frame instead of waiting for a new one: widths=%v", widths)
+	}
+}
+
 func TestNetworkCameraPreviewReusesConfiguredFrameCache(t *testing.T) {
 	var upstreamCalls int
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
