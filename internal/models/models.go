@@ -120,29 +120,28 @@ func chooseTarget(candidates []string, specs []spec) (string, error) {
 		count int
 		order int
 	}
-	var writable []scored
+	ranked := make([]scored, 0, len(candidates))
 	for i, dir := range candidates {
-		if !canWriteDirectory(dir) {
-			continue
-		}
 		count := 0
 		for _, model := range specs {
 			if validModel(filepath.Join(dir, model.Name), model.SHA256) {
 				count++
 			}
 		}
-		writable = append(writable, scored{dir: dir, count: count, order: i})
+		ranked = append(ranked, scored{dir: dir, count: count, order: i})
 	}
-	if len(writable) == 0 {
-		return "", fmt.Errorf("no writable model directory is available; checked %s", strings.Join(candidates, ", "))
-	}
-	sort.SliceStable(writable, func(i, j int) bool {
-		if writable[i].count != writable[j].count {
-			return writable[i].count > writable[j].count
+	sort.SliceStable(ranked, func(i, j int) bool {
+		if ranked[i].count != ranked[j].count {
+			return ranked[i].count > ranked[j].count
 		}
-		return writable[i].order < writable[j].order
+		return ranked[i].order < ranked[j].order
 	})
-	return writable[0].dir, nil
+	for _, candidate := range ranked {
+		if canWriteDirectory(candidate.dir) {
+			return candidate.dir, nil
+		}
+	}
+	return "", fmt.Errorf("no writable model directory is available; checked %s", strings.Join(candidates, ", "))
 }
 
 func canWriteDirectory(dir string) bool {
