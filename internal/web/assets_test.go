@@ -537,7 +537,8 @@ func TestCameraSettingsSupportsPreSaveConnectionDiagnostics(t *testing.T) {
 		`id="testCameraConfig"`,
 		`id="cameraTestHeadline"`,
 		`id="cameraTestChecks"`,
-		"参数、网络、认证和图像抓取",
+		"优先检查 RTSP/MJPEG 连续流",
+		"HTTP Snapshot 回退",
 	} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("camera connection test UI missing %q", want)
