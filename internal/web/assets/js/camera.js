@@ -92,7 +92,7 @@ function localVideoConstraints(camera) {
 
 async function startCamera() {
   if (cameraOpen) {
-    if (activeCamera && activeCamera.kind !== 'local') {
+    if (activeCamera?.kind !== 'local') {
       switchCameraViews(true);
       startNetworkPreview();
     } else {
@@ -209,7 +209,7 @@ async function attachCameraViews() {
 }
 
 function cameraFrameDimensions(selector = '#camera') {
-  if (activeCamera?.kind !== 'local') {
+  if (activeCamera && activeCamera.kind !== 'local') {
     const image = selector === '#enrollCamera' ? $('#enrollCameraNetwork') : $('#cameraNetwork');
     return {
       width: image?.naturalWidth || Number(activeCamera.width || 1280),
