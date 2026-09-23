@@ -369,9 +369,11 @@ func TestRecognitionClientUsesFastLivenessCadence(t *testing.T) {
 		"performance.now() - startedAt < 2100",
 		"result.liveness_max_frames",
 		"face.liveness_timed_out",
-		"setTimeout(resolve, 120)",
+		"function recognitionFrameIntervalMS()",
+		"return 120;",
+		"setTimeout(resolve, recognitionFrameIntervalMS())",
 		"runAutoRecognitionLoop",
-		"setTimeout(runAutoRecognitionLoop, 120)",
+		"setTimeout(runAutoRecognitionLoop, recognitionFrameIntervalMS())",
 	} {
 		if !strings.Contains(script, want) {
 			t.Fatalf("fast liveness client flow missing %q", want)
