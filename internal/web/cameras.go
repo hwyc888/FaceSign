@@ -445,41 +445,130 @@ func (s *Server) cameraAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if len(parts) == 2 && parts[1] == "frame" && r.Method == http.MethodGet {
+	if len(parts) == 2 && (parts[1] == "frame" || parts[1] == "stream" || parts[1] == "recognize") {
 		item, err := s.store.CameraByID(r.Context(), id)
 		if err != nil {
 			writeCameraStoreError(w, err)
 			return
 		}
-		var frame []byte
-		var width, height int
-		switch item.Kind {
-		case "network":
-			frame, width, height, err = s.cachedNetworkCameraFrame(r.Context(), item)
-			if err != nil {
-				writeError(w, http.StatusBadGateway, fmt.Errorf("读取网络摄像头失败: %w", err))
+
+		switch parts[1] {
+		case "frame":
+			if r.Method != http.MethodGet {
+				methodNotAllowed(w)
 				return
 			}
-		case "agent":
-			frame, width, height, err = s.latestCameraAgentFrame(item.AgentID)
+			frame, width, height, status, err := s.cameraSourceFrame(r.Context(), item)
 			if err != nil {
-				writeError(w, http.StatusServiceUnavailable, err)
+				writeError(w, status, err)
 				return
 			}
-		default:
-			writeError(w, http.StatusBadRequest, errors.New("本机摄像头画面由浏览器直接读取"))
+			w.Header().Set("Content-Type", "image/jpeg")
+			w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
+			w.Header().Set("X-Camera-Width", strconv.Itoa(width))
+			w.Header().Set("X-Camera-Height", strconv.Itoa(height))
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write(frame)
+			return
+		case "stream":
+			if r.Method != http.MethodGet {
+				methodNotAllowed(w)
+				return
+			}
+			s.cameraStream(w, r, item)
+			return
+		case "recognize":
+			if r.Method != http.MethodPost {
+				methodNotAllowed(w)
+				return
+			}
+			frame, _, _, status, err := s.cameraSourceFrame(r.Context(), item)
+			if err != nil {
+				writeError(w, status, err)
+				return
+			}
+			img, _, err := image.Decode(bytes.NewReader(frame))
+			if err != nil {
+				writeError(w, http.StatusBadGateway, fmt.Errorf("摄像头帧解码失败: %w", err))
+				return
+			}
+			s.recognizeImage(w, r, img)
 			return
 		}
-		w.Header().Set("Content-Type", "image/jpeg")
-		w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
-		w.Header().Set("X-Camera-Width", strconv.Itoa(width))
-		w.Header().Set("X-Camera-Height", strconv.Itoa(height))
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write(frame)
-		return
 	}
 
 	methodNotAllowed(w)
+}
+
+func (s *Server) cameraSourceFrame(ctx context.Context, item store.Camera) ([]byte, int, int, int, error) {
+	switch item.Kind {
+	case "network":
+		frame, width, height, err := s.cachedNetworkCameraFrame(ctx, item)
+		if err != nil {
+			return nil, 0, 0, http.StatusBadGateway, fmt.Errorf("读取网络摄像头失败: %w", err)
+		}
+		return frame, width, height, http.StatusOK, nil
+	case "agent":
+		frame, width, height, err := s.latestCameraAgentFrame(item.AgentID)
+		if err != nil {
+			return nil, 0, 0, http.StatusServiceUnavailable, err
+		}
+		return frame, width, height, http.StatusOK, nil
+	default:
+		return nil, 0, 0, http.StatusBadRequest, errors.New("本机摄像头画面由浏览器直接读取")
+	}
+}
+
+func (s *Server) cameraStream(w http.ResponseWriter, r *http.Request, item store.Camera) {
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeError(w, http.StatusInternalServerError, errors.New("当前HTTP服务不支持实时摄像头流"))
+		return
+	}
+
+	frame, width, height, status, err := s.cameraSourceFrame(r.Context(), item)
+	if err != nil {
+		writeError(w, status, err)
+		return
+	}
+
+	const boundary = "facesign-frame"
+	w.Header().Set("Content-Type", "multipart/x-mixed-replace; boundary="+boundary)
+	w.Header().Set("Cache-Control", "no-store, no-cache, must-revalidate")
+	w.Header().Set("Pragma", "no-cache")
+	w.Header().Set("X-Accel-Buffering", "no")
+	w.WriteHeader(http.StatusOK)
+
+	interval := networkCameraFrameInterval(item)
+	for {
+		if _, err := fmt.Fprintf(w,
+			"--%s\r\nContent-Type: image/jpeg\r\nContent-Length: %d\r\nX-Camera-Width: %d\r\nX-Camera-Height: %d\r\n\r\n",
+			boundary, len(frame), width, height,
+		); err != nil {
+			return
+		}
+		if _, err := w.Write(frame); err != nil {
+			return
+		}
+		if _, err := w.Write([]byte("\r\n")); err != nil {
+			return
+		}
+		flusher.Flush()
+
+		timer := time.NewTimer(interval)
+		select {
+		case <-r.Context().Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
+
+		frame, width, height, _, err = s.cameraSourceFrame(r.Context(), item)
+		if err != nil {
+			s.logger.Warn("camera stream stopped", "camera_id", item.ID, "camera", item.Name, "error", err)
+			return
+		}
+	}
 }
 
 func writeCameraStoreError(w http.ResponseWriter, err error) {
