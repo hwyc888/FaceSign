@@ -237,7 +237,7 @@ func TestNetworkCameraPreviewAutoReconnects(t *testing.T) {
 	for _, want := range []string{
 		"networkPreviewRetryTimer",
 		"networkPreviewGeneration",
-		"target.onerror",
+		"image.onerror",
 		"setTimeout(() =>",
 		"/stream?t=",
 	} {
