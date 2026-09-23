@@ -92,7 +92,7 @@ function localVideoConstraints(camera) {
 
 async function startCamera() {
   if (cameraOpen) {
-    if (activeCamera?.kind !== 'local') {
+    if (activeCamera && activeCamera.kind !== 'local') {
       switchCameraViews(true);
       startNetworkPreview();
     } else {

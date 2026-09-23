@@ -603,6 +603,22 @@ func TestNetworkCameraUsesLiveStreamAndDirectRecognition(t *testing.T) {
 }
 
 
+func TestCameraFrameDimensionsHandlesClosedCamera(t *testing.T) {
+	cameraData, err := assets.ReadFile("assets/js/camera.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cameraScript := string(cameraData)
+	constGuard := "if (activeCamera && activeCamera.kind !== 'local') {\n    const image = selector === '#enrollCamera'"
+	if !strings.Contains(cameraScript, constGuard) {
+		t.Fatal("cameraFrameDimensions must guard activeCamera before reading network camera dimensions")
+	}
+	unsafeGuard := "if (activeCamera?.kind !== 'local') {\n    const image = selector === '#enrollCamera'"
+	if strings.Contains(cameraScript, unsafeGuard) {
+		t.Fatal("null camera still enters the network dimension branch")
+	}
+}
+
 func TestNetworkCameraPresetSimpleConfiguration(t *testing.T) {
 	htmlData, err := assets.ReadFile("assets/index.html")
 	if err != nil {
