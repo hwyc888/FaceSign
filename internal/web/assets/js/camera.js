@@ -108,6 +108,7 @@ async function startCamera() {
 
     if (activeCamera.kind !== 'local') {
       stream = null;
+      await fetchCameraFrameBlob(activeCamera.id);
       cameraOpen = true;
       switchCameraViews(true);
       startNetworkPreview();
