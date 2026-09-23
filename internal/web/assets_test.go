@@ -598,7 +598,7 @@ func TestCameraAuthenticationAutoDetectUI(t *testing.T) {
 }
 
 
-func TestNetworkCameraUsesLiveStreamAndDirectRecognition(t *testing.T) {
+func TestNetworkCameraUsesWebRTCH264WithMJPEGFallbackAndDirectRecognition(t *testing.T) {
 	cameraData, err := assets.ReadFile("assets/js/camera.js")
 	if err != nil {
 		t.Fatal(err)
@@ -606,14 +606,19 @@ func TestNetworkCameraUsesLiveStreamAndDirectRecognition(t *testing.T) {
 	cameraScript := string(cameraData)
 	for _, want := range []string{
 		"function activeNetworkCameraImage()",
-		"function startNetworkPreview()",
+		"function activeNetworkCameraVideo()",
+		"function startWebRTCH264Preview(",
+		"function startMJPEGPreviewFallback(",
 		"function stopNetworkPreview()",
+		"new RTCPeerConnection()",
+		"addTransceiver('video', {direction: 'recvonly'})",
+		"/api/cameras/${activeCamera.id}/webrtc",
 		"/api/cameras/${activeCamera.id}/stream",
-		"target.src =",
-		"target.onerror",
+		"peer.setRemoteDescription(answer)",
+		"WebRTC H.264 preview unavailable; using MJPEG fallback",
 	} {
 		if !strings.Contains(cameraScript, want) {
-			t.Fatalf("network live preview missing %q", want)
+			t.Fatalf("network WebRTC preview missing %q", want)
 		}
 	}
 	for _, obsolete := range []string{
@@ -624,6 +629,23 @@ func TestNetworkCameraUsesLiveStreamAndDirectRecognition(t *testing.T) {
 	} {
 		if strings.Contains(cameraScript, obsolete) {
 			t.Fatalf("obsolete network preview polling remains: %q", obsolete)
+		}
+	}
+
+	htmlData, err := assets.ReadFile("assets/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	html := string(htmlData)
+	for _, want := range []string{
+		`id="cameraNetworkWebRTC"`,
+		`id="enrollCameraNetworkWebRTC"`,
+		"WebRTC/H.264 实时预览",
+		"浏览器硬件解码",
+		"自动回退 MJPEG",
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("network WebRTC preview UI missing %q", want)
 		}
 	}
 
@@ -644,7 +666,6 @@ func TestNetworkCameraUsesLiveStreamAndDirectRecognition(t *testing.T) {
 		}
 	}
 }
-
 
 func TestCameraFrameDimensionsHandlesClosedCamera(t *testing.T) {
 	cameraData, err := assets.ReadFile("assets/js/camera.js")
@@ -737,9 +758,11 @@ func TestNetworkCameraUIExplainsContinuousStreamPrimaryAndSnapshotFallback(t *te
 		"RTSP 连续流 + HTTP 抓图回退（推荐）",
 		"MJPEG 连续流（主通道）",
 		"HTTP/HTTPS 单帧抓图（兼容模式）",
-		"预览按连续流新帧实时显示",
-		"人脸识别建议 3–5 FPS",
-		"HTTP Snapshot 仅在连续流异常时回退",
+		"WebRTC/H.264 实时预览",
+		"浏览器硬件解码",
+		"自动回退 MJPEG",
+		"人脸识别仍建议 3–5 FPS",
+		"HTTP Snapshot 仅作最终兼容回退",
 	} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("continuous camera UI missing %q", want)
