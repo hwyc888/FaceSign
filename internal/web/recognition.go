@@ -132,6 +132,7 @@ func (s *Server) recognizeImage(w http.ResponseWriter, r *http.Request, img imag
 	qualities := make([]faceQualityResult, len(detections))
 	detectionTrackIDs := make([]string, len(detections))
 	needsFeature := make([]bool, len(detections))
+	featureEvaluated := make([]bool, len(detections))
 	candidates := make([]matchCandidate, 0, len(detections)*2)
 
 	for i, detected := range detections {
@@ -215,6 +216,7 @@ func (s *Server) recognizeImage(w http.ResponseWriter, r *http.Request, img imag
 				s.logger.Warn("best-frame feature extraction failed", "track_id", detectionTrackIDs[i], "error", err)
 				continue
 			}
+			featureEvaluated[i] = true
 			for _, sample := range decoded {
 				score := face.Similarity(feature, sample.Feature)
 				if score >= s.matchThreshold {
@@ -262,6 +264,9 @@ func (s *Server) recognizeImage(w http.ResponseWriter, r *http.Request, img imag
 			}
 		} else {
 			s.personTracker.RecordFeature(sessionID, detectionTrackIDs[i], qualities[i].Score, nil, 0, now)
+			if featureEvaluated[i] {
+				results[i].Status = "未录入"
+			}
 			if _, _, best := s.personTracker.Identity(sessionID, detectionTrackIDs[i]); best > 0 {
 				results[i].BestQuality = best
 			}
