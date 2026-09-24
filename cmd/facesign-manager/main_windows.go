@@ -699,14 +699,14 @@ func launchUpgradeHelper(packageDir string) error {
 			"Write-Host '等待管理工具退出后开始升级...'; Wait-Process -Id %d -ErrorAction SilentlyContinue; "+
 			"try { & %s -InstallDir %s -OpenBrowser:$false; "+
 			"Write-Host ''; Write-Host 'FaceSign 升级完成，正在重新打开管理工具...'; "+
-			"Start-Process -FilePath %s -ArgumentList @('--install-dir',%s); Start-Sleep -Seconds 2 } "+
+			"$managerArgs='--install-dir \"' + %s + '\"'; Start-Process -FilePath %s -ArgumentList $managerArgs; Start-Sleep -Seconds 2 } "+
 			"catch { Write-Host ''; Write-Host ('FaceSign 升级失败：' + $_.Exception.Message) -ForegroundColor Red; "+
 			"Write-Host ''; Write-Host '按回车键关闭此窗口。'; [void][Console]::ReadLine(); exit 1 }",
 		os.Getpid(),
 		powerShellLiteral(upgradeScript),
 		powerShellLiteral(installDirFlag),
-		powerShellLiteral(managerPath),
 		powerShellLiteral(installDirFlag),
+		powerShellLiteral(managerPath),
 	)
 	cmd := exec.Command("powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command)
 	cmd.Dir = packageDir
