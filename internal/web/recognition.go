@@ -315,6 +315,7 @@ func (s *Server) recognizeImage(w http.ResponseWriter, r *http.Request, img imag
 	timeoutCount := 0
 	spoofCount := 0
 	matchedCount := 0
+	verifiedStudentIDs := make([]int64, 0, len(decisions))
 	for i, decision := range decisions {
 		detectionIndex := observationDetectionIndexes[i]
 		result := &results[detectionIndex]
@@ -334,6 +335,9 @@ func (s *Server) recognizeImage(w http.ResponseWriter, r *http.Request, img imag
 			result.Recognized = true
 			result.Status = "签到通过"
 			verifiedCount++
+			if result.Student != nil {
+				verifiedStudentIDs = append(verifiedStudentIDs, result.Student.ID)
+			}
 			if decision.NeedsAttendance {
 				record, created, err := s.store.MarkAttendance(r.Context(), *result.Student, result.Similarity, now)
 				if err != nil {
@@ -361,11 +365,21 @@ func (s *Server) recognizeImage(w http.ResponseWriter, r *http.Request, img imag
 	}
 
 	unregisteredCount := 0
+	unregisteredTrackIDs := make([]string, 0, len(results))
 	for _, result := range results {
 		if !result.Matched && result.QualityScore >= minRecognitionFaceQuality {
 			unregisteredCount++
+			if result.TrackID != "" {
+				unregisteredTrackIDs = append(unregisteredTrackIDs, result.TrackID)
+			}
 		}
 	}
+
+	cumulativeStats, statsErr := s.store.RecordRecognitionStats(r.Context(), verifiedStudentIDs, unregisteredTrackIDs)
+	if statsErr != nil {
+		s.logger.Warn("record recognition stats failed", "error", statsErr)
+	}
+
 	waitingFaceCount := 0
 	for _, item := range personResults {
 		if !item.FaceVisible || item.FaceQuality < minRecognitionFaceQuality {
@@ -394,6 +408,10 @@ func (s *Server) recognizeImage(w http.ResponseWriter, r *http.Request, img imag
 		"liveness_min_frames":     livenessMinFrames,
 		"liveness_max_frames":     livenessMaxFrames,
 		"liveness_timeout_ms":     livenessDecisionTimeout.Milliseconds(),
+	}
+	if statsErr == nil {
+		response["verified_total"] = cumulativeStats.Verified
+		response["unregistered_total"] = cumulativeStats.Unregistered
 	}
 
 	if len(results) == 1 {
