@@ -22,9 +22,14 @@ async function loadAppSettings(force = false) {
 
 async function enterCheckinPageAutoStart() {
   await loadAppSettings();
-  if (!appSettingsCache.auto_start_checkin) return;
   try {
-    await setAutoRecognitionEnabled(true);
+    if (appSettingsCache.auto_start_checkin) {
+      await setAutoRecognitionEnabled(true);
+      return;
+    }
+    if (cameraOpen) {
+      await startCamera();
+    }
   } catch {
     // Camera startup already reports its own HTTPS/device error.
   }
