@@ -88,9 +88,8 @@ func cropImage(img image.Image, rect image.Rectangle) image.Image {
 	if rect.Empty() {
 		return nil
 	}
-	if sub, ok := img.(interface{ SubImage(image.Rectangle) image.Image }); ok {
-		return sub.SubImage(rect)
-	}
+	// Always normalize the ROI origin to (0,0). Face detections are then
+	// translated back to the full main-stream frame exactly once.
 	out := image.NewRGBA(image.Rect(0, 0, rect.Dx(), rect.Dy()))
 	draw.Draw(out, out.Bounds(), img, rect.Min, draw.Src)
 	return out
