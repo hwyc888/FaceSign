@@ -316,7 +316,6 @@ func (s *Server) cameraTest(w http.ResponseWriter, r *http.Request) {
 
 	camera := cameraFromNormalizedInput(normalized)
 	started := time.Now()
-	diagnosticChecks := cameraWebRTCDiagnosticChecks(r.Context(), camera)
 	var primaryErr error
 	if mode := networkCameraContinuousMode(camera); mode != "" {
 		frame, width, height, source, err := s.probeNetworkCameraPrimaryFrame(r.Context(), camera)
@@ -333,13 +332,12 @@ func (s *Server) cameraTest(w http.ResponseWriter, r *http.Request) {
 				Height: height,
 				PrimaryMode: source,
 				PreviewBase64: base64.StdEncoding.EncodeToString(frame),
-				Checks: append([]cameraTestCheck{
+				Checks: []cameraTestCheck{
 					cameraTestCheckItem("参数检查", "ok", "参数格式有效"),
 					cameraTestCheckItem("连续流主通道", "ok", modeLabel+" 已持续输出视频帧"),
 					cameraTestCheckItem("共享帧池", "ok", fmt.Sprintf("已收到 %d×%d 实时帧；预览和识别共用同一帧池", width, height)),
-				}, append(diagnosticChecks,
 					cameraTestCheckItem("HTTP抓图回退", "ok", "已保留为连续流断开时的备用通道"),
-				)...),
+				},
 			})
 			return
 		}
@@ -360,7 +358,6 @@ func (s *Server) cameraTest(w http.ResponseWriter, r *http.Request) {
 				cameraTestCheckItem("连续流主通道", "error", "连续流失败："+primaryErr.Error()),
 			}, result.Checks...)
 		}
-		result.Checks = append(result.Checks, diagnosticChecks...)
 		writeJSON(w, http.StatusOK, result)
 		return
 	}
@@ -393,7 +390,6 @@ func (s *Server) cameraTest(w http.ResponseWriter, r *http.Request) {
 			cameraTestCheckItem("图像抓取", "ok", fmt.Sprintf("成功读取 %d×%d 图像", width, height)),
 		},
 	}
-	result.Checks = append(result.Checks, diagnosticChecks...)
 	if primaryErr != nil {
 		result.FallbackUsed = true
 		result.PrimaryMode = "snapshot-fallback"
