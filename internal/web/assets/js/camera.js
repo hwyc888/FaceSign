@@ -290,7 +290,11 @@ async function startCamera() {
 
     if (activeCamera.kind !== 'local') {
       stream = null;
-      await fetchCameraFrameBlob(activeCamera.id);
+      const isRTSPNetwork = activeCamera.kind === 'network' &&
+        String(activeCamera.protocol || '').toLowerCase() === 'rtsp';
+      if (!isRTSPNetwork) {
+        await fetchCameraFrameBlob(activeCamera.id);
+      }
       cameraOpen = true;
       switchCameraViews(true);
       startNetworkPreview();
