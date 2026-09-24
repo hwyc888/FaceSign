@@ -80,7 +80,7 @@ function Get-TaskArgumentValue {
     [string]$Name
   )
   if ([string]::IsNullOrWhiteSpace($Arguments)) { return $null }
-  $pattern = '(?:^|\\s)--' + [regex]::Escape($Name) + '\\s+(?:"([^"]*)"|(\\S+))'
+  $pattern = '(?:^|\s)--' + [regex]::Escape($Name) + '\s+(?:"([^"]*)"|(\S+))'
   $match = [regex]::Match($Arguments, $pattern)
   if (-not $match.Success) { return $null }
   if ($match.Groups[1].Success) { return $match.Groups[1].Value }
