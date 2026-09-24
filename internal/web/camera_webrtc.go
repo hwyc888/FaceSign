@@ -220,7 +220,7 @@ func streamRTSPH264ToWebRTC(ctx context.Context, camera store.Camera, track *web
 		"-flags", "low_delay",
 		"-max_delay", "500000",
 		"-rtsp_transport", source.Transport,
-		"-rw_timeout", strconv.FormatInt(timeout.Microseconds(), 10),
+		"-timeout", strconv.FormatInt(timeout.Microseconds(), 10),
 		"-i", source.URL,
 		"-map", "0:v:0",
 		"-an",
