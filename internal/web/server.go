@@ -43,8 +43,6 @@ type Server struct {
 	networkCameraStreamMu        sync.Mutex
 	networkCameraStreams         map[int64]*networkCameraStream
 	networkCameraPreviewStreams  map[int64]*networkCameraStream
-	cameraPreviewHubMu            sync.Mutex
-	cameraPreviewHubs             map[string]*cameraPreviewHub
 }
 
 func New(logger *slog.Logger, st *store.Store, engine *face.Engine, live *liveness.Engine, personEngine *person.Engine, matchThreshold, detectionThreshold float64, version string) (*Server, error) {
@@ -75,7 +73,6 @@ func New(logger *slog.Logger, st *store.Store, engine *face.Engine, live *livene
 		networkCameraFrames:         make(map[int64]*networkCameraFrameCache),
 		networkCameraStreams:        make(map[int64]*networkCameraStream),
 		networkCameraPreviewStreams: make(map[int64]*networkCameraStream),
-		cameraPreviewHubs:             make(map[string]*cameraPreviewHub),
 	}
 	if err := server.reloadFaceCache(context.Background()); err != nil {
 		return nil, fmt.Errorf("预加载人脸特征缓存失败: %w", err)
