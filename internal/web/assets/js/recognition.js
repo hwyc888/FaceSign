@@ -1,4 +1,14 @@
+function updateRecognitionCounts(r = {}) {
+  const verified = Math.max(0, Number(r.verified_count ?? r.recognized_count ?? 0) || 0);
+  const unregistered = Math.max(0, Number(r.unregistered_count ?? 0) || 0);
+  const verifiedEl = $('#recognitionVerifiedCount');
+  const unregisteredEl = $('#recognitionUnregisteredCount');
+  if (verifiedEl) verifiedEl.textContent = String(verified);
+  if (unregisteredEl) unregisteredEl.textContent = String(unregistered);
+}
+
 function renderRecognition(r) {
+  updateRecognitionCounts(r);
   const faces = Array.isArray(r.faces) ? r.faces : [];
   const persons = Array.isArray(r.persons) ? r.persons : [];
   const el = $('#result');
@@ -153,6 +163,7 @@ async function recognizeFrame(options = {}) {
     }
     return r;
   } catch (e) {
+    updateRecognitionCounts({});
     drawFaceOverlay([], []);
     if (!autoTimer && !options.silent) toast(e.message);
     return null;
