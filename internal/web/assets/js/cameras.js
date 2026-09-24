@@ -357,9 +357,9 @@ function renderCameraRows() {
   `).join('');
 
   $$('[data-camera-default]').forEach(button => button.onclick = () => setDefaultCamera(Number(button.dataset.cameraDefault)));
-  $('[data-camera-test]').forEach(button => button.onclick = () => testCamera(Number(button.dataset.cameraTest)));
-  $('[data-camera-optimize-h264]').forEach(button => button.onclick = () => optimizeHikvisionCamera(Number(button.dataset.cameraOptimizeH264)));
-  $('[data-camera-edit]').forEach(button => button.onclick = () => editCamera(Number(button.dataset.cameraEdit)));
+  document.querySelectorAll('[data-camera-test]').forEach(button => button.onclick = () => testCamera(Number(button.dataset.cameraTest)));
+  document.querySelectorAll('[data-camera-optimize-h264]').forEach(button => button.onclick = () => optimizeHikvisionCamera(Number(button.dataset.cameraOptimizeH264)));
+  document.querySelectorAll('[data-camera-edit]').forEach(button => button.onclick = () => editCamera(Number(button.dataset.cameraEdit)));
   $$('[data-camera-delete]').forEach(button => button.onclick = () => deleteCamera(Number(button.dataset.cameraDelete)));
 }
 

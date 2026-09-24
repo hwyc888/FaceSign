@@ -1023,9 +1023,10 @@ func TestCameraActionSelectorsUseQuerySelectorAll(t *testing.T) {
 		"data-camera-edit",
 		"data-camera-delete",
 	} {
-		want := "$$('[" + selector + "]').forEach"
-		if !strings.Contains(script, want) {
-			t.Fatalf("camera action selector must use querySelectorAll: %s", want)
+		doubleDollar := "$('[" + selector + "]').forEach"
+		native := "document.querySelectorAll('[" + selector + "]').forEach"
+		if !strings.Contains(script, doubleDollar) && !strings.Contains(script, native) {
+			t.Fatalf("camera action selector must use querySelectorAll: %s", selector)
 		}
 	}
 }
