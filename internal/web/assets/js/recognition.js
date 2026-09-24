@@ -1,10 +1,28 @@
+function renderRecognitionStats(stats = {}) {
+  const verified = Math.max(0, Number(stats.verified ?? 0) || 0);
+  const unregistered = Math.max(0, Number(stats.unregistered ?? 0) || 0);
+  ['#recognitionVerifiedCount', '#recognitionStatsVerifiedSetting'].forEach(selector => {
+    const el = $(selector);
+    if (el) el.textContent = String(verified);
+  });
+  ['#recognitionUnregisteredCount', '#recognitionStatsUnregisteredSetting'].forEach(selector => {
+    const el = $(selector);
+    if (el) el.textContent = String(unregistered);
+  });
+}
+
 function updateRecognitionCounts(r = {}) {
-  const verified = Math.max(0, Number(r.verified_count ?? r.recognized_count ?? 0) || 0);
-  const unregistered = Math.max(0, Number(r.unregistered_count ?? 0) || 0);
-  const verifiedEl = $('#recognitionVerifiedCount');
-  const unregisteredEl = $('#recognitionUnregisteredCount');
-  if (verifiedEl) verifiedEl.textContent = String(verified);
-  if (unregisteredEl) unregisteredEl.textContent = String(unregistered);
+  if (r.verified_total == null && r.unregistered_total == null) return;
+  renderRecognitionStats({
+    verified: r.verified_total ?? 0,
+    unregistered: r.unregistered_total ?? 0
+  });
+}
+
+async function loadRecognitionStats() {
+  const stats = await api('/api/recognition-stats');
+  renderRecognitionStats(stats);
+  return stats;
 }
 
 function renderRecognition(r) {
@@ -163,7 +181,6 @@ async function recognizeFrame(options = {}) {
     }
     return r;
   } catch (e) {
-    updateRecognitionCounts({});
     drawFaceOverlay([], []);
     if (!autoTimer && !options.silent) toast(e.message);
     return null;
