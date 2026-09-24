@@ -57,6 +57,7 @@ const (
 	idOpenDir        = 1008
 	idRefresh        = 1009
 	idExit           = 1010
+	idUpgrade        = 1011
 )
 
 var (
@@ -294,6 +295,8 @@ func windowProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 			}
 		case idRefresh:
 			beginAsyncUIAction("刷新状态", nil)
+		case idUpgrade:
+			handleUpgrade(syscall.Handle(hwnd))
 		case idExit:
 			procDestroyWindow.Call(hwnd)
 		}
@@ -331,6 +334,7 @@ func createControls(hwnd syscall.Handle) {
 		{idOpenWeb, "打开管理网页", 356, 356, 150},
 		{idOpenLog, "查看启动日志", 522, 356, 150},
 		{idOpenDir, "打开安装目录", 24, 402, 150},
+		{idUpgrade, "升级 FaceSign", 190, 402, 150},
 		{idExit, "关闭管理工具", 522, 402, 150},
 	}
 	for _, b := range buttons {
@@ -363,7 +367,7 @@ func createControl(class, text string, style uintptr, x, y, w, h int, parent sys
 
 func isAsyncActionButton(id int) bool {
 	switch id {
-	case idStart, idStop, idRestart, idEnableStartup, idDisableStartup, idRefresh:
+	case idStart, idStop, idRestart, idEnableStartup, idDisableStartup, idRefresh, idUpgrade:
 		return true
 	default:
 		return false
@@ -594,6 +598,137 @@ func disableStartup() error {
 		return fmt.Errorf("关闭开机启动失败: %w", err)
 	}
 	return nil
+}
+
+
+func handleUpgrade(hwnd syscall.Handle) {
+	packageDir, err := chooseUpgradePackage()
+	if err != nil {
+		showError(err)
+		return
+	}
+	if packageDir == "" {
+		return
+	}
+	packageDir = normalizeUpgradePackageDir(packageDir)
+	if err := validateUpgradePackage(packageDir); err != nil {
+		showError(err)
+		return
+	}
+
+	message := "将使用这个新版本目录升级 FaceSign：\r\n\r\n" + packageDir +
+		"\r\n\r\n升级时管理工具会自动关闭，升级完成后自动重新打开。" +
+		"\r\n数据库、人脸数据、证书、端口和开机启动状态都会保留。\r\n\r\n是否继续？"
+	if !confirmBox(mainWindow, message, "升级 FaceSign") {
+		return
+	}
+	if err := launchUpgradeHelper(packageDir); err != nil {
+		showError(err)
+		return
+	}
+
+	setStatusText("升级程序已启动。\r\n\r\n管理工具即将关闭；升级完成后会自动重新打开。")
+	procDestroyWindow.Call(uintptr(hwnd))
+}
+
+func chooseUpgradePackage() (string, error) {
+	script := fmt.Sprintf(
+		"[Console]::OutputEncoding=[Text.Encoding]::UTF8; $s=New-Object -ComObject Shell.Application; $f=$s.BrowseForFolder(%d,'请选择解压后的 FaceSign 新版本目录',0x41,0); if($null -ne $f){$f.Self.Path}",
+		uintptr(mainWindow),
+	)
+	cmd := exec.Command("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script)
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		message := strings.TrimSpace(string(out))
+		if message == "" {
+			message = err.Error()
+		}
+		return "", fmt.Errorf("打开升级目录选择窗口失败: %s", message)
+	}
+	return strings.TrimSpace(string(out)), nil
+}
+
+func normalizeUpgradePackageDir(path string) string {
+	clean := filepath.Clean(strings.TrimSpace(path))
+	if strings.EqualFold(filepath.Base(clean), "scripts") {
+		if _, err := os.Stat(filepath.Join(clean, "upgrade.ps1")); err == nil {
+			parent := filepath.Dir(clean)
+			if _, err := os.Stat(filepath.Join(parent, "FaceSign.exe")); err == nil {
+				return parent
+			}
+		}
+	}
+	return clean
+}
+
+func validateUpgradePackage(packageDir string) error {
+	if packageDir == "" || packageDir == "." {
+		return errors.New("没有选择有效的新版本目录")
+	}
+	packageAbs, err := filepath.Abs(packageDir)
+	if err != nil {
+		return err
+	}
+	installAbs, err := filepath.Abs(installDirFlag)
+	if err == nil && strings.EqualFold(filepath.Clean(packageAbs), filepath.Clean(installAbs)) {
+		return errors.New("请选择新下载并解压的 FaceSign 发布目录，不能选择当前安装目录")
+	}
+
+	required := []string{
+		"FaceSign.exe",
+		"FaceSignManager.exe",
+		"onnxruntime.dll",
+		filepath.Join("scripts", "install.ps1"),
+		filepath.Join("scripts", "upgrade.ps1"),
+	}
+	for _, relative := range required {
+		path := filepath.Join(packageDir, relative)
+		if info, err := os.Stat(path); err != nil || info.IsDir() {
+			return fmt.Errorf("所选目录不是完整的 FaceSign 新版本包，缺少：%s", relative)
+		}
+	}
+	return nil
+}
+
+func launchUpgradeHelper(packageDir string) error {
+	upgradeScript := filepath.Join(packageDir, "scripts", "upgrade.ps1")
+	managerPath := filepath.Join(installDirFlag, "FaceSignManager.exe")
+	command := fmt.Sprintf(
+		"$ErrorActionPreference='Stop'; $Host.UI.RawUI.WindowTitle='FaceSign 升级'; "+
+			"Write-Host '等待管理工具退出后开始升级...'; Wait-Process -Id %d -ErrorAction SilentlyContinue; "+
+			"try { & %s -InstallDir %s -OpenBrowser:$false; "+
+			"Write-Host ''; Write-Host 'FaceSign 升级完成，正在重新打开管理工具...'; "+
+			"Start-Process -FilePath %s -ArgumentList @('--install-dir',%s); Start-Sleep -Seconds 2 } "+
+			"catch { Write-Host ''; Write-Host ('FaceSign 升级失败：' + $_.Exception.Message) -ForegroundColor Red; "+
+			"Write-Host ''; Write-Host '按回车键关闭此窗口。'; [void][Console]::ReadLine(); exit 1 }",
+		os.Getpid(),
+		powerShellLiteral(upgradeScript),
+		powerShellLiteral(installDirFlag),
+		powerShellLiteral(managerPath),
+		powerShellLiteral(installDirFlag),
+	)
+	cmd := exec.Command("powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", command)
+	cmd.Dir = packageDir
+	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: 0x00000010}
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("无法启动升级程序: %w", err)
+	}
+	return nil
+}
+
+func powerShellLiteral(value string) string {
+	return "'" + strings.ReplaceAll(value, "'", "''") + "'"
+}
+
+func confirmBox(parent syscall.Handle, text, title string) bool {
+	r, _, _ := procMessageBoxW.Call(
+		uintptr(parent),
+		uintptr(unsafe.Pointer(utf16(text))),
+		uintptr(unsafe.Pointer(utf16(title))),
+		0x00000004|0x00000020,
+	)
+	return r == 6
 }
 
 func openWeb() error {

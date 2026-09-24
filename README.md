@@ -52,6 +52,7 @@ The Windows package includes `FaceSignManager.exe`. During installation it is co
 The manager automatically requests administrator rights because the installed FaceSign task runs as `SYSTEM`. It provides:
 
 - Start, stop and restart FaceSign.
+- **Upgrade FaceSign** directly from the management window: choose the newly extracted release directory, confirm once, and the manager closes itself, runs `scripts\\upgrade.ps1`, then reopens after the in-place upgrade finishes. The database, face data, TLS identity, service arguments and startup state are preserved.
 - Stop the scheduled task first, then terminate any remaining `FaceSign.exe` process, so Task Manager "Access denied" is no longer required for normal shutdown.
 - Enable or disable startup without deleting the task.
 - Open the FaceSign management webpage.

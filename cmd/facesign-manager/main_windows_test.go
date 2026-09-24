@@ -3,6 +3,8 @@
 package main
 
 import (
+	"os"
+	"path/filepath"
 	"testing"
 	"time"
 )
@@ -57,5 +59,61 @@ func TestLaunchAsyncDoesNotBlockCaller(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("background action did not complete")
+	}
+}
+
+func TestNormalizeUpgradePackageDirAcceptsScriptsFolder(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "FaceSign.exe"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	scripts := filepath.Join(root, "scripts")
+	if err := os.MkdirAll(scripts, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(scripts, "upgrade.ps1"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if got := normalizeUpgradePackageDir(scripts); got != root {
+		t.Fatalf("normalizeUpgradePackageDir()=%q want %q", got, root)
+	}
+}
+
+func TestValidateUpgradePackage(t *testing.T) {
+	root := t.TempDir()
+	for _, relative := range []string{
+		"FaceSign.exe",
+		"FaceSignManager.exe",
+		"onnxruntime.dll",
+		filepath.Join("scripts", "install.ps1"),
+		filepath.Join("scripts", "upgrade.ps1"),
+	} {
+		path := filepath.Join(root, relative)
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(path, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	oldInstallDir := installDirFlag
+	installDirFlag = filepath.Join(root, "installed")
+	defer func() { installDirFlag = oldInstallDir }()
+
+	if err := validateUpgradePackage(root); err != nil {
+		t.Fatalf("valid package rejected: %v", err)
+	}
+	if err := os.Remove(filepath.Join(root, "scripts", "upgrade.ps1")); err != nil {
+		t.Fatal(err)
+	}
+	if err := validateUpgradePackage(root); err == nil {
+		t.Fatal("package without upgrade.ps1 was accepted")
+	}
+}
+
+func TestPowerShellLiteralEscapesApostrophe(t *testing.T) {
+	if got, want := powerShellLiteral("C:\\Teacher's\\FaceSign"), "'C:\\Teacher''s\\FaceSign'"; got != want {
+		t.Fatalf("powerShellLiteral()=%q want %q", got, want)
 	}
 }
