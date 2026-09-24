@@ -1,4 +1,5 @@
 loadCameraConfigs().catch(() => {});
+loadRecognitionStats().catch(() => {});
 loadAppSettings()
   .then(() => enterCheckinPageAutoStart())
   .catch(() => {});
