@@ -255,6 +255,10 @@ jobs:
             if (-not (Test-Path (Join-Path $variant 'licenses\FFMPEG_NOTICE.txt') -PathType Leaf)) { throw "$variant is missing FFmpeg notices" }
             & $ffmpeg -hide_banner -version | Out-Null
             if ($LASTEXITCODE -ne 0) { throw "$variant ffmpeg.exe failed to start" }
+
+            $rtspHelp = (& $ffmpeg -hide_banner -h demuxer=rtsp 2>&1 | Out-String)
+            if ($LASTEXITCODE -ne 0) { throw "$variant ffmpeg.exe could not report RTSP demuxer options" }
+            if ($rtspHelp -notmatch '(?m)^\s*-timeout\s+') { throw "$variant ffmpeg.exe does not support the RTSP -timeout option" }
           }
           $fullFFmpeg = (Get-FileHash 'dist-full\ffmpeg.exe' -Algorithm SHA256).Hash
           $liteFFmpeg = (Get-FileHash 'dist-lite\ffmpeg.exe' -Algorithm SHA256).Hash
