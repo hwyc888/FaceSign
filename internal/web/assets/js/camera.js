@@ -3,6 +3,189 @@ let networkPreviewGeneration = 0;
 let networkPreviewPeer = null;
 let networkPreviewWatchdogTimer = null;
 
+let cameraRealtimeStatusTimer = null;
+let cameraRealtimeStatusBusy = false;
+let cameraRealtimeVideo = null;
+let cameraRealtimeMode = '关闭';
+let cameraRealtimeReason = '';
+let cameraRealtimeStartedAt = 0;
+let cameraRealtimeLastVideoQuality = null;
+let cameraRealtimeLastRTPStats = null;
+let cameraRealtimeRecognitionSamples = [];
+
+function setCameraRealtimeField(name, text, state = '') {
+  document.querySelectorAll(`[data-camera-stat="${name}"]`).forEach(node => {
+    node.textContent = text;
+    node.classList.remove('good', 'warn', 'bad');
+    if (state) node.classList.add(state);
+  });
+}
+
+function renderCameraRealtimeStatus(values = {}) {
+  const mode = values.mode || cameraRealtimeMode || '关闭';
+  setCameraRealtimeField('mode', `通道：${mode}`, mode === '关闭' ? '' : mode.includes('回退') ? 'warn' : 'good');
+  setCameraRealtimeField('video', values.video || '显示：-- FPS', values.videoState || '');
+  setCameraRealtimeField('drop', values.drop || '丢帧：--', values.dropState || '');
+  setCameraRealtimeField('network', values.network || '网络：--', values.networkState || '');
+  setCameraRealtimeField('recognition', values.recognition || '识别：0.0 FPS', values.recognitionState || '');
+  document.querySelectorAll('[data-camera-realtime-status]').forEach(node => {
+    node.title = cameraRealtimeReason ? `摄像头实时运行状态：${cameraRealtimeReason}` : '摄像头实时运行状态';
+  });
+}
+
+function cameraRealtimeRecognitionMetrics(now) {
+  const cutoff = now - 2500;
+  cameraRealtimeRecognitionSamples = cameraRealtimeRecognitionSamples.filter(sample => sample.at >= cutoff);
+  if (!cameraRealtimeRecognitionSamples.length) return {fps: 0, latency: 0};
+  const windowSeconds = Math.max(.5, Math.min(2.5, (now - Math.max(cameraRealtimeStartedAt, cutoff)) / 1000));
+  const fps = cameraRealtimeRecognitionSamples.length / windowSeconds;
+  const latency = cameraRealtimeRecognitionSamples.reduce((sum, sample) => sum + sample.duration, 0) /
+    cameraRealtimeRecognitionSamples.length;
+  return {fps, latency};
+}
+
+function recordRecognitionRealtimeSample(durationMS) {
+  if (!cameraOpen) return;
+  const now = performance.now();
+  cameraRealtimeRecognitionSamples.push({at: now, duration: Math.max(0, Number(durationMS || 0))});
+}
+
+function ensureCameraRealtimeStatusTimer() {
+  if (cameraRealtimeStatusTimer) return;
+  cameraRealtimeStatusTimer = setInterval(updateCameraRealtimeStatus, 1000);
+}
+
+function startCameraRealtimeVideoMonitor(video, mode, reason = '') {
+  cameraRealtimeVideo = video || null;
+  cameraRealtimeMode = mode || '连接中';
+  cameraRealtimeReason = reason || '';
+  cameraRealtimeStartedAt = cameraRealtimeStartedAt || performance.now();
+  cameraRealtimeLastVideoQuality = null;
+  cameraRealtimeLastRTPStats = null;
+  ensureCameraRealtimeStatusTimer();
+  renderCameraRealtimeStatus({mode: cameraRealtimeMode});
+  updateCameraRealtimeStatus();
+}
+
+function stopCameraRealtimeStatus() {
+  if (cameraRealtimeStatusTimer) {
+    clearInterval(cameraRealtimeStatusTimer);
+    cameraRealtimeStatusTimer = null;
+  }
+  cameraRealtimeStatusBusy = false;
+  cameraRealtimeVideo = null;
+  cameraRealtimeMode = '关闭';
+  cameraRealtimeReason = '';
+  cameraRealtimeStartedAt = 0;
+  cameraRealtimeLastVideoQuality = null;
+  cameraRealtimeLastRTPStats = null;
+  cameraRealtimeRecognitionSamples = [];
+  renderCameraRealtimeStatus({mode: '关闭'});
+}
+
+async function updateCameraRealtimeStatus() {
+  if (cameraRealtimeStatusBusy || !cameraOpen) return;
+  cameraRealtimeStatusBusy = true;
+  try {
+    const now = performance.now();
+    let fps = null;
+    let dropPct = null;
+    let packetLossPct = null;
+    let jitterMS = null;
+    let resolution = '';
+    const video = cameraRealtimeVideo;
+
+    if (video) {
+      if (video.videoWidth && video.videoHeight) resolution = `${video.videoWidth}×${video.videoHeight}`;
+      if (typeof video.getVideoPlaybackQuality === 'function') {
+        const quality = video.getVideoPlaybackQuality();
+        if (cameraRealtimeLastVideoQuality) {
+          const seconds = Math.max(.25, (now - cameraRealtimeLastVideoQuality.at) / 1000);
+          const total = Math.max(0, quality.totalVideoFrames - cameraRealtimeLastVideoQuality.total);
+          const dropped = Math.max(0, quality.droppedVideoFrames - cameraRealtimeLastVideoQuality.dropped);
+          if (total > 0) {
+            fps = Math.max(0, total - dropped) / seconds;
+            dropPct = dropped * 100 / total;
+          }
+        }
+        cameraRealtimeLastVideoQuality = {
+          at: now,
+          total: quality.totalVideoFrames,
+          dropped: quality.droppedVideoFrames
+        };
+      }
+    }
+
+    const peer = networkPreviewPeer;
+    if (peer && peer.connectionState === 'connected') {
+      const reports = await peer.getStats();
+      let inbound = null;
+      reports.forEach(report => {
+        if (report.type === 'inbound-rtp' && (report.kind === 'video' || report.mediaType === 'video')) inbound = report;
+      });
+      if (inbound) {
+        if (fps === null && Number.isFinite(inbound.framesPerSecond)) fps = Number(inbound.framesPerSecond);
+        if (Number.isFinite(inbound.jitter)) jitterMS = Number(inbound.jitter) * 1000;
+        const received = Number(inbound.packetsReceived || 0);
+        const lost = Number(inbound.packetsLost || 0);
+        if (cameraRealtimeLastRTPStats) {
+          const receivedDelta = Math.max(0, received - cameraRealtimeLastRTPStats.received);
+          const lostDelta = Math.max(0, lost - cameraRealtimeLastRTPStats.lost);
+          const packets = receivedDelta + lostDelta;
+          if (packets > 0) packetLossPct = lostDelta * 100 / packets;
+        }
+        cameraRealtimeLastRTPStats = {received, lost};
+      }
+    }
+
+    const recognition = cameraRealtimeRecognitionMetrics(now);
+    let videoState = '';
+    if (fps !== null) videoState = fps >= 15 ? 'good' : fps >= 8 ? 'warn' : 'bad';
+    let dropState = '';
+    if (dropPct !== null) dropState = dropPct <= 1 ? 'good' : dropPct <= 5 ? 'warn' : 'bad';
+    let networkState = '';
+    if (packetLossPct !== null) networkState = packetLossPct <= 1 ? 'good' : packetLossPct <= 5 ? 'warn' : 'bad';
+    const recognizingNow = $('#autoScan')?.checked;
+    const recognitionState = recognizingNow ? (recognition.fps >= 2 ? 'good' : recognition.fps > 0 ? 'warn' : 'bad') : '';
+
+    let networkText = '网络：--';
+    if (cameraRealtimeMode === 'USB/本机') {
+      networkText = '网络：本机';
+    } else if (cameraRealtimeMode.includes('MJPEG')) {
+      networkText = '网络：HTTP流';
+    } else if (packetLossPct !== null || jitterMS !== null) {
+      const parts = [];
+      if (packetLossPct !== null) parts.push(`丢包 ${packetLossPct.toFixed(1)}%`);
+      if (jitterMS !== null) parts.push(`抖动 ${jitterMS.toFixed(0)}ms`);
+      networkText = `网络：${parts.join(' · ')}`;
+    }
+
+    const videoText = fps === null
+      ? `显示：-- FPS${resolution ? ` · ${resolution}` : ''}`
+      : `显示：${fps.toFixed(1)} FPS${resolution ? ` · ${resolution}` : ''}`;
+    const dropText = dropPct === null ? '丢帧：--' : `丢帧：${dropPct.toFixed(1)}%`;
+    const recognitionText = recognition.latency > 0
+      ? `识别：${recognition.fps.toFixed(1)} FPS · ${recognition.latency.toFixed(0)}ms`
+      : `识别：${recognition.fps.toFixed(1)} FPS`;
+
+    renderCameraRealtimeStatus({
+      mode: cameraRealtimeMode,
+      video: videoText,
+      videoState,
+      drop: dropText,
+      dropState,
+      network: networkText,
+      networkState,
+      recognition: recognitionText,
+      recognitionState
+    });
+  } catch (error) {
+    console.debug('camera realtime stats unavailable', error);
+  } finally {
+    cameraRealtimeStatusBusy = false;
+  }
+}
+
 function updateCameraControls() {
   const opened = cameraOpen;
   const checkinButton = $('#startCamera');
@@ -144,6 +327,7 @@ function startMJPEGPreviewFallback(generation, image, video, reason = '') {
     video.classList.add('hidden');
   }
   image.classList.remove('hidden');
+  startCameraRealtimeVideoMonitor(null, reason ? 'MJPEG回退' : 'MJPEG', reason);
 
   const reconnect = () => {
     if (generation !== networkPreviewGeneration || !cameraOpen || !activeCamera || activeCamera.kind === 'local') {
@@ -179,6 +363,7 @@ async function startWebRTCH264Preview(generation, image, video) {
     video.srcObject = remote;
     image.classList.add('hidden');
     video.classList.remove('hidden');
+    startCameraRealtimeVideoMonitor(video, 'WebRTC H.264');
     video.play().catch(error => console.warn('WebRTC preview play failed', error));
   };
 
@@ -238,6 +423,7 @@ function startNetworkPreview() {
   const generation = ++networkPreviewGeneration;
   clearNetworkPreviewTimers();
   closeNetworkPreviewPeer();
+  startCameraRealtimeVideoMonitor(null, '连接中');
 
   ['#cameraNetwork', '#enrollCameraNetwork'].map($).filter(Boolean).forEach(view => {
     view.onerror = null;
@@ -353,6 +539,7 @@ function stopCamera() {
   }
   cameraOpen = false;
   stopNetworkPreview();
+  stopCameraRealtimeStatus();
   activeCamera = null;
   switchCameraViews(false);
   resetRecognitionSession();
@@ -392,6 +579,8 @@ async function attachCameraViews() {
     }
     await video.play();
   }
+  const activeVideo = $('#page-students')?.classList.contains('active') ? $('#enrollCamera') : $('#camera');
+  startCameraRealtimeVideoMonitor(activeVideo, 'USB/本机');
 }
 
 function cameraFrameDimensions(selector = '#camera') {
