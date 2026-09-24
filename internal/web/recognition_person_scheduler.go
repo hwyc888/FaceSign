@@ -7,11 +7,15 @@ import (
 	"github.com/hwyc888/FaceSign/internal/person"
 )
 
-const personDetectionInterval = 500 * time.Millisecond
+const (
+	personDetectionMaxAge      = 1800 * time.Millisecond
+	personDetectionReuseFrames = 2
+)
 
 type personDetectionCacheEntry struct {
-	at         time.Time
-	detections []person.Detection
+	at             time.Time
+	detections     []person.Detection
+	reuseRemaining int
 }
 
 func (s *Server) personDetectionsForRecognition(sessionID string, img image.Image, now time.Time) ([]person.Detection, error) {
@@ -21,7 +25,10 @@ func (s *Server) personDetectionsForRecognition(sessionID string, img image.Imag
 
 	s.personDetectionMu.Lock()
 	cached, ok := s.personDetectionCache[sessionID]
-	if ok && now.Sub(cached.at) >= 0 && now.Sub(cached.at) < personDetectionInterval {
+	age := now.Sub(cached.at)
+	if ok && age >= 0 && age < personDetectionMaxAge && cached.reuseRemaining > 0 {
+		cached.reuseRemaining--
+		s.personDetectionCache[sessionID] = cached
 		out := clonePersonDetections(cached.detections)
 		s.personDetectionMu.Unlock()
 		return out, nil
@@ -46,8 +53,9 @@ func (s *Server) personDetectionsForRecognition(sessionID string, img image.Imag
 		}
 	}
 	s.personDetectionCache[sessionID] = personDetectionCacheEntry{
-		at:         now,
-		detections: clonePersonDetections(detections),
+		at:             now,
+		detections:     clonePersonDetections(detections),
+		reuseRemaining: personDetectionReuseFrames,
 	}
 	s.personDetectionMu.Unlock()
 	return detections, nil
