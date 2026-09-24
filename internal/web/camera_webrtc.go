@@ -21,6 +21,12 @@ import (
 type cameraWebRTCSignal struct {
 	Type string `json:"type"`
 	SDP  string `json:"sdp"`
+	Mode string `json:"mode,omitempty"`
+}
+
+type webRTCH264Encoder struct {
+	Name string
+	Mode string
 }
 
 func (s *Server) cameraWebRTCOffer(w http.ResponseWriter, r *http.Request, camera store.Camera) {
@@ -32,8 +38,9 @@ func (s *Server) cameraWebRTCOffer(w http.ResponseWriter, r *http.Request, camer
 		writeError(w, http.StatusBadRequest, errors.New("WebRTC H.264 预览仅用于 RTSP 网络摄像头"))
 		return
 	}
-	if _, err := findFFmpeg(); err != nil {
-		writeError(w, http.StatusServiceUnavailable, fmt.Errorf("WebRTC H.264 预览不可用: %w", err))
+	ffmpegPath, err := findFFmpeg()
+	if err != nil {
+		writeError(w, http.StatusServiceUnavailable, fmt.Errorf("WebRTC 实时预览不可用: %w", err))
 		return
 	}
 
@@ -51,7 +58,21 @@ func (s *Server) cameraWebRTCOffer(w http.ResponseWriter, r *http.Request, camer
 	source, err := resolveRTSPSource(probeCtx, camera, true)
 	probeCancel()
 	if err != nil {
-		writeError(w, http.StatusServiceUnavailable, fmt.Errorf("WebRTC H.264 预览不可用: %w", err))
+		writeError(w, http.StatusServiceUnavailable, fmt.Errorf("WebRTC 实时预览不可用: %w", err))
+		return
+	}
+
+	encoder := webRTCH264Encoder{Mode: "WebRTC H.264直通"}
+	if source.Codec == "hevc" {
+		encoderCtx, encoderCancel := context.WithTimeout(r.Context(), 10*time.Second)
+		encoder, err = selectWebRTCH264Encoder(encoderCtx, ffmpegPath)
+		encoderCancel()
+		if err != nil {
+			writeError(w, http.StatusServiceUnavailable, fmt.Errorf("WebRTC H.265 转码不可用: %w", err))
+			return
+		}
+	} else if source.Codec != "h264" {
+		writeError(w, http.StatusServiceUnavailable, fmt.Errorf("WebRTC 实时预览暂不支持 RTSP 编码 %q", source.Codec))
 		return
 	}
 
@@ -154,7 +175,7 @@ func (s *Server) cameraWebRTCOffer(w http.ResponseWriter, r *http.Request, camer
 			return
 		}
 
-		if err := streamRTSPH264ToWebRTC(streamCtx, camera, videoTrack, source); err != nil && streamCtx.Err() == nil {
+		if err := streamRTSPH264ToWebRTC(streamCtx, camera, videoTrack, source, encoder); err != nil && streamCtx.Err() == nil {
 			s.logger.Warn("camera WebRTC H264 stream stopped",
 				"camera_id", camera.ID,
 				"camera", camera.Name,
@@ -166,6 +187,7 @@ func (s *Server) cameraWebRTCOffer(w http.ResponseWriter, r *http.Request, camer
 	writeJSON(w, http.StatusOK, cameraWebRTCSignal{
 		Type: "answer",
 		SDP:  local.SDP,
+		Mode: encoder.Mode,
 	})
 }
 
@@ -194,7 +216,98 @@ func probeRTSPH264(ctx context.Context, camera store.Camera) error {
 	return err
 }
 
-func streamRTSPH264ToWebRTC(ctx context.Context, camera store.Camera, track *webrtc.TrackLocalStaticRTP, source resolvedRTSPSource) error {
+func selectWebRTCH264Encoder(ctx context.Context, ffmpegPath string) (webRTCH264Encoder, error) {
+	candidates := []webRTCH264Encoder{
+		{Name: "h264_nvenc", Mode: "WebRTC H.265→H.264硬件转码(NVIDIA)"},
+		{Name: "h264_qsv", Mode: "WebRTC H.265→H.264硬件转码(Intel)"},
+		{Name: "h264_amf", Mode: "WebRTC H.265→H.264硬件转码(AMD)"},
+		{Name: "h264_mf", Mode: "WebRTC H.265→H.264 Windows转码"},
+		{Name: "libopenh264", Mode: "WebRTC H.265→H.264软件转码"},
+	}
+	var failures []string
+	for _, candidate := range candidates {
+		probeCtx, cancel := context.WithTimeout(ctx, 2500*time.Millisecond)
+		err := probeWebRTCH264Encoder(probeCtx, ffmpegPath, candidate.Name)
+		cancel()
+		if err == nil {
+			return candidate, nil
+		}
+		failures = append(failures, candidate.Name)
+		if ctx.Err() != nil {
+			break
+		}
+	}
+	return webRTCH264Encoder{}, fmt.Errorf("FFmpeg 没有可用的 H.264 转码编码器（已尝试 %s）", strings.Join(failures, "、"))
+}
+
+func probeWebRTCH264Encoder(ctx context.Context, ffmpegPath, encoder string) error {
+	args := []string{
+		"-hide_banner",
+		"-loglevel", "error",
+		"-nostdin",
+		"-f", "lavfi",
+		"-i", "color=c=black:s=320x180:r=25",
+		"-frames:v", "2",
+		"-vf", "format=yuv420p",
+		"-c:v", encoder,
+		"-b:v", "500k",
+		"-g", "25",
+		"-bf", "0",
+		"-f", "h264",
+		"-",
+	}
+	command := exec.CommandContext(ctx, ffmpegPath, args...)
+	command.Stdout = io.Discard
+	var stderr bytes.Buffer
+	command.Stderr = &stderr
+	if err := command.Run(); err != nil {
+		if ctx.Err() != nil {
+			return ctx.Err()
+		}
+		return fmt.Errorf("%s: %s", encoder, strings.TrimSpace(stderr.String()))
+	}
+	return nil
+}
+
+func webRTCH264OutputArgs(camera store.Camera, source resolvedRTSPSource, encoder webRTCH264Encoder) []string {
+	if source.Codec == "h264" {
+		return []string{
+			"-c:v", "copy",
+			"-bsf:v", "h264_mp4toannexb,dump_extra=freq=keyframe",
+		}
+	}
+
+	width := camera.Width
+	height := camera.Height
+	if width <= 0 {
+		width = 1280
+	}
+	if height <= 0 {
+		height = 720
+	}
+	bitrate := "2500k"
+	maxrate := "3000k"
+	bufsize := "1500k"
+	if width >= 1600 || height >= 900 {
+		bitrate = "4000k"
+		maxrate = "4500k"
+		bufsize = "2200k"
+	}
+	scale := fmt.Sprintf("scale=%d:%d:force_original_aspect_ratio=decrease:force_divisible_by=2,format=yuv420p", width, height)
+	return []string{
+		"-vf", scale,
+		"-c:v", encoder.Name,
+		"-b:v", bitrate,
+		"-maxrate", maxrate,
+		"-bufsize", bufsize,
+		"-g", "30",
+		"-bf", "0",
+		"-fps_mode", "passthrough",
+		"-bsf:v", "h264_mp4toannexb,dump_extra=freq=keyframe",
+	}
+}
+
+func streamRTSPH264ToWebRTC(ctx context.Context, camera store.Camera, track *webrtc.TrackLocalStaticRTP, source resolvedRTSPSource, encoder webRTCH264Encoder) error {
 	ffmpegPath, err := findFFmpeg()
 	if err != nil {
 		return err
@@ -226,12 +339,13 @@ func streamRTSPH264ToWebRTC(ctx context.Context, camera store.Camera, track *web
 		"-an",
 		"-sn",
 		"-dn",
-		"-c:v", "copy",
-		"-bsf:v", "h264_mp4toannexb,dump_extra=freq=keyframe",
+	}
+	args = append(args, webRTCH264OutputArgs(camera, source, encoder)...)
+	args = append(args,
 		"-f", "rtp",
 		"-payload_type", "96",
 		target,
-	}
+	)
 
 	command := exec.CommandContext(ctx, ffmpegPath, args...)
 	command.Stdout = io.Discard
