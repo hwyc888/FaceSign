@@ -718,6 +718,56 @@ func TestNetworkCameraUsesWebRTCH264WithMJPEGFallbackAndDirectRecognition(t *tes
 	}
 }
 
+func TestRecognitionResultShowsVerifiedAndUnregisteredCounts(t *testing.T) {
+	htmlData, err := assets.ReadFile("assets/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	html := string(htmlData)
+	for _, want := range []string{
+		`id="recognitionVerifiedCount"`,
+		`id="recognitionUnregisteredCount"`,
+		"已验证",
+		"未录入",
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("recognition count UI missing %q", want)
+		}
+	}
+
+	jsData, err := assets.ReadFile("assets/js/recognition.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(jsData)
+	for _, want := range []string{
+		"function updateRecognitionCounts(r = {})",
+		"r.verified_count ?? r.recognized_count ?? 0",
+		"r.unregistered_count ?? 0",
+		"updateRecognitionCounts(r)",
+		"updateRecognitionCounts({})",
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("recognition count logic missing %q", want)
+		}
+	}
+
+	cssData, err := assets.ReadFile("assets/style.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	css := string(cssData)
+	for _, want := range []string{
+		".recognition-counts",
+		".recognition-count.verified",
+		".recognition-count.unregistered",
+	} {
+		if !strings.Contains(css, want) {
+			t.Fatalf("recognition count style missing %q", want)
+		}
+	}
+}
+
 func TestCameraFullscreenAndRealtimeStatusSwitch(t *testing.T) {
 	cameraData, err := assets.ReadFile("assets/js/camera.js")
 	if err != nil {
