@@ -76,6 +76,11 @@ var (
 	upgradeLaunchMu    sync.Mutex
 	upgradeLaunch      *upgradeLaunchResult
 
+	queryTaskStateFn = queryTaskState
+	faceSignPIDsFn    = faceSignPIDs
+	execHiddenFn      = execHidden
+	sleepFn           = time.Sleep
+
 	user32   = syscall.NewLazyDLL("user32.dll")
 	kernel32 = syscall.NewLazyDLL("kernel32.dll")
 	shell32  = syscall.NewLazyDLL("shell32.dll")
@@ -450,11 +455,11 @@ func finishAsyncUIAction() {
 }
 
 func buildStatusText() string {
-	state, err := queryTaskState()
+	state, err := queryTaskStateFn()
 	if err != nil {
 		state = "查询失败"
 	}
-	pids := faceSignPIDs()
+	pids := faceSignPIDsFn()
 	info := readStartupInfo()
 	certText := rootCertificateStatus()
 
@@ -509,7 +514,7 @@ func buildStatusText() string {
 
 func queryTaskState() (string, error) {
 	script := "[Console]::OutputEncoding=[Text.Encoding]::UTF8; $t=Get-ScheduledTask -TaskName 'FaceSign' -ErrorAction SilentlyContinue; if($null -eq $t){'missing'} else {$t.State.ToString()}"
-	out, err := execHidden("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script)
+	out, err := execHiddenFn("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script)
 	if err != nil {
 		return "", err
 	}
@@ -517,99 +522,125 @@ func queryTaskState() (string, error) {
 }
 
 func startFaceSign() error {
-	state, _ := queryTaskState()
+	// Repeated Start is intentionally a fast no-op. Re-running an already active
+	// scheduled task can block or return an error even though FaceSign is healthy.
+	if len(faceSignPIDsFn()) > 0 {
+		return nil
+	}
+
+	state, err := queryTaskStateFn()
+	if err != nil {
+		return fmt.Errorf("读取 FaceSign 计划任务状态失败: %w", err)
+	}
 	if strings.EqualFold(state, "missing") {
 		return errors.New("FaceSign 计划任务尚未安装。请先以管理员身份运行发布包中的 scripts\\install.ps1")
 	}
 	wasDisabled := strings.EqualFold(state, "disabled")
 	if wasDisabled {
-		if _, err := execHidden("schtasks.exe", "/Change", "/TN", taskName, "/ENABLE"); err != nil {
+		if _, err := execHiddenFn("schtasks.exe", "/Change", "/TN", taskName, "/ENABLE"); err != nil {
 			return fmt.Errorf("临时启用计划任务失败: %w", err)
 		}
 	}
-	if _, err := execHidden("schtasks.exe", "/Run", "/TN", taskName); err != nil {
+	if _, err := execHiddenFn("schtasks.exe", "/Run", "/TN", taskName); err != nil {
 		if wasDisabled {
-			_, _ = execHidden("schtasks.exe", "/Change", "/TN", taskName, "/DISABLE")
+			_, _ = execHiddenFn("schtasks.exe", "/Change", "/TN", taskName, "/DISABLE")
 		}
 		return fmt.Errorf("启动 FaceSign 失败: %w", err)
 	}
-	time.Sleep(800 * time.Millisecond)
+	sleepFn(350 * time.Millisecond)
 	if wasDisabled {
-		_, _ = execHidden("schtasks.exe", "/Change", "/TN", taskName, "/DISABLE")
+		_, _ = execHiddenFn("schtasks.exe", "/Change", "/TN", taskName, "/DISABLE")
 	}
 	return nil
 }
 
 func stopFaceSign() (retErr error) {
-	state, stateErr := queryTaskState()
+	// Repeated Stop is a fast no-op. There is no need to disable/end the task
+	// when no FaceSign process exists.
+	if len(faceSignPIDsFn()) == 0 {
+		return nil
+	}
+
+	state, stateErr := queryTaskStateFn()
 	taskExists := stateErr == nil && !strings.EqualFold(state, "missing")
 	wasDisabled := strings.EqualFold(state, "disabled")
 	temporarilyDisabled := false
 
 	if taskExists && !wasDisabled {
-		if _, err := execHidden("schtasks.exe", "/Change", "/TN", taskName, "/DISABLE"); err == nil {
+		if _, err := execHiddenFn("schtasks.exe", "/Change", "/TN", taskName, "/DISABLE"); err == nil {
 			temporarilyDisabled = true
 		}
 	}
 	if temporarilyDisabled {
 		defer func() {
-			if _, err := execHidden("schtasks.exe", "/Change", "/TN", taskName, "/ENABLE"); err != nil && retErr == nil {
+			if _, err := execHiddenFn("schtasks.exe", "/Change", "/TN", taskName, "/ENABLE"); err != nil && retErr == nil {
 				retErr = fmt.Errorf("FaceSign 已停止，但恢复开机启动状态失败: %w", err)
 			}
 		}()
 	}
 
 	if taskExists {
-		_, _ = execHidden("schtasks.exe", "/End", "/TN", taskName)
+		_, _ = execHiddenFn("schtasks.exe", "/End", "/TN", taskName)
 	}
-	time.Sleep(250 * time.Millisecond)
+	sleepFn(250 * time.Millisecond)
 
-	if len(faceSignPIDs()) > 0 {
-		if _, err := execHidden("taskkill.exe", "/F", "/T", "/IM", "FaceSign.exe"); err != nil && len(faceSignPIDs()) > 0 {
+	if len(faceSignPIDsFn()) > 0 {
+		if _, err := execHiddenFn("taskkill.exe", "/F", "/T", "/IM", "FaceSign.exe"); err != nil && len(faceSignPIDsFn()) > 0 {
 			return fmt.Errorf("无法结束 FaceSign SYSTEM 进程: %w。请确认管理工具已允许管理员权限；若仍失败，请检查安全软件或还原保护软件", err)
 		}
 	}
 
 	deadline := time.Now().Add(5 * time.Second)
 	for time.Now().Before(deadline) {
-		if len(faceSignPIDs()) == 0 {
+		if len(faceSignPIDsFn()) == 0 {
 			return nil
 		}
-		time.Sleep(200 * time.Millisecond)
+		sleepFn(200 * time.Millisecond)
 	}
 	return errors.New("FaceSign 进程在5秒内仍未退出。请查看启动日志或 Windows 事件日志")
 }
 
 func restartFaceSign() error {
-	state, _ := queryTaskState()
-	wasDisabled := strings.EqualFold(state, "disabled")
-	if err := stopFaceSign(); err != nil {
-		return err
-	}
-	if wasDisabled {
-		if _, err := execHidden("schtasks.exe", "/Change", "/TN", taskName, "/ENABLE"); err != nil {
+	if len(faceSignPIDsFn()) > 0 {
+		if err := stopFaceSign(); err != nil {
 			return err
 		}
 	}
-	if _, err := execHidden("schtasks.exe", "/Run", "/TN", taskName); err != nil {
+	if err := startFaceSign(); err != nil {
 		return fmt.Errorf("重启 FaceSign 失败: %w", err)
-	}
-	time.Sleep(800 * time.Millisecond)
-	if wasDisabled {
-		_, _ = execHidden("schtasks.exe", "/Change", "/TN", taskName, "/DISABLE")
 	}
 	return nil
 }
 
 func enableStartup() error {
-	if _, err := execHidden("schtasks.exe", "/Change", "/TN", taskName, "/ENABLE"); err != nil {
+	state, err := queryTaskStateFn()
+	if err != nil {
+		return fmt.Errorf("读取 FaceSign 计划任务状态失败: %w", err)
+	}
+	if strings.EqualFold(state, "missing") {
+		return errors.New("FaceSign 计划任务尚未安装")
+	}
+	if !strings.EqualFold(state, "disabled") {
+		return nil
+	}
+	if _, err := execHiddenFn("schtasks.exe", "/Change", "/TN", taskName, "/ENABLE"); err != nil {
 		return fmt.Errorf("开启开机启动失败: %w", err)
 	}
 	return nil
 }
 
 func disableStartup() error {
-	if _, err := execHidden("schtasks.exe", "/Change", "/TN", taskName, "/DISABLE"); err != nil {
+	state, err := queryTaskStateFn()
+	if err != nil {
+		return fmt.Errorf("读取 FaceSign 计划任务状态失败: %w", err)
+	}
+	if strings.EqualFold(state, "missing") {
+		return errors.New("FaceSign 计划任务尚未安装")
+	}
+	if strings.EqualFold(state, "disabled") {
+		return nil
+	}
+	if _, err := execHiddenFn("schtasks.exe", "/Change", "/TN", taskName, "/DISABLE"); err != nil {
 		return fmt.Errorf("关闭开机启动失败: %w", err)
 	}
 	return nil
@@ -875,7 +906,7 @@ func execHidden(name string, args ...string) ([]byte, error) {
 }
 
 func faceSignPIDs() []int {
-	out, err := execHidden("tasklist.exe", "/FI", "IMAGENAME eq FaceSign.exe", "/FO", "CSV", "/NH")
+	out, err := execHiddenFn("tasklist.exe", "/FI", "IMAGENAME eq FaceSign.exe", "/FO", "CSV", "/NH")
 	if err != nil || !strings.Contains(strings.ToLower(string(out)), "facesign.exe") {
 		return nil
 	}

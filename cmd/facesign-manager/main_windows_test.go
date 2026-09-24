@@ -5,6 +5,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 )
@@ -137,5 +138,115 @@ func TestPotentiallyBlockingManagerActionsAreAsync(t *testing.T) {
 	}
 	if isAsyncActionButton(idExit) {
 		t.Fatal("exit must remain an immediate UI action")
+	}
+}
+
+
+func withManagerServiceFakes(t *testing.T, pids func() []int, state func() (string, error), execFn func(string, ...string) ([]byte, error)) {
+	t.Helper()
+	oldPIDs := faceSignPIDsFn
+	oldState := queryTaskStateFn
+	oldExec := execHiddenFn
+	oldSleep := sleepFn
+	faceSignPIDsFn = pids
+	queryTaskStateFn = state
+	execHiddenFn = execFn
+	sleepFn = func(time.Duration) {}
+	t.Cleanup(func() {
+		faceSignPIDsFn = oldPIDs
+		queryTaskStateFn = oldState
+		execHiddenFn = oldExec
+		sleepFn = oldSleep
+	})
+}
+
+func TestStartFaceSignAlreadyRunningIsImmediateNoOp(t *testing.T) {
+	queryCalls := 0
+	execCalls := 0
+	withManagerServiceFakes(
+		t,
+		func() []int { return []int{1234} },
+		func() (string, error) { queryCalls++; return "Running", nil },
+		func(string, ...string) ([]byte, error) { execCalls++; return nil, nil },
+	)
+
+	started := time.Now()
+	if err := startFaceSign(); err != nil {
+		t.Fatal(err)
+	}
+	if elapsed := time.Since(started); elapsed > 100*time.Millisecond {
+		t.Fatalf("repeated start took %s", elapsed)
+	}
+	if queryCalls != 0 || execCalls != 0 {
+		t.Fatalf("already-running Start touched scheduler: query=%d exec=%d", queryCalls, execCalls)
+	}
+}
+
+func TestStopFaceSignAlreadyStoppedIsImmediateNoOp(t *testing.T) {
+	queryCalls := 0
+	execCalls := 0
+	withManagerServiceFakes(
+		t,
+		func() []int { return nil },
+		func() (string, error) { queryCalls++; return "Ready", nil },
+		func(string, ...string) ([]byte, error) { execCalls++; return nil, nil },
+	)
+
+	started := time.Now()
+	if err := stopFaceSign(); err != nil {
+		t.Fatal(err)
+	}
+	if elapsed := time.Since(started); elapsed > 100*time.Millisecond {
+		t.Fatalf("repeated stop took %s", elapsed)
+	}
+	if queryCalls != 0 || execCalls != 0 {
+		t.Fatalf("already-stopped Stop touched scheduler: query=%d exec=%d", queryCalls, execCalls)
+	}
+}
+
+func TestRestartStoppedFaceSignOnlyStartsOnce(t *testing.T) {
+	var commands []string
+	withManagerServiceFakes(
+		t,
+		func() []int { return nil },
+		func() (string, error) { return "Ready", nil },
+		func(name string, args ...string) ([]byte, error) {
+			commands = append(commands, name+" "+strings.Join(args, " "))
+			return nil, nil
+		},
+	)
+
+	if err := restartFaceSign(); err != nil {
+		t.Fatal(err)
+	}
+	if len(commands) != 1 || !strings.Contains(commands[0], "/Run") {
+		t.Fatalf("restart from stopped state should only start once, commands=%v", commands)
+	}
+}
+
+func TestStartupButtonsAreIdempotent(t *testing.T) {
+	for _, tc := range []struct {
+		name  string
+		state string
+		run   func() error
+	}{
+		{name: "enable already enabled", state: "Ready", run: enableStartup},
+		{name: "disable already disabled", state: "Disabled", run: disableStartup},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			execCalls := 0
+			withManagerServiceFakes(
+				t,
+				func() []int { return nil },
+				func() (string, error) { return tc.state, nil },
+				func(string, ...string) ([]byte, error) { execCalls++; return nil, nil },
+			)
+			if err := tc.run(); err != nil {
+				t.Fatal(err)
+			}
+			if execCalls != 0 {
+				t.Fatalf("idempotent startup action invoked schtasks %d times", execCalls)
+			}
+		})
 	}
 }
