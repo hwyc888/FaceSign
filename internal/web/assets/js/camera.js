@@ -21,6 +21,41 @@ function setCameraRealtimeField(name, text, state = '') {
   });
 }
 
+function friendlyCameraRealtimeReason(reason) {
+  const original = String(reason || '').trim();
+  if (!original) return '';
+  const text = original.replace(/^WebRTC H\.264 预览不可用[:：]\s*/i, '').trim();
+  const lower = text.toLowerCase();
+  if (text.includes('H.265') || lower.includes('hevc') || lower.includes('h265')) {
+    return '检测到 H.265/HEVC，请把摄像头视频编码改为 H.264';
+  }
+  if (lower.includes('ffmpeg')) {
+    return 'FFmpeg 不可用，无法建立 WebRTC/H.264 实时通道';
+  }
+  if (text.includes('ICE')) {
+    return 'WebRTC ICE 协商失败或超时，请检查本机网络/防火墙';
+  }
+  if (text.includes('未收到可播放 H.264 画面')) {
+    return 'WebRTC 已连接，但没有收到可播放的 H.264 视频帧';
+  }
+  if (text.includes('未检测到 H.264')) {
+    return 'RTSP 中未检测到 H.264，请检查摄像头编码和码流地址';
+  }
+  if (text.includes('检测 RTSP 编码失败')) {
+    return 'RTSP 编码检测失败，请检查 RTSP 地址、账号、密码和 554 端口';
+  }
+  if (text.includes('连接中断')) {
+    return 'WebRTC 连接中断，已自动回退到 MJPEG';
+  }
+  if (lower.includes('状态：failed') || lower.includes('状态: failed')) {
+    return 'WebRTC 连接失败，已自动回退到 MJPEG';
+  }
+  if (lower.includes('状态：closed') || lower.includes('状态: closed')) {
+    return 'WebRTC 连接已关闭，已自动回退到 MJPEG';
+  }
+  return text.length > 96 ? `${text.slice(0, 96)}…` : text;
+}
+
 function renderCameraRealtimeStatus(values = {}) {
   const mode = values.mode || cameraRealtimeMode || '关闭';
   setCameraRealtimeField('mode', `通道：${mode}`, mode === '关闭' ? '' : mode.includes('回退') ? 'warn' : 'good');
@@ -28,8 +63,15 @@ function renderCameraRealtimeStatus(values = {}) {
   setCameraRealtimeField('drop', values.drop || '丢帧：--', values.dropState || '');
   setCameraRealtimeField('network', values.network || '网络：--', values.networkState || '');
   setCameraRealtimeField('recognition', values.recognition || '识别：0.0 FPS', values.recognitionState || '');
+
+  const reason = friendlyCameraRealtimeReason(cameraRealtimeReason);
+  document.querySelectorAll('[data-camera-stat="reason"]').forEach(node => {
+    node.textContent = reason ? `原因：${reason}` : '原因：--';
+    node.classList.toggle('hidden', !reason);
+    node.classList.toggle('bad', Boolean(reason));
+  });
   document.querySelectorAll('[data-camera-realtime-status]').forEach(node => {
-    node.title = cameraRealtimeReason ? `摄像头实时运行状态：${cameraRealtimeReason}` : '摄像头实时运行状态';
+    node.title = reason ? `摄像头实时运行状态：${reason}` : '摄像头实时运行状态';
   });
 }
 
