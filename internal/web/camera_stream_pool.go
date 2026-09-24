@@ -504,14 +504,7 @@ func findFFmpeg() (string, error) {
 }
 
 func ffmpegRTSPInputURL(camera store.Camera) (string, error) {
-	parsed, err := url.Parse(strings.TrimSpace(camera.StreamURL))
-	if err != nil || parsed.Host == "" {
-		return "", errors.New("RTSP 视频流地址格式不正确")
-	}
-	if strings.TrimSpace(camera.Username) != "" {
-		parsed.User = url.UserPassword(camera.Username, camera.Password)
-	}
-	return parsed.String(), nil
+	return rtspURLWithCameraCredentials(camera, camera.StreamURL)
 }
 
 func networkCameraRecognitionFPS(camera store.Camera) int {
@@ -534,6 +527,10 @@ func ffmpegRTSPArgs(camera store.Camera, inputURL string) []string {
 }
 
 func ffmpegRTSPArgsForPurpose(camera store.Camera, inputURL, purpose string) []string {
+	return ffmpegRTSPArgsForPurposeTransport(camera, inputURL, purpose, "tcp")
+}
+
+func ffmpegRTSPArgsForPurposeTransport(camera store.Camera, inputURL, purpose, transport string) []string {
 	timeout := time.Duration(camera.TimeoutMS) * time.Millisecond
 	if timeout <= 0 {
 		timeout = 3 * time.Second
@@ -558,7 +555,7 @@ func ffmpegRTSPArgsForPurpose(camera store.Camera, inputURL, purpose string) []s
 		"-fflags", "nobuffer",
 		"-flags", "low_delay",
 		"-max_delay", "500000",
-		"-rtsp_transport", "tcp",
+		"-rtsp_transport", transport,
 		"-rw_timeout", strconv.FormatInt(timeout.Microseconds(), 10),
 		"-i", inputURL,
 		"-map", "0:v:0",
@@ -580,13 +577,14 @@ func (s *Server) consumeRTSPCameraStream(ctx context.Context, stream *networkCam
 	if err != nil {
 		return err
 	}
-	inputURL, err := ffmpegRTSPInputURL(stream.camera)
+	source, err := resolveRTSPSource(ctx, stream.camera, false)
 	if err != nil {
 		return err
 	}
 
-	command := exec.CommandContext(ctx, ffmpegPath, ffmpegRTSPArgsForPurpose(stream.camera, inputURL, stream.purpose)...)
-	command.Stderr = io.Discard
+	command := exec.CommandContext(ctx, ffmpegPath, ffmpegRTSPArgsForPurposeTransport(stream.camera, source.URL, stream.purpose, source.Transport)...)
+	var stderr bytes.Buffer
+	command.Stderr = &stderr
 	command.WaitDelay = 2 * time.Second
 	stdout, err := command.StdoutPipe()
 	if err != nil {
@@ -610,7 +608,8 @@ func (s *Server) consumeRTSPCameraStream(ctx context.Context, stream *networkCam
 		return fmt.Errorf("读取 RTSP 解码帧失败: %w", readErr)
 	}
 	if waitErr != nil {
-		return fmt.Errorf("FFmpeg RTSP 解码已退出: %w", waitErr)
+		detail := classifyRTSPProbeFailure(stderr.String(), waitErr, stream.camera, source.URL)
+		return fmt.Errorf("FFmpeg RTSP 解码已退出: %s", detail)
 	}
 	return errors.New("RTSP连续流已结束")
 }
