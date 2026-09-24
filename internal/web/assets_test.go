@@ -632,7 +632,9 @@ func TestNetworkCameraUsesWebRTCH264WithMJPEGFallbackAndDirectRecognition(t *tes
 		"未找到 ffmpeg.exe；请使用 facesign-windows-amd64-full / lite 完整解压运行",
 		"摄像头 RTSP Digest 使用 SHA256",
 		"RTSP 认证失败（401）",
-		"检测到 H.265/HEVC；FaceSign 已尝试海康子码流",
+		"检测到 H.265/HEVC；FaceSign 将自动转码为 H.264 后通过 WebRTC 实时显示",
+		"negotiatedMode = String(answer.mode || negotiatedMode)",
+		"WebRTC H.264直通",
 		"WebRTC ICE 协商失败或超时",
 		"WebRTC 已连接，但没有收到可播放的 H.264 视频帧",
 	} {
