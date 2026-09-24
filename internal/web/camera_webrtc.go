@@ -47,8 +47,8 @@ func (s *Server) cameraWebRTCOffer(w http.ResponseWriter, r *http.Request, camer
 		return
 	}
 
-	probeCtx, probeCancel := context.WithTimeout(r.Context(), cameraWebRTCProbeTimeout(camera))
-	err := probeRTSPH264(probeCtx, camera)
+	probeCtx, probeCancel := context.WithTimeout(r.Context(), cameraWebRTCProbeTimeout(camera)+4*time.Second)
+	source, err := resolveRTSPSource(probeCtx, camera, true)
 	probeCancel()
 	if err != nil {
 		writeError(w, http.StatusServiceUnavailable, fmt.Errorf("WebRTC H.264 预览不可用: %w", err))
@@ -154,7 +154,7 @@ func (s *Server) cameraWebRTCOffer(w http.ResponseWriter, r *http.Request, camer
 			return
 		}
 
-		if err := streamRTSPH264ToWebRTC(streamCtx, camera, videoTrack); err != nil && streamCtx.Err() == nil {
+		if err := streamRTSPH264ToWebRTC(streamCtx, camera, videoTrack, source); err != nil && streamCtx.Err() == nil {
 			s.logger.Warn("camera WebRTC H264 stream stopped",
 				"camera_id", camera.ID,
 				"camera", camera.Name,
@@ -190,61 +190,12 @@ func cameraWebRTCProbeTimeout(camera store.Camera) time.Duration {
 }
 
 func probeRTSPH264(ctx context.Context, camera store.Camera) error {
-	ffmpegPath, err := findFFmpeg()
-	if err != nil {
-		return err
-	}
-	inputURL, err := ffmpegRTSPInputURL(camera)
-	if err != nil {
-		return err
-	}
-
-	timeout := time.Duration(camera.TimeoutMS) * time.Millisecond
-	if timeout <= 0 {
-		timeout = 3 * time.Second
-	}
-	args := []string{
-		"-hide_banner",
-		"-loglevel", "info",
-		"-nostdin",
-		"-rtsp_transport", "tcp",
-		"-rw_timeout", strconv.FormatInt(timeout.Microseconds(), 10),
-		"-i", inputURL,
-		"-map", "0:v:0",
-		"-frames:v", "1",
-		"-an",
-		"-sn",
-		"-dn",
-		"-f", "null",
-		"-",
-	}
-	command := exec.CommandContext(ctx, ffmpegPath, args...)
-	command.Stdout = io.Discard
-	var stderr bytes.Buffer
-	command.Stderr = &stderr
-	if err := command.Run(); err != nil {
-		if ctx.Err() != nil {
-			return ctx.Err()
-		}
-		return fmt.Errorf("检测 RTSP 编码失败: %w", err)
-	}
-
-	codecInfo := strings.ToLower(stderr.String())
-	if strings.Contains(codecInfo, "video: h264") {
-		return nil
-	}
-	if strings.Contains(codecInfo, "video: hevc") || strings.Contains(codecInfo, "video: h265") {
-		return errors.New("当前 RTSP 是 H.265/HEVC；浏览器 WebRTC 硬解通道要求摄像头切换为 H.264，当前将回退 MJPEG")
-	}
-	return errors.New("未检测到 H.264 RTSP 视频；当前将回退 MJPEG")
+	_, err := resolveRTSPSource(ctx, camera, true)
+	return err
 }
 
-func streamRTSPH264ToWebRTC(ctx context.Context, camera store.Camera, track *webrtc.TrackLocalStaticRTP) error {
+func streamRTSPH264ToWebRTC(ctx context.Context, camera store.Camera, track *webrtc.TrackLocalStaticRTP, source resolvedRTSPSource) error {
 	ffmpegPath, err := findFFmpeg()
-	if err != nil {
-		return err
-	}
-	inputURL, err := ffmpegRTSPInputURL(camera)
 	if err != nil {
 		return err
 	}
@@ -268,9 +219,9 @@ func streamRTSPH264ToWebRTC(ctx context.Context, camera store.Camera, track *web
 		"-fflags", "nobuffer",
 		"-flags", "low_delay",
 		"-max_delay", "500000",
-		"-rtsp_transport", "tcp",
+		"-rtsp_transport", source.Transport,
 		"-rw_timeout", strconv.FormatInt(timeout.Microseconds(), 10),
-		"-i", inputURL,
+		"-i", source.URL,
 		"-map", "0:v:0",
 		"-an",
 		"-sn",
@@ -316,11 +267,8 @@ func streamRTSPH264ToWebRTC(ctx context.Context, camera store.Camera, track *web
 			if waitErr == nil {
 				return errors.New("WebRTC H.264 RTP 转发已结束")
 			}
-			message := strings.TrimSpace(stderr.String())
-			if message == "" {
-				return fmt.Errorf("WebRTC H.264 RTP 转发退出: %w", waitErr)
-			}
-			return fmt.Errorf("WebRTC H.264 RTP 转发退出: %w: %s", waitErr, message)
+			detail := classifyRTSPProbeFailure(stderr.String(), waitErr, camera, source.URL)
+			return fmt.Errorf("WebRTC H.264 RTP 转发退出: %s", detail)
 		default:
 		}
 
