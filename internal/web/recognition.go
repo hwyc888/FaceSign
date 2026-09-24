@@ -244,9 +244,8 @@ func (s *Server) recognizePreparedImage(
 		results[i] = result
 	}
 
-	var decoded []decodedFaceSample
 	if anyTrue(needsFeature) {
-		decoded, err = s.cachedFaceSamples(r.Context())
+		decoded, err := s.cachedFaceSamples(r.Context())
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
