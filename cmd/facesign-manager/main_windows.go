@@ -162,6 +162,13 @@ type upgradeLaunchResult struct {
 	Err error
 }
 
+var (
+	errAlreadyRunning        = errors.New("FaceSign 已在运行，无需重复启动")
+	errAlreadyStopped        = errors.New("FaceSign 已停止，无需重复停止")
+	errStartupAlreadyEnabled = errors.New("FaceSign 开机启动已开启")
+	errStartupAlreadyDisabled = errors.New("FaceSign 开机启动已关闭")
+)
+
 func main() {
 	flag.StringVar(&installDirFlag, "install-dir", "", "FaceSign installation directory")
 	flag.Parse()
@@ -425,16 +432,32 @@ func beginAsyncUIAction(name string, action func() error) {
 		}
 		return action()
 	}, func(actionErr error) {
+		status, finalErr := finishActionStatus(actionErr)
 		result := &uiActionResult{
 			Name:   name,
-			Status: buildStatusText(),
-			Err:    actionErr,
+			Status: status,
+			Err:    finalErr,
 		}
 		asyncResultMu.Lock()
 		asyncResult = result
 		asyncResultMu.Unlock()
 		procPostMessageW.Call(uintptr(target), wmAsyncDone, 0, 0)
 	})
+}
+
+func finishActionStatus(actionErr error) (string, error) {
+	switch {
+	case errors.Is(actionErr, errAlreadyRunning):
+		return errAlreadyRunning.Error() + "。", nil
+	case errors.Is(actionErr, errAlreadyStopped):
+		return errAlreadyStopped.Error() + "。", nil
+	case errors.Is(actionErr, errStartupAlreadyEnabled):
+		return errStartupAlreadyEnabled.Error() + "。", nil
+	case errors.Is(actionErr, errStartupAlreadyDisabled):
+		return errStartupAlreadyDisabled.Error() + "。", nil
+	default:
+		return buildStatusText(), actionErr
+	}
 }
 
 func finishAsyncUIAction() {
@@ -525,7 +548,7 @@ func startFaceSign() error {
 	// Repeated Start is intentionally a fast no-op. Re-running an already active
 	// scheduled task can block or return an error even though FaceSign is healthy.
 	if len(faceSignPIDsFn()) > 0 {
-		return nil
+		return errAlreadyRunning
 	}
 
 	state, err := queryTaskStateFn()
@@ -558,7 +581,7 @@ func stopFaceSign() (retErr error) {
 	// Repeated Stop is a fast no-op. There is no need to disable/end the task
 	// when no FaceSign process exists.
 	if len(faceSignPIDsFn()) == 0 {
-		return nil
+		return errAlreadyStopped
 	}
 
 	state, stateErr := queryTaskStateFn()
@@ -602,7 +625,7 @@ func stopFaceSign() (retErr error) {
 
 func restartFaceSign() error {
 	if len(faceSignPIDsFn()) > 0 {
-		if err := stopFaceSign(); err != nil {
+		if err := stopFaceSign(); err != nil && !errors.Is(err, errAlreadyStopped) {
 			return err
 		}
 	}
@@ -621,7 +644,7 @@ func enableStartup() error {
 		return errors.New("FaceSign 计划任务尚未安装")
 	}
 	if !strings.EqualFold(state, "disabled") {
-		return nil
+		return errStartupAlreadyEnabled
 	}
 	if _, err := execHiddenFn("schtasks.exe", "/Change", "/TN", taskName, "/ENABLE"); err != nil {
 		return fmt.Errorf("开启开机启动失败: %w", err)
@@ -638,7 +661,7 @@ func disableStartup() error {
 		return errors.New("FaceSign 计划任务尚未安装")
 	}
 	if strings.EqualFold(state, "disabled") {
-		return nil
+		return errStartupAlreadyDisabled
 	}
 	if _, err := execHiddenFn("schtasks.exe", "/Change", "/TN", taskName, "/DISABLE"); err != nil {
 		return fmt.Errorf("关闭开机启动失败: %w", err)

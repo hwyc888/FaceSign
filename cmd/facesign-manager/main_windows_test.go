@@ -3,6 +3,7 @@
 package main
 
 import (
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -171,8 +172,8 @@ func TestStartFaceSignAlreadyRunningIsImmediateNoOp(t *testing.T) {
 	)
 
 	started := time.Now()
-	if err := startFaceSign(); err != nil {
-		t.Fatal(err)
+	if err := startFaceSign(); !errors.Is(err, errAlreadyRunning) {
+		t.Fatalf("expected already-running no-op, got %v", err)
 	}
 	if elapsed := time.Since(started); elapsed > 100*time.Millisecond {
 		t.Fatalf("repeated start took %s", elapsed)
@@ -193,8 +194,8 @@ func TestStopFaceSignAlreadyStoppedIsImmediateNoOp(t *testing.T) {
 	)
 
 	started := time.Now()
-	if err := stopFaceSign(); err != nil {
-		t.Fatal(err)
+	if err := stopFaceSign(); !errors.Is(err, errAlreadyStopped) {
+		t.Fatalf("expected already-stopped no-op, got %v", err)
 	}
 	if elapsed := time.Since(started); elapsed > 100*time.Millisecond {
 		t.Fatalf("repeated stop took %s", elapsed)
@@ -241,12 +242,53 @@ func TestStartupButtonsAreIdempotent(t *testing.T) {
 				func() (string, error) { return tc.state, nil },
 				func(string, ...string) ([]byte, error) { execCalls++; return nil, nil },
 			)
-			if err := tc.run(); err != nil {
-				t.Fatal(err)
+			err := tc.run()
+			if tc.state == "Ready" && !errors.Is(err, errStartupAlreadyEnabled) {
+				t.Fatalf("expected already-enabled no-op, got %v", err)
+			}
+			if tc.state == "Disabled" && !errors.Is(err, errStartupAlreadyDisabled) {
+				t.Fatalf("expected already-disabled no-op, got %v", err)
 			}
 			if execCalls != 0 {
 				t.Fatalf("idempotent startup action invoked schtasks %d times", execCalls)
 			}
 		})
+	}
+}
+
+
+func TestNoOpActionSkipsSlowStatusRefresh(t *testing.T) {
+	oldState := queryTaskStateFn
+	oldPIDs := faceSignPIDsFn
+	queryCalls := 0
+	pidCalls := 0
+	queryTaskStateFn = func() (string, error) {
+		queryCalls++
+		time.Sleep(250 * time.Millisecond)
+		return "Running", nil
+	}
+	faceSignPIDsFn = func() []int {
+		pidCalls++
+		time.Sleep(250 * time.Millisecond)
+		return []int{1}
+	}
+	t.Cleanup(func() {
+		queryTaskStateFn = oldState
+		faceSignPIDsFn = oldPIDs
+	})
+
+	started := time.Now()
+	status, err := finishActionStatus(errAlreadyRunning)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(status, "已在运行") {
+		t.Fatalf("unexpected no-op status: %q", status)
+	}
+	if elapsed := time.Since(started); elapsed > 100*time.Millisecond {
+		t.Fatalf("no-op status refresh blocked for %s", elapsed)
+	}
+	if queryCalls != 0 || pidCalls != 0 {
+		t.Fatalf("no-op action performed slow status refresh: query=%d pid=%d", queryCalls, pidCalls)
 	}
 }
