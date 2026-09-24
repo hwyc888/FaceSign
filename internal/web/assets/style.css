@@ -44,6 +44,15 @@ button:disabled{opacity:.45;cursor:not-allowed}
 .primary:hover{background:#1d4ed8}
 .danger{color:#b42318;border-color:#f0c5c1;background:#fff}
 .switch{font-size:14px;color:#475467}
+.recognition-counts{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px;margin:12px 0}
+.recognition-count{display:grid;grid-template-columns:auto 1fr auto;align-items:baseline;gap:8px;padding:12px 14px;border:1px solid #e4e8f0;border-radius:12px;background:#f8fafc}
+.recognition-count span{font-size:13px;font-weight:700;color:#667085}
+.recognition-count strong{font-size:30px;line-height:1;font-weight:850;text-align:right;color:#172033}
+.recognition-count em{font-size:13px;font-style:normal;color:#667085}
+.recognition-count.verified{border-color:#b8dfc7;background:#f1fbf5}
+.recognition-count.verified strong{color:#16803a}
+.recognition-count.unregistered{border-color:#f2d38a;background:#fff9eb}
+.recognition-count.unregistered strong{color:#b66a00}
 .result{min-height:130px;border-radius:12px;border:1px dashed #cfd6e4;padding:18px;display:flex;flex-direction:column;justify-content:center}
 .result.empty{color:#98a2b3}
 .result.ok{border-style:solid;border-color:#a7d7bd;background:#f0fbf5}
@@ -350,6 +359,7 @@ pre{background:#0b1220;color:#d8e2f3;border-radius:12px;padding:16px;overflow:au
 .camera-settings-help{font-size:12px;margin:12px 0 0}
 @media(max-width:1180px){.camera-form{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:720px){
+  .recognition-counts{grid-template-columns:1fr}
   .realtime-status-options{grid-template-columns:1fr}
   .camera-form{grid-template-columns:1fr}
   .camera-form .camera-wide{grid-column:auto}
