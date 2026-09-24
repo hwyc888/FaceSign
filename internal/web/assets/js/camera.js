@@ -4,6 +4,14 @@ let networkPreviewPeer = null;
 let networkPreviewWatchdogTimer = null;
 
 let cameraRealtimeStatusEnabled = true;
+let cameraRealtimeStatusFields = {
+  mode: true,
+  video: true,
+  drop: true,
+  network: true,
+  recognition: true,
+  reason: true
+};
 let cameraRealtimeStatusTimer = null;
 let cameraRealtimeStatusBusy = false;
 let cameraRealtimeVideo = null;
@@ -19,6 +27,7 @@ function setCameraRealtimeField(name, text, state = '') {
     node.textContent = text;
     node.classList.remove('good', 'warn', 'bad');
     if (state) node.classList.add(state);
+    node.classList.toggle('hidden', cameraRealtimeStatusFields[name] === false);
   });
 }
 
@@ -94,13 +103,21 @@ function renderCameraRealtimeStatus(values = {}) {
   const reason = friendlyCameraRealtimeReason(cameraRealtimeReason);
   document.querySelectorAll('[data-camera-stat="reason"]').forEach(node => {
     node.textContent = reason ? `原因：${reason}` : '原因：--';
-    node.classList.toggle('hidden', !reason);
+    node.classList.toggle('hidden', !reason || cameraRealtimeStatusFields.reason === false);
     node.classList.toggle('bad', Boolean(reason));
   });
   document.querySelectorAll('[data-camera-realtime-status]').forEach(node => {
     node.title = reason ? `摄像头实时运行状态：${reason}` : '摄像头实时运行状态';
     node.classList.toggle('hidden', !cameraRealtimeStatusEnabled);
   });
+}
+
+function setCameraRealtimeStatusFields(fields = {}) {
+  cameraRealtimeStatusFields = {
+    ...cameraRealtimeStatusFields,
+    ...fields
+  };
+  renderCameraRealtimeStatus({mode: cameraRealtimeMode});
 }
 
 function setCameraRealtimeStatusEnabled(enabled) {
