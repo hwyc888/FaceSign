@@ -37,6 +37,14 @@ func TestAppSettingsAPI(t *testing.T) {
 	if !current.RealtimeStatusEnabled {
 		t.Fatal("realtime status should default on")
 	}
+	if !current.RealtimeStatusMode ||
+		!current.RealtimeStatusVideo ||
+		!current.RealtimeStatusDrop ||
+		!current.RealtimeStatusNetwork ||
+		!current.RealtimeStatusRecognition ||
+		!current.RealtimeStatusReason {
+		t.Fatal("all realtime status fields should default on")
+	}
 
 	put := httptest.NewRequest(http.MethodPut, "/api/settings", strings.NewReader(`{"auto_start_checkin":true}`))
 	put.Header.Set("Content-Type", "application/json")
@@ -74,5 +82,28 @@ func TestAppSettingsAPI(t *testing.T) {
 	}
 	if !persisted.AutoStartCheckin {
 		t.Fatal("partial realtime status update should preserve auto start check-in")
+	}
+
+	fieldPut := httptest.NewRequest(http.MethodPut, "/api/settings", strings.NewReader(`{"realtime_status_network":false}`))
+	fieldPut.Header.Set("Content-Type", "application/json")
+	fieldRec := httptest.NewRecorder()
+	s.settings(fieldRec, fieldPut)
+	if fieldRec.Code != http.StatusOK {
+		t.Fatalf("realtime field PUT status=%d body=%s", fieldRec.Code, fieldRec.Body.String())
+	}
+
+	persisted, err = st.AppSettings(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if persisted.RealtimeStatusNetwork {
+		t.Fatal("PUT did not hide realtime network field")
+	}
+	if !persisted.RealtimeStatusMode ||
+		!persisted.RealtimeStatusVideo ||
+		!persisted.RealtimeStatusDrop ||
+		!persisted.RealtimeStatusRecognition ||
+		!persisted.RealtimeStatusReason {
+		t.Fatal("partial realtime field update changed unrelated status fields")
 	}
 }
