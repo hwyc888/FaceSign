@@ -29,8 +29,9 @@ const (
 	wmDestroy    = 0x0002
 	wmCommand    = 0x0111
 	wmSetFont         = 0x0030
-	wmAsyncDone       = 0x8001
-	wmUpgradeSelected = 0x8002
+	wmAsyncDone        = 0x8001
+	wmUpgradeSelected  = 0x8002
+	wmUpgradeLaunchDone = 0x8003
 
 	wsVisible      = 0x10000000
 	wsChild        = 0x40000000
@@ -72,6 +73,8 @@ var (
 	asyncResult        *uiActionResult
 	upgradeSelectionMu sync.Mutex
 	upgradeSelection   *upgradeSelectionResult
+	upgradeLaunchMu    sync.Mutex
+	upgradeLaunch      *upgradeLaunchResult
 
 	user32   = syscall.NewLazyDLL("user32.dll")
 	kernel32 = syscall.NewLazyDLL("kernel32.dll")
@@ -148,6 +151,10 @@ type uiActionResult struct {
 type upgradeSelectionResult struct {
 	Path string
 	Err  error
+}
+
+type upgradeLaunchResult struct {
+	Err error
 }
 
 func main() {
@@ -308,6 +315,9 @@ func windowProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		return 0
 	case wmUpgradeSelected:
 		finishUpgradeSelection(syscall.Handle(hwnd))
+		return 0
+	case wmUpgradeLaunchDone:
+		finishUpgradeLaunch(syscall.Handle(hwnd))
 		return 0
 	case wmDestroy:
 		procPostQuitMessage.Call(0)
@@ -617,6 +627,10 @@ func beginUpgradeSelection() {
 	target := mainWindow
 	go func() {
 		path, err := chooseUpgradePackage()
+		if err == nil && strings.TrimSpace(path) != "" {
+			path = normalizeUpgradePackageDir(path)
+			err = validateUpgradePackage(path)
+		}
 		upgradeSelectionMu.Lock()
 		upgradeSelection = &upgradeSelectionResult{Path: path, Err: err}
 		upgradeSelectionMu.Unlock()
@@ -645,13 +659,7 @@ func finishUpgradeSelection(hwnd syscall.Handle) {
 		return
 	}
 
-	packageDir := normalizeUpgradePackageDir(result.Path)
-	if err := validateUpgradePackage(packageDir); err != nil {
-		setStatusText("升级包检查失败。")
-		showError(err)
-		return
-	}
-
+	packageDir := result.Path
 	message := "将使用这个新版本目录升级 FaceSign：\r\n\r\n" + packageDir +
 		"\r\n\r\n升级时管理工具会自动关闭，升级完成后自动重新打开。" +
 		"\r\n数据库、人脸数据、证书、端口和开机启动状态都会保留。\r\n\r\n是否继续？"
@@ -659,9 +667,39 @@ func finishUpgradeSelection(hwnd syscall.Handle) {
 		setStatusText("已取消升级。")
 		return
 	}
-	if err := launchUpgradeHelper(packageDir); err != nil {
+	beginUpgradeLaunch(packageDir)
+}
+
+func beginUpgradeLaunch(packageDir string) {
+	asyncBusy = true
+	setActionButtonsEnabled(false)
+	setStatusText("正在启动 FaceSign 升级程序……\r\n\r\n管理窗口仍可正常移动、最小化或关闭。")
+
+	target := mainWindow
+	go func() {
+		err := launchUpgradeHelper(packageDir)
+		upgradeLaunchMu.Lock()
+		upgradeLaunch = &upgradeLaunchResult{Err: err}
+		upgradeLaunchMu.Unlock()
+		procPostMessageW.Call(uintptr(target), wmUpgradeLaunchDone, 0, 0)
+	}()
+}
+
+func finishUpgradeLaunch(hwnd syscall.Handle) {
+	upgradeLaunchMu.Lock()
+	result := upgradeLaunch
+	upgradeLaunch = nil
+	upgradeLaunchMu.Unlock()
+
+	asyncBusy = false
+	if result == nil {
+		setActionButtonsEnabled(true)
+		return
+	}
+	if result.Err != nil {
+		setActionButtonsEnabled(true)
 		setStatusText("启动升级程序失败。")
-		showError(err)
+		showError(result.Err)
 		return
 	}
 
