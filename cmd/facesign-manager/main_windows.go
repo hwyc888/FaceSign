@@ -486,13 +486,32 @@ func finishAsyncUIAction() {
 }
 
 func buildStatusText() string {
-	state, err := queryTaskStateFn()
-	if err != nil {
-		state = "查询失败"
+	type taskStateResult struct {
+		state string
+		err   error
 	}
-	pids := faceSignPIDsFn()
+	stateCh := make(chan taskStateResult, 1)
+	pidsCh := make(chan []int, 1)
+
+	// Task Scheduler and process enumeration are independent external probes.
+	// Run them together so a slow probe does not double the time that an action
+	// remains in the busy state.
+	go func() {
+		state, err := queryTaskStateFn()
+		stateCh <- taskStateResult{state: state, err: err}
+	}()
+	go func() {
+		pidsCh <- faceSignPIDsFn()
+	}()
+
 	info := readStartupInfo()
 	certText := rootCertificateStatus()
+	stateResult := <-stateCh
+	state := stateResult.state
+	if stateResult.err != nil {
+		state = "查询失败"
+	}
+	pids := <-pidsCh
 
 	running := "未运行"
 	if len(pids) > 0 {

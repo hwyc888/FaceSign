@@ -498,3 +498,34 @@ func TestStartupStateChangesUseSingleSchedulerCommand(t *testing.T) {
 		})
 	}
 }
+
+
+func TestStatusRefreshRunsExternalProbesInParallel(t *testing.T) {
+	oldState := queryTaskStateFn
+	oldPIDs := faceSignPIDsFn
+	oldInstallDir := installDirFlag
+	installDirFlag = t.TempDir()
+	queryTaskStateFn = func() (string, error) {
+		time.Sleep(250 * time.Millisecond)
+		return "Ready", nil
+	}
+	faceSignPIDsFn = func() []int {
+		time.Sleep(250 * time.Millisecond)
+		return nil
+	}
+	t.Cleanup(func() {
+		queryTaskStateFn = oldState
+		faceSignPIDsFn = oldPIDs
+		installDirFlag = oldInstallDir
+	})
+
+	started := time.Now()
+	status := buildStatusText()
+	elapsed := time.Since(started)
+	if !strings.Contains(status, "服务状态") {
+		t.Fatalf("unexpected status text: %q", status)
+	}
+	if elapsed > 450*time.Millisecond {
+		t.Fatalf("status probes ran serially or stalled: %s", elapsed)
+	}
+}
