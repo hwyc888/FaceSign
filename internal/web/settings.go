@@ -4,7 +4,6 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/hwyc888/FaceSign/internal/store"
 )
 
 type appSettingsRequest struct {
