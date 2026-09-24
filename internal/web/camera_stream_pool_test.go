@@ -95,13 +95,17 @@ func TestMJPEGContinuousStreamFeedsSharedPool(t *testing.T) {
 	if _, _, _, _, err := s.cameraSourceFrame(ctx, camera); err != nil {
 		t.Fatal(err)
 	}
-	if got := connections.Load(); got != 1 {
-		t.Fatalf("preview and recognition must share one upstream continuous connection, got %d", got)
+	previewStream := s.ensureNetworkCameraPreviewStream(camera)
+	if previewStream == nil || previewStream == stream {
+		t.Fatal("fallback preview and recognition must use separate pools")
+	}
+	if got := connections.Load(); got != 2 {
+		t.Fatalf("fallback preview and recognition should use two purpose-specific upstream connections, got %d", got)
 	}
 }
 
 func TestNetworkCameraPreviewBufferPreservesShortBursts(t *testing.T) {
-	stream := newNetworkCameraStream(store.Camera{ID: 91, Name: "Buffered preview"}, "buffered")
+	stream := newNetworkCameraStreamForPurpose(store.Camera{ID: 91, Name: "Buffered preview"}, "buffered", "preview")
 	for i := 0; i < 6; i++ {
 		img := image.NewRGBA(image.Rect(0, 0, 20+i, 12))
 		var frame bytes.Buffer
@@ -218,6 +222,21 @@ func TestFFmpegRTSPInputAddsCredentialsWithoutChangingStoredURL(t *testing.T) {
 	}
 	if strings.Contains(args, "fps=") {
 		t.Fatal("RTSP decoder should preserve source frame cadence; preview sampling is handled by FaceSign")
+	}
+}
+
+func TestRecognitionRTSPDecoderCapsOutputAtFiveFPS(t *testing.T) {
+	camera := store.Camera{
+		StreamURL: "rtsp://192.168.1.64:554/Streaming/channels/101",
+		Width: 1280, Height: 720, FPS: 30, TimeoutMS: 3000,
+	}
+	args := strings.Join(ffmpegRTSPArgsForPurpose(camera, camera.StreamURL, "recognition"), " ")
+	if !strings.Contains(args, "-vf fps=5,scale=1280:720:force_original_aspect_ratio=decrease:force_divisible_by=2") {
+		t.Fatalf("recognition decoder must cap JPEG output to 5 fps: %s", args)
+	}
+	previewArgs := strings.Join(ffmpegRTSPArgsForPurpose(camera, camera.StreamURL, "preview"), " ")
+	if strings.Contains(previewArgs, "fps=") {
+		t.Fatalf("fallback preview must preserve source cadence: %s", previewArgs)
 	}
 }
 
