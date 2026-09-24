@@ -1,4 +1,22 @@
-let appSettingsCache = {auto_start_checkin: false, realtime_status_enabled: true};
+const REALTIME_STATUS_FIELDS = [
+  ['realtimeStatusMode', 'realtime_status_mode', 'mode'],
+  ['realtimeStatusVideo', 'realtime_status_video', 'video'],
+  ['realtimeStatusDrop', 'realtime_status_drop', 'drop'],
+  ['realtimeStatusNetwork', 'realtime_status_network', 'network'],
+  ['realtimeStatusRecognition', 'realtime_status_recognition', 'recognition'],
+  ['realtimeStatusReason', 'realtime_status_reason', 'reason']
+];
+
+let appSettingsCache = {
+  auto_start_checkin: false,
+  realtime_status_enabled: true,
+  realtime_status_mode: true,
+  realtime_status_video: true,
+  realtime_status_drop: true,
+  realtime_status_network: true,
+  realtime_status_recognition: true,
+  realtime_status_reason: true
+};
 let appSettingsLoaded = false;
 
 function renderAppSettings() {
@@ -13,8 +31,20 @@ function renderAppSettings() {
   const realtimeEnabled = appSettingsCache.realtime_status_enabled !== false;
   if (realtimeCheckbox) realtimeCheckbox.checked = realtimeEnabled;
   if (realtimeState) realtimeState.textContent = realtimeEnabled ? '已显示' : '已隐藏';
+
+  const realtimeFields = {};
+  REALTIME_STATUS_FIELDS.forEach(([id, key, field]) => {
+    const visible = appSettingsCache[key] !== false;
+    const fieldCheckbox = $('#' + id);
+    if (fieldCheckbox) fieldCheckbox.checked = visible;
+    realtimeFields[field] = visible;
+  });
+
   if (typeof setCameraRealtimeStatusEnabled === 'function') {
     setCameraRealtimeStatusEnabled(realtimeEnabled);
+  }
+  if (typeof setCameraRealtimeStatusFields === 'function') {
+    setCameraRealtimeStatusFields(realtimeFields);
   }
 }
 
@@ -82,5 +112,28 @@ $('#realtimeStatusEnabled').addEventListener('change', async event => {
   } finally {
     event.target.disabled = false;
   }
+});
+
+REALTIME_STATUS_FIELDS.forEach(([id, key]) => {
+  const checkbox = $('#' + id);
+  if (!checkbox) return;
+  checkbox.addEventListener('change', async event => {
+    const enabled = event.target.checked;
+    event.target.disabled = true;
+    try {
+      appSettingsCache = await api('/api/settings', {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({[key]: enabled})
+      });
+      appSettingsLoaded = true;
+      renderAppSettings();
+    } catch (e) {
+      event.target.checked = !enabled;
+      toast(e.message);
+    } finally {
+      event.target.disabled = false;
+    }
+  });
 });
 
