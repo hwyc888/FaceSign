@@ -29,7 +29,7 @@ type rtspCandidate struct {
 	Label string
 }
 
-func resolveRTSPSource(ctx context.Context, camera store.Camera, requireH264 bool) (resolvedRTSPSource, error) {
+func resolveRTSPSource(ctx context.Context, camera store.Camera, preferH264 bool) (resolvedRTSPSource, error) {
 	ffmpegPath, err := findFFmpeg()
 	if err != nil {
 		return resolvedRTSPSource{}, err
@@ -40,7 +40,7 @@ func resolveRTSPSource(ctx context.Context, camera store.Camera, requireH264 boo
 	}
 
 	resolveTimeout := networkCameraProbeTimeout(camera)
-	if requireH264 {
+	if preferH264 {
 		resolveTimeout = cameraWebRTCProbeTimeout(camera) + 4*time.Second
 		if resolveTimeout > 12*time.Second {
 			resolveTimeout = 12 * time.Second
@@ -51,7 +51,7 @@ func resolveRTSPSource(ctx context.Context, camera store.Camera, requireH264 boo
 
 	transports := []string{"tcp", "udp"}
 	var diagnostics []string
-	sawHEVC := false
+	var firstHEVC *resolvedRTSPSource
 candidateLoop:
 	for _, candidate := range candidates {
 		for _, transport := range transports {
@@ -77,16 +77,19 @@ candidateLoop:
 					URL: candidate.URL, Transport: transport, Codec: codec, Label: candidate.Label,
 				}, nil
 			case "hevc", "h265":
-				sawHEVC = true
-				if !requireH264 {
-					return resolvedRTSPSource{
-						URL: candidate.URL, Transport: transport, Codec: "hevc", Label: candidate.Label,
-					}, nil
+				source := resolvedRTSPSource{
+					URL: candidate.URL, Transport: transport, Codec: "hevc", Label: candidate.Label,
+				}
+				if !preferH264 {
+					return source, nil
+				}
+				if firstHEVC == nil {
+					firstHEVC = &source
 				}
 				diagnostics = append(diagnostics, candidate.Label+"/"+strings.ToUpper(transport)+": 检测到 H.265/HEVC")
 				continue candidateLoop
 			default:
-				if !requireH264 {
+				if !preferH264 {
 					return resolvedRTSPSource{
 						URL: candidate.URL, Transport: transport, Codec: codec, Label: candidate.Label,
 					}, nil
@@ -97,8 +100,8 @@ candidateLoop:
 		}
 	}
 
-	if requireH264 && sawHEVC {
-		return resolvedRTSPSource{}, errors.New("RTSP 已连接但主码流是 H.265/HEVC；FaceSign 已自动尝试海康 H.264 子码流，仍未找到可用 H.264，请在摄像头“视音频”中把主码流或子码流编码改为 H.264")
+	if preferH264 && firstHEVC != nil {
+		return *firstHEVC, nil
 	}
 	if len(diagnostics) == 0 {
 		if resolveCtx.Err() != nil {
