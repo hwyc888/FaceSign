@@ -1,6 +1,7 @@
 package web
 
 import (
+	"bytes"
 	"errors"
 	"image"
 	"net/http"
@@ -9,6 +10,7 @@ import (
 	"time"
 
 	"github.com/hwyc888/FaceSign/internal/face"
+	"github.com/hwyc888/FaceSign/internal/person"
 	"github.com/hwyc888/FaceSign/internal/store"
 )
 
