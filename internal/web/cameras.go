@@ -557,6 +557,15 @@ func (s *Server) cameraAction(w http.ResponseWriter, r *http.Request) {
 				methodNotAllowed(w)
 				return
 			}
+			if !s.tryBeginCameraRecognition(id) {
+				writeJSON(w, http.StatusOK, map[string]any{
+					"skipped": true,
+					"busy":    true,
+					"reason":  "camera_recognition_busy",
+				})
+				return
+			}
+			defer s.endCameraRecognition(id)
 			frame, _, _, status, err := s.cameraSourceFrame(r.Context(), item)
 			if err != nil {
 				writeError(w, status, err)

@@ -87,6 +87,7 @@ func (s *Server) createEnrollment(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, friendlyStudentError(err))
 		return
 	}
+	s.refreshFaceCacheAfterMutation(r.Context())
 	writeJSON(w, http.StatusCreated, map[string]any{
 		"ok":      true,
 		"student": student,
@@ -126,6 +127,7 @@ func (s *Server) addFaceSample(w http.ResponseWriter, r *http.Request, studentID
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	s.refreshFaceCacheAfterMutation(r.Context())
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":         true,
 		"sample":     sample,
@@ -142,18 +144,13 @@ func (s *Server) readEnrollmentFeature(w http.ResponseWriter, r *http.Request) (
 }
 
 func (s *Server) compareFeature(ctx context.Context, feature []float32, targetStudentID int64) (faceComparison, error) {
-	samples, err := s.store.ListFaceSamples(ctx)
+	samples, err := s.cachedFaceSamples(ctx)
 	if err != nil {
 		return faceComparison{}, err
 	}
 	var result faceComparison
 	for _, sample := range samples {
-		stored, err := face.Decode(sample.Embedding)
-		if err != nil {
-			s.logger.Warn("skip invalid face sample", "student_id", sample.Student.ID, "sample_id", sample.ID, "error", err)
-			continue
-		}
-		score := face.Similarity(feature, stored)
+		score := face.Similarity(feature, sample.Feature)
 		if targetStudentID > 0 && sample.Student.ID == targetStudentID {
 			result.SameFound = true
 			if score > result.SameScore {

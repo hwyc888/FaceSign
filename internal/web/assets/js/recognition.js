@@ -35,7 +35,7 @@ function renderRecognition(r) {
   if (!faces.length && !persons.length) {
     el.className = 'result empty';
     el.textContent = '未检测到人员或人脸';
-    drawFaceOverlay([], []);
+    drawFaceOverlay([], [], r.frame_width, r.frame_height);
     return;
   }
 
@@ -93,10 +93,10 @@ function renderRecognition(r) {
   `).join('');
 
   el.innerHTML = `<div class="result-summary">${summary}</div>` + faceHTML + waitingHTML;
-  drawFaceOverlay(faces, persons);
+  drawFaceOverlay(faces, persons, r.frame_width, r.frame_height);
 }
 
-function drawFaceOverlay(faces, persons = []) {
+function drawFaceOverlay(faces, persons = [], sourceWidth = 0, sourceHeight = 0) {
   const overlay = $('#faceOverlay');
   if (!overlay) return;
   const dimensions = typeof cameraFrameDimensions === 'function'
@@ -104,13 +104,23 @@ function drawFaceOverlay(faces, persons = []) {
     : {width: 1280, height: 720};
   overlay.width = dimensions.width || 1280;
   overlay.height = dimensions.height || 720;
+  const sourceW = Math.max(1, Number(sourceWidth || overlay.width));
+  const sourceH = Math.max(1, Number(sourceHeight || overlay.height));
+  const scaleX = overlay.width / sourceW;
+  const scaleY = overlay.height / sourceH;
+  const scaledBox = box => ({
+    x: Number(box?.x || 0) * scaleX,
+    y: Number(box?.y || 0) * scaleY,
+    width: Number(box?.width || 0) * scaleX,
+    height: Number(box?.height || 0) * scaleY
+  });
   const ctx = overlay.getContext('2d');
   ctx.clearRect(0, 0, overlay.width, overlay.height);
   ctx.lineWidth = Math.max(2, overlay.width / 400);
   ctx.font = `${Math.max(18, Math.round(overlay.width / 55))}px Segoe UI, Arial`;
 
   persons.forEach(p => {
-    const b = p.box || {};
+    const b = scaledBox(p.box);
     if (p.face_visible) return;
     ctx.save();
     ctx.strokeStyle = '#8b5cf6';
@@ -123,7 +133,7 @@ function drawFaceOverlay(faces, persons = []) {
   });
 
   faces.forEach(f => {
-    const b = f.box || {};
+    const b = scaledBox(f.box);
     let color = '#f59e0b';
     let label = '未录入';
     const quality = Math.round(Number(f.quality_score || 0) * 100);
@@ -157,12 +167,19 @@ async function recognizeFrame(options = {}) {
   if (recognizing) return null;
   recognizing = true;
   const performanceStartedAt = performance.now();
+  let completedRecognition = false;
   try {
     let r;
+    const loadProfile = typeof cameraRecognitionLoadProfile === 'function'
+      ? cameraRecognitionLoadProfile()
+      : {level: 'normal', maxFPS: 5};
     if (activeCamera && activeCamera.kind !== 'local') {
       r = await api(`/api/cameras/${activeCamera.id}/recognize`, {
         method: 'POST',
-        headers: {'X-FaceSign-Session': recognitionSessionID}
+        headers: {
+          'X-FaceSign-Session': recognitionSessionID,
+          'X-FaceSign-AI-Load': loadProfile.level
+        }
       });
     } else {
       const blob = await capture();
@@ -170,10 +187,15 @@ async function recognizeFrame(options = {}) {
       fd.append('file', blob, 'camera.jpg');
       r = await api('/api/recognize', {
         method: 'POST',
-        headers: {'X-FaceSign-Session': recognitionSessionID},
+        headers: {
+          'X-FaceSign-Session': recognitionSessionID,
+          'X-FaceSign-AI-Load': loadProfile.level
+        },
         body: fd
       });
     }
+    if (r?.skipped && r?.busy) return null;
+    completedRecognition = true;
     renderRecognition(r);
     if ((r.verified_count || r.recognized_count || 0) > 0) {
       loadToday();
@@ -185,7 +207,7 @@ async function recognizeFrame(options = {}) {
     if (!autoTimer && !options.silent) toast(e.message);
     return null;
   } finally {
-    if (typeof recordRecognitionRealtimeSample === 'function') {
+    if (completedRecognition && typeof recordRecognitionRealtimeSample === 'function') {
       recordRecognitionRealtimeSample(performance.now() - performanceStartedAt);
     }
     recognizing = false;
@@ -194,7 +216,11 @@ async function recognizeFrame(options = {}) {
 
 function recognitionFrameIntervalMS() {
   if (activeCamera && activeCamera.kind !== 'local') {
-    const fps = Math.max(1, Math.min(Number(activeCamera.fps || 5), 5));
+    const loadProfile = typeof cameraRecognitionLoadProfile === 'function'
+      ? cameraRecognitionLoadProfile()
+      : {level: 'normal', maxFPS: 5};
+    const configuredFPS = Math.max(1, Math.min(Number(activeCamera.fps || 5), 5));
+    const fps = Math.max(1, Math.min(configuredFPS, Number(loadProfile.maxFPS || 5)));
     return Math.max(200, Math.round(1000 / fps));
   }
   return 120;

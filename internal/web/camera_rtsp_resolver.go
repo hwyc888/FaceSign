@@ -30,11 +30,15 @@ type rtspCandidate struct {
 }
 
 func resolveRTSPSource(ctx context.Context, camera store.Camera, preferH264 bool) (resolvedRTSPSource, error) {
+	return resolveRTSPSourceForPurpose(ctx, camera, preferH264, "")
+}
+
+func resolveRTSPSourceForPurpose(ctx context.Context, camera store.Camera, preferH264 bool, purpose string) (resolvedRTSPSource, error) {
 	ffmpegPath, err := findFFmpeg()
 	if err != nil {
 		return resolvedRTSPSource{}, err
 	}
-	candidates, err := rtspCandidates(camera)
+	candidates, err := rtspCandidatesForPurpose(camera, purpose)
 	if err != nil {
 		return resolvedRTSPSource{}, err
 	}
@@ -113,6 +117,10 @@ candidateLoop:
 }
 
 func rtspCandidates(camera store.Camera) ([]rtspCandidate, error) {
+	return rtspCandidatesForPurpose(camera, "")
+}
+
+func rtspCandidatesForPurpose(camera store.Camera, purpose string) ([]rtspCandidate, error) {
 	raw := strings.TrimSpace(camera.StreamURL)
 	parsed, err := url.Parse(raw)
 	if err != nil || parsed.Host == "" {
@@ -123,13 +131,15 @@ func rtspCandidates(camera store.Camera) ([]rtspCandidate, error) {
 		url   string
 		label string
 	}
-	rawCandidates := []rawCandidate{{url: raw, label: "当前地址"}}
+	rawCandidates := make([]rawCandidate, 0, 16)
 	lowerPath := strings.ToLower(parsed.Path)
 	isHikvision := strings.Contains(lowerPath, "/streaming/channels/") ||
 		strings.Contains(lowerPath, "/isapi/streaming/channels/") ||
 		strings.Contains(lowerPath, "/ch1/")
 
-	if isHikvision {
+	if !isHikvision {
+		rawCandidates = append(rawCandidates, rawCandidate{url: raw, label: "当前地址"})
+	} else {
 		hosts := []string{parsed.Host}
 		port := parsed.Port()
 		hostName := parsed.Hostname()
@@ -140,22 +150,30 @@ func rtspCandidates(camera store.Camera) ([]rtspCandidate, error) {
 			hosts = append(hosts, net.JoinHostPort(hostName, "554"))
 		}
 
-		paths := []struct {
-			path  string
-			label string
-		}{
-			{"/Streaming/channels/101", "海康主码流101"},
-			{"/Streaming/channels/102", "海康子码流102"},
-			{"/ISAPI/Streaming/Channels/101", "海康ISAPI主码流101"},
-			{"/ISAPI/Streaming/Channels/102", "海康ISAPI子码流102"},
-			{"/ch1/main/av_stream", "海康兼容主码流"},
-			{"/ch1/sub/av_stream", "海康兼容子码流"},
+		mainPaths := []rawCandidate{
+			{url: "/Streaming/channels/101", label: "海康主码流101"},
+			{url: "/ISAPI/Streaming/Channels/101", label: "海康ISAPI主码流101"},
+			{url: "/ch1/main/av_stream", label: "海康兼容主码流"},
 		}
+		subPaths := []rawCandidate{
+			{url: "/Streaming/channels/102", label: "海康子码流102"},
+			{url: "/ISAPI/Streaming/Channels/102", label: "海康ISAPI子码流102"},
+			{url: "/ch1/sub/av_stream", label: "海康兼容子码流"},
+		}
+		paths := append([]rawCandidate(nil), mainPaths...)
+		if strings.EqualFold(strings.TrimSpace(purpose), "recognition") {
+			paths = append(append([]rawCandidate(nil), subPaths...), mainPaths...)
+		} else if strings.EqualFold(strings.TrimSpace(purpose), "preview") {
+			paths = append(append([]rawCandidate(nil), mainPaths...), subPaths...)
+		} else {
+			paths = append(paths, subPaths...)
+		}
+
 		for hostIndex, host := range hosts {
 			for _, item := range paths {
 				clone := *parsed
 				clone.Host = host
-				clone.Path = item.path
+				clone.Path = item.url
 				clone.RawPath = ""
 				clone.RawQuery = ""
 				clone.Fragment = ""
@@ -166,6 +184,8 @@ func rtspCandidates(camera store.Camera) ([]rtspCandidate, error) {
 				rawCandidates = append(rawCandidates, rawCandidate{url: clone.String(), label: label})
 			}
 		}
+		// Keep the exact configured URL as the final recovery candidate.
+		rawCandidates = append(rawCandidates, rawCandidate{url: raw, label: "当前地址"})
 	}
 
 	seen := make(map[string]bool)

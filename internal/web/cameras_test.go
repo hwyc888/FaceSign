@@ -700,3 +700,14 @@ func TestNetworkCameraFrameCacheSharesUpstreamFetch(t *testing.T) {
 		t.Fatalf("cache should refresh after one frame interval; calls=%d", upstreamCalls)
 	}
 }
+
+
+func TestCameraActionHasNoHikvisionCodecMutationEndpoint(t *testing.T) {
+	s := &Server{}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, "/api/cameras/1/optimize-h264", nil)
+	s.cameraAction(rec, req)
+	if rec.Code >= 200 && rec.Code < 300 {
+		t.Fatalf("Hikvision codec mutation endpoint must stay disabled, got status %d", rec.Code)
+	}
+}
