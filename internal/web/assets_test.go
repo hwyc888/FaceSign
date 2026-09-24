@@ -935,6 +935,9 @@ func TestNetworkCameraPresetSimpleConfiguration(t *testing.T) {
 		"/axis-media/media.amp",
 		"/axis-cgi/jpg/image.cgi?camera=1",
 		"applyCameraPreset({requireIP: true})",
+		"data-camera-optimize-h264",
+		"optimizeHikvisionCamera",
+		"/optimize-h264",
 	} {
 		if !strings.Contains(script, want) {
 			t.Fatalf("network camera preset logic missing %q", want)

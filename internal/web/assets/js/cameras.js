@@ -346,6 +346,9 @@ function renderCameraRows() {
         <div class="camera-row-actions">
           ${camera.is_default ? '' : `<button data-camera-default="${camera.id}">设为默认</button>`}
           <button data-camera-test="${camera.id}">测试</button>
+          ${camera.kind === 'network' && camera.protocol === 'rtsp' && cameraPresetFromCamera(camera) === 'hikvision'
+            ? `<button data-camera-optimize-h264="${camera.id}" title="将海康 101 主码流优化为 H.264、最高25FPS、约1秒GOP">H.264优化</button>`
+            : ''}
           <button data-camera-edit="${camera.id}">编辑</button>
           <button class="danger" data-camera-delete="${camera.id}">删除</button>
         </div>
@@ -354,8 +357,9 @@ function renderCameraRows() {
   `).join('');
 
   $$('[data-camera-default]').forEach(button => button.onclick = () => setDefaultCamera(Number(button.dataset.cameraDefault)));
-  $$('[data-camera-test]').forEach(button => button.onclick = () => testCamera(Number(button.dataset.cameraTest)));
-  $$('[data-camera-edit]').forEach(button => button.onclick = () => editCamera(Number(button.dataset.cameraEdit)));
+  $('[data-camera-test]').forEach(button => button.onclick = () => testCamera(Number(button.dataset.cameraTest)));
+  $('[data-camera-optimize-h264]').forEach(button => button.onclick = () => optimizeHikvisionCamera(Number(button.dataset.cameraOptimizeH264)));
+  $('[data-camera-edit]').forEach(button => button.onclick = () => editCamera(Number(button.dataset.cameraEdit)));
   $$('[data-camera-delete]').forEach(button => button.onclick = () => deleteCamera(Number(button.dataset.cameraDelete)));
 }
 
@@ -516,6 +520,38 @@ async function deleteCamera(id) {
     toast('摄像头已删除');
   } catch (e) {
     toast(e.message);
+  }
+}
+
+async function optimizeHikvisionCamera(id) {
+  const camera = camerasCache.find(item => item.id === id);
+  if (!camera) return;
+  if (!confirm(
+    `确定优化海康摄像头“${camera.name}”的 101 主码流吗？\n\n` +
+    'FaceSign 只修改视频编码为 H.264、把高于25FPS的帧率限制到25FPS，并把GOP调整为约1秒；分辨率、码率和其他参数保持不变。'
+  )) return;
+
+  try {
+    if (cameraOpen && activeCamera?.id === id) stopCamera();
+    const result = await api(`/api/cameras/${id}/optimize-h264`, {method: 'POST'});
+    renderCameraConnectionTest({
+      ok: true,
+      message: result.message || '海康 H.264 优化完成',
+      checks: [
+        {name: '主码流编码', status: 'ok', message: `101 已设置为 ${result.codec || 'H.264'}`},
+        {name: '实时帧率', status: 'ok', message: `${result.fps || '-'} FPS`},
+        {name: '关键帧间隔', status: 'ok', message: `GOP ${result.gop || '-'}（约1秒）`},
+        {name: '设备回读', status: result.verified ? 'ok' : 'pending', message: result.verified ? '已回读确认' : '设备已接受设置，稍后可重新测试'}
+      ]
+    });
+    toast(result.message || '海康 H.264 优化完成');
+  } catch (e) {
+    renderCameraConnectionTest({
+      ok: false,
+      message: 'H.264 优化失败：' + e.message,
+      checks: [{name: '海康 H.264 优化', status: 'error', message: e.message}]
+    });
+    toast('海康 H.264 优化失败：' + e.message);
   }
 }
 
