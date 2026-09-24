@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/hwyc888/FaceSign/internal/store"
+	"github.com/pion/webrtc/v4"
 )
 
 func TestWebRTCH264OutputArgsPassThroughH264(t *testing.T) {
@@ -164,16 +165,17 @@ func TestCameraPreviewHubSharesOneWorkerAcrossSubscribers(t *testing.T) {
 func TestCameraPreviewHubFallsBackWhenQSVZeroCopyFails(t *testing.T) {
 	oldStreamFn := cameraPreviewPacketStreamFn
 	var calls atomic.Int32
+	workerErrors := make(chan string, 2)
 	cameraPreviewPacketStreamFn = func(ctx context.Context, camera store.Camera, source resolvedRTSPSource, encoder webRTCH264Encoder, writePacket func([]byte) error) error {
 		call := calls.Add(1)
 		if call == 1 {
 			if !encoder.QSVZeroCopy {
-				t.Fatal("first preview attempt must use QSV zero-copy")
+				workerErrors <- "first preview attempt did not use QSV zero-copy"
 			}
 			return errors.New("qsv device failed")
 		}
 		if encoder.QSVZeroCopy {
-			t.Fatal("fallback preview must disable QSV zero-copy")
+			workerErrors <- "fallback preview still used QSV zero-copy"
 		}
 		<-ctx.Done()
 		return ctx.Err()
@@ -197,6 +199,11 @@ func TestCameraPreviewHubFallsBackWhenQSVZeroCopyFails(t *testing.T) {
 	}
 	if calls.Load() < 2 {
 		t.Fatal("QSV zero-copy failure did not trigger fallback")
+	}
+	select {
+	case message := <-workerErrors:
+		t.Fatal(message)
+	default:
 	}
 	_, encoder := hub.configuration()
 	if encoder.QSVZeroCopy {
