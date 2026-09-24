@@ -259,6 +259,16 @@ jobs:
             $rtspHelp = (& $ffmpeg -hide_banner -h demuxer=rtsp 2>&1 | Out-String)
             if ($LASTEXITCODE -ne 0) { throw "$variant ffmpeg.exe could not report RTSP demuxer options" }
             if ($rtspHelp -notmatch '(?m)^\s*-timeout\s+') { throw "$variant ffmpeg.exe does not support the RTSP -timeout option" }
+
+            $encoders = (& $ffmpeg -hide_banner -encoders 2>&1 | Out-String)
+            if ($LASTEXITCODE -ne 0) { throw "$variant ffmpeg.exe could not report encoders" }
+            if ($encoders -notmatch '(?m)^\s*V[^\r\n]*\slibopenh264\s') { throw "$variant ffmpeg.exe is missing libopenh264 CPU fallback encoder" }
+
+            $h264Smoke = Join-Path $env:RUNNER_TEMP ("openh264-" + (Split-Path $variant -Leaf) + ".h264")
+            & $ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=c=black:s=320x180:r=25' -frames:v 2 -vf 'format=yuv420p' -c:v libopenh264 -b:v 500k -g 25 -bf 0 -f h264 -y $h264Smoke
+            if ($LASTEXITCODE -ne 0 -or -not (Test-Path $h264Smoke -PathType Leaf) -or (Get-Item $h264Smoke).Length -le 100) {
+              throw "$variant libopenh264 low-latency transcode smoke test failed"
+            }
           }
           $fullFFmpeg = (Get-FileHash 'dist-full\ffmpeg.exe' -Algorithm SHA256).Hash
           $liteFFmpeg = (Get-FileHash 'dist-lite\ffmpeg.exe' -Algorithm SHA256).Hash
