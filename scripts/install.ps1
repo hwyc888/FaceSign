@@ -2,7 +2,8 @@ param(
   [string]$InstallDir = "$env:ProgramData\FaceSign",
   [string]$Listen = "0.0.0.0:8080",
   [string]$HTTPSListen = "0.0.0.0:8443",
-  [string]$TLSHosts = ""
+  [string]$TLSHosts = "",
+  [bool]$OpenBrowser = $true
 )
 $ErrorActionPreference = 'Stop'
 $source = Split-Path -Parent $PSScriptRoot
@@ -73,12 +74,16 @@ function Ensure-FaceModels {
   }
 }
 
-# Stop every older FaceSign instance before replacing files.
+# Stop the current instance before replacing files. During an upgrade the
+# scheduled task is deliberately kept in place so custom ports/TLS hosts and
+# the user's startup-enabled state survive the update.
 $oldTask = Get-ScheduledTask -TaskName 'FaceSign' -ErrorAction SilentlyContinue
+$isUpgrade = $null -ne $oldTask -and (Test-Path (Join-Path $InstallDir 'FaceSign.exe') -PathType Leaf)
+$taskWasDisabled = $false
 if ($oldTask) {
+  $taskWasDisabled = $oldTask.State -eq 'Disabled'
   Stop-ScheduledTask -TaskName 'FaceSign' -ErrorAction SilentlyContinue
   Start-Sleep -Milliseconds 500
-  Unregister-ScheduledTask -TaskName 'FaceSign' -Confirm:$false -ErrorAction SilentlyContinue
 }
 Get-Process -Name 'FaceSign' -ErrorAction SilentlyContinue |
   Stop-Process -Force -ErrorAction SilentlyContinue
@@ -128,11 +133,30 @@ $faceArgs = '--listen {0} --https-listen {1} --http-redirect=true --tls-dir "{2}
 if ($TLSHosts) {
   $faceArgs += ' --tls-hosts "{0}"' -f $TLSHosts
 }
-$action = New-ScheduledTaskAction -Execute $exe -Argument $faceArgs
-$trigger = New-ScheduledTaskTrigger -AtStartup
-$principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
-$settings = New-ScheduledTaskSettingsSet -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero)
-Register-ScheduledTask -TaskName 'FaceSign' -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
+$existingTask = Get-ScheduledTask -TaskName 'FaceSign' -ErrorAction SilentlyContinue
+$configurationExplicit = $PSBoundParameters.ContainsKey('Listen') -or
+  $PSBoundParameters.ContainsKey('HTTPSListen') -or
+  $PSBoundParameters.ContainsKey('TLSHosts')
+
+if ($existingTask) {
+  $existingAction = @($existingTask.Actions)[0]
+  $existingExecute = [Environment]::ExpandEnvironmentVariables(([string]$existingAction.Execute).Trim('"'))
+  $executeChanged = -not [string]::Equals($existingExecute, $exe, [System.StringComparison]::OrdinalIgnoreCase)
+  if ($configurationExplicit -or $executeChanged) {
+    $actionArgs = [string]$existingAction.Arguments
+    if ($configurationExplicit -or [string]::IsNullOrWhiteSpace($actionArgs)) {
+      $actionArgs = $faceArgs
+    }
+    $action = New-ScheduledTaskAction -Execute $exe -Argument $actionArgs
+    Set-ScheduledTask -TaskName 'FaceSign' -Action $action | Out-Null
+  }
+} else {
+  $action = New-ScheduledTaskAction -Execute $exe -Argument $faceArgs
+  $trigger = New-ScheduledTaskTrigger -AtStartup
+  $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
+  $settings = New-ScheduledTaskSettingsSet -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero)
+  Register-ScheduledTask -TaskName 'FaceSign' -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
+}
 
 $port = ($Listen -split ':')[-1]
 $httpsPort = ($HTTPSListen -split ':')[-1]
@@ -146,7 +170,16 @@ if ($HTTPSListen.StartsWith('0.0.0.0:') -or $HTTPSListen.StartsWith(':')) {
   New-NetFirewallRule -DisplayName 'FaceSign HTTPS' -Direction Inbound -Action Allow -Protocol TCP -LocalPort $httpsPort -Profile Domain,Private | Out-Null
 }
 
-Start-ScheduledTask -TaskName 'FaceSign'
+if ($taskWasDisabled) {
+  Enable-ScheduledTask -TaskName 'FaceSign' | Out-Null
+}
+try {
+  Start-ScheduledTask -TaskName 'FaceSign'
+} finally {
+  if ($taskWasDisabled) {
+    Disable-ScheduledTask -TaskName 'FaceSign' | Out-Null
+  }
+}
 
 $rootCAPath = Join-Path $tlsDir 'facesign-root-ca.crt'
 $rootReady = $false
@@ -189,7 +222,8 @@ if (-not $versionInfo.version) {
 }
 
 $url = "https://127.0.0.1:$httpsPort/?v=$($versionInfo.version)"
-Write-Host "FaceSign upgraded and started."
+$operation = if ($isUpgrade) { 'upgraded in place' } else { 'installed' }
+Write-Host "FaceSign $operation and started."
 Write-Host "Version:       $($versionInfo.version)"
 Write-Host "Models:        face models pinned at $ModelCommit; YOLOX-Nano pinned by SHA-256"
 Write-Host "Root CA:       $rootCAPath"
@@ -222,4 +256,6 @@ $shortcut.Save()
 
 Write-Host "Manager:       $managerPath"
 Write-Host "Start Menu:    FaceSign\FaceSign 管理工具"
-Start-Process $url
+if ($OpenBrowser) {
+  Start-Process $url
+}

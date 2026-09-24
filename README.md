@@ -13,6 +13,7 @@ FaceSignManager.exe
 onnxruntime.dll
 scripts/
   install.ps1
+  upgrade.ps1
   uninstall.ps1
   install-client-ca.ps1
 README.md
@@ -77,14 +78,16 @@ If the server is accessed through an extra DNS name or a NAT/public IP not assig
 
 ## Upgrading an existing Windows installation
 
-If FaceSign was previously installed as a scheduled task, do not just double-click a newly downloaded executable while the old task is still running. Run the new installer as Administrator:
+Normal upgrades no longer reinstall or recreate the FaceSign scheduled task. From the newly extracted release package, run this as Administrator:
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass
-.\scripts\install.ps1
+.\scripts\upgrade.ps1
 ```
 
-The installer stops the old scheduled task and any old `FaceSign.exe` process, replaces the files, starts the new build, verifies `/api/version`, and opens a cache-busting local URL.
+The upgrade stops the running FaceSign process, replaces only program/runtime files, and then starts the new build. It preserves the existing scheduled task, its custom HTTP/HTTPS/TLS-host arguments, the current startup-enabled/disabled state, the SQLite database, TLS identity and cached models.
+
+`scripts\install.ps1` is now upgrade-aware too: if an existing FaceSign task and installation are detected, rerunning it performs the same in-place update instead of unregistering and recreating the task. Explicitly passing `-Listen`, `-HTTPSListen` or `-TLSHosts` still updates those service arguments when that is intentional.
 
 For diagnostics:
 

@@ -261,7 +261,11 @@ func runGUI() error {
 func windowProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 	switch message {
 	case wmCreate:
-		createControls(syscall.Handle(hwnd))
+		// WM_CREATE is delivered before CreateWindowExW returns, so publish the
+		// real window handle here. The initial async status refresh must post its
+		// completion back to this window instead of HWND(0).
+		mainWindow = syscall.Handle(hwnd)
+		createControls(mainWindow)
 		beginAsyncUIAction("读取服务状态", nil)
 		return 0
 	case wmCommand:
