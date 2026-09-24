@@ -137,3 +137,20 @@ REALTIME_STATUS_FIELDS.forEach(([id, key]) => {
   });
 });
 
+const clearRecognitionStatsButton = $('#clearRecognitionStats');
+if (clearRecognitionStatsButton) {
+  clearRecognitionStatsButton.addEventListener('click', async () => {
+    if (!window.confirm('确认清零“已验证”和“未录入”的累计统计吗？\n不会删除考勤记录、学生资料或人脸样本。')) return;
+    clearRecognitionStatsButton.disabled = true;
+    try {
+      const stats = await api('/api/recognition-stats', {method: 'DELETE'});
+      if (typeof renderRecognitionStats === 'function') renderRecognitionStats(stats);
+      toast('识别累计统计已清零');
+    } catch (e) {
+      toast(e.message);
+    } finally {
+      clearRecognitionStatsButton.disabled = false;
+    }
+  });
+}
+
