@@ -27,10 +27,8 @@ type Server struct {
 	faceCacheMu         sync.RWMutex
 	faceCacheLoaded     bool
 	faceCache           []decodedFaceSample
-	personDetectionMu    sync.Mutex
+	personDetectionMu   sync.Mutex
 	personDetectionCache map[string]personDetectionCacheEntry
-	cameraRecognitionMu   sync.Mutex
-	cameraRecognitionBusy map[int64]bool
 	matchThreshold     float64
 	detectionThreshold float64
 	version            string
@@ -64,8 +62,7 @@ func New(logger *slog.Logger, st *store.Store, engine *face.Engine, live *livene
 		personEngine:        personEngine,
 		tracker:            newRecognitionTracker(),
 		personTracker:      newPersonTracker(),
-		personDetectionCache:  make(map[string]personDetectionCacheEntry),
-		cameraRecognitionBusy: make(map[int64]bool),
+		personDetectionCache: make(map[string]personDetectionCacheEntry),
 		matchThreshold:     matchThreshold,
 		detectionThreshold: detectionThreshold,
 		version:            version,

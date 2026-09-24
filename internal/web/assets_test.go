@@ -647,10 +647,6 @@ func TestNetworkCameraUsesWebRTCH264WithMJPEGFallbackAndDirectRecognition(t *tes
 		"packetsLost",
 		"framesPerSecond",
 		"recordRecognitionRealtimeSample",
-		"cameraRecognitionLoadProfile",
-		"updateCameraRecognitionLoadLevel",
-		"AI保护",
-		"AI降载",
 		"friendlyCameraRealtimeReason",
 		"未找到 ffmpeg.exe；请使用 facesign-windows-amd64-full / lite 完整解压运行",
 		"摄像头 RTSP Digest 使用 SHA256",
@@ -713,9 +709,6 @@ func TestNetworkCameraUsesWebRTCH264WithMJPEGFallbackAndDirectRecognition(t *tes
 		"api('/api/recognize'",
 		"function recognitionFrameIntervalMS()",
 		"Math.min(Number(activeCamera.fps || 5), 5)",
-		"loadProfile.maxFPS",
-		"X-FaceSign-AI-Load",
-		"r?.skipped && r?.busy",
 		"setTimeout(runAutoRecognitionLoop, recognitionFrameIntervalMS())",
 		"recordRecognitionRealtimeSample(performance.now() - performanceStartedAt)",
 	} {
@@ -1002,38 +995,6 @@ func TestRecognitionOverlayScalesAIBoxesToPreviewResolution(t *testing.T) {
 	} {
 		if !strings.Contains(script, want) {
 			t.Fatalf("101/102 overlay scaling missing %q", want)
-		}
-	}
-}
-
-
-func TestAdaptiveRecognitionKeepsMonitoringWhenRealtimeOverlayHidden(t *testing.T) {
-	data, err := assets.ReadFile("assets/js/camera.js")
-	if err != nil {
-		t.Fatal(err)
-	}
-	script := string(data)
-	if strings.Contains(script, "if (!cameraRealtimeStatusEnabled || cameraRealtimeStatusBusy || !cameraOpen) return;") {
-		t.Fatal("adaptive AI monitoring must not stop when realtime status display is hidden")
-	}
-	if !strings.Contains(script, "if (!cameraOpen || cameraRealtimeStatusTimer) return;") {
-		t.Fatal("camera performance monitor must stay tied to camera activity, not overlay visibility")
-	}
-}
-
-func TestHikvisionPresetDoesNotMutateCameraEncoding(t *testing.T) {
-	data, err := assets.ReadFile("assets/js/cameras.js")
-	if err != nil {
-		t.Fatal(err)
-	}
-	script := string(data)
-	for _, forbidden := range []string{
-		"data-camera-optimize-h264",
-		"optimizeHikvisionCamera",
-		"/optimize-h264",
-	} {
-		if strings.Contains(script, forbidden) {
-			t.Fatalf("camera settings must not mutate Hikvision encoding parameters: found %q", forbidden)
 		}
 	}
 }

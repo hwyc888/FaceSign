@@ -8,11 +8,8 @@ import (
 )
 
 const (
-	personDetectionMaxAge = 1800 * time.Millisecond
-
-	recognitionLoadNormal  = "normal"
-	recognitionLoadReduced = "reduced"
-	recognitionLoadProtect = "protect"
+	personDetectionMaxAge      = 1800 * time.Millisecond
+	personDetectionReuseFrames = 2
 )
 
 type personDetectionCacheEntry struct {
@@ -21,40 +18,14 @@ type personDetectionCacheEntry struct {
 	reuseRemaining int
 }
 
-func normalizeRecognitionLoadLevel(value string) string {
-	switch value {
-	case recognitionLoadReduced:
-		return recognitionLoadReduced
-	case recognitionLoadProtect:
-		return recognitionLoadProtect
-	default:
-		return recognitionLoadNormal
-	}
-}
-
-func personDetectionReuseFramesForLoad(loadLevel string) int {
-	switch normalizeRecognitionLoadLevel(loadLevel) {
-	case recognitionLoadProtect:
-		return 4
-	case recognitionLoadReduced:
-		return 3
-	default:
-		return 2
-	}
-}
-
-func (s *Server) personDetectionsForRecognition(sessionID string, img image.Image, now time.Time, loadLevel string) ([]person.Detection, error) {
+func (s *Server) personDetectionsForRecognition(sessionID string, img image.Image, now time.Time) ([]person.Detection, error) {
 	if sessionID == "" {
 		sessionID = "default"
 	}
 
-	reuseFrames := personDetectionReuseFramesForLoad(loadLevel)
 	s.personDetectionMu.Lock()
 	cached, ok := s.personDetectionCache[sessionID]
 	age := now.Sub(cached.at)
-	if ok && cached.reuseRemaining > reuseFrames {
-		cached.reuseRemaining = reuseFrames
-	}
 	if ok && age >= 0 && age < personDetectionMaxAge && cached.reuseRemaining > 0 {
 		cached.reuseRemaining--
 		s.personDetectionCache[sessionID] = cached
@@ -84,7 +55,7 @@ func (s *Server) personDetectionsForRecognition(sessionID string, img image.Imag
 	s.personDetectionCache[sessionID] = personDetectionCacheEntry{
 		at:             now,
 		detections:     clonePersonDetections(detections),
-		reuseRemaining: reuseFrames,
+		reuseRemaining: personDetectionReuseFrames,
 	}
 	s.personDetectionMu.Unlock()
 	return detections, nil
