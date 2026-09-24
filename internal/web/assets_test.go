@@ -629,13 +629,19 @@ func TestNetworkCameraUsesWebRTCH264WithMJPEGFallbackAndDirectRecognition(t *tes
 		"framesPerSecond",
 		"recordRecognitionRealtimeSample",
 		"friendlyCameraRealtimeReason",
-		"检测到 H.265/HEVC，请把摄像头视频编码改为 H.264",
+		"未找到 ffmpeg.exe；请使用 facesign-windows-amd64-full / lite 完整解压运行",
+		"摄像头 RTSP Digest 使用 SHA256",
+		"RTSP 认证失败（401）",
+		"检测到 H.265/HEVC；FaceSign 已尝试海康子码流",
 		"WebRTC ICE 协商失败或超时",
 		"WebRTC 已连接，但没有收到可播放的 H.264 视频帧",
 	} {
 		if !strings.Contains(cameraScript, want) {
 			t.Fatalf("network WebRTC preview missing %q", want)
 		}
+	}
+	if (strings.Contains(cameraScript, "if (lower.includes('ffmpeg'))")) {
+		t.Fatal("generic FFmpeg substring must not hide the real RTSP failure reason")
 	}
 	for _, obsolete := range []string{
 		"runNetworkPreviewLoop",
