@@ -56,6 +56,18 @@
           </div>
           <div class="card result-card">
             <h2>识别结果</h2>
+            <div class="recognition-counts" aria-label="当前识别人数统计">
+              <div class="recognition-count verified">
+                <span>已验证</span>
+                <strong id="recognitionVerifiedCount">0</strong>
+                <em>人</em>
+              </div>
+              <div class="recognition-count unregistered">
+                <span>未录入</span>
+                <strong id="recognitionUnregisteredCount">0</strong>
+                <em>人</em>
+              </div>
+            </div>
             <div id="result" class="result empty">尚未识别</div>
             <div class="mini-list" id="todaySummary"></div>
           </div>
