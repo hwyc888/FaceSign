@@ -173,13 +173,7 @@ function setCameraRealtimeStatusEnabled(enabled) {
   document.querySelectorAll('[data-camera-realtime-status]').forEach(node => {
     node.classList.toggle('hidden', !cameraRealtimeStatusEnabled);
   });
-  if (!cameraRealtimeStatusEnabled) {
-    if (cameraRealtimeStatusTimer) {
-      clearInterval(cameraRealtimeStatusTimer);
-      cameraRealtimeStatusTimer = null;
-    }
-    return;
-  }
+  if (!cameraRealtimeStatusEnabled) return;
   renderCameraRealtimeStatus({mode: cameraRealtimeMode});
   if (cameraOpen) {
     ensureCameraRealtimeStatusTimer();
@@ -205,7 +199,7 @@ function recordRecognitionRealtimeSample(durationMS) {
 }
 
 function ensureCameraRealtimeStatusTimer() {
-  if (!cameraRealtimeStatusEnabled || cameraRealtimeStatusTimer) return;
+  if (!cameraOpen || cameraRealtimeStatusTimer) return;
   cameraRealtimeStatusTimer = setInterval(updateCameraRealtimeStatus, 1000);
 }
 
@@ -240,7 +234,7 @@ function stopCameraRealtimeStatus() {
 }
 
 async function updateCameraRealtimeStatus() {
-  if (!cameraRealtimeStatusEnabled || cameraRealtimeStatusBusy || !cameraOpen) return;
+  if (cameraRealtimeStatusBusy || !cameraOpen) return;
   cameraRealtimeStatusBusy = true;
   try {
     const now = performance.now();
@@ -327,17 +321,19 @@ async function updateCameraRealtimeStatus() {
       ? `识别：${recognition.fps.toFixed(1)} FPS · ${recognition.latency.toFixed(0)}ms${loadSuffix}`
       : `识别：${recognition.fps.toFixed(1)} FPS${loadSuffix}`;
 
-    renderCameraRealtimeStatus({
-      mode: cameraRealtimeMode,
-      video: videoText,
-      videoState,
-      drop: dropText,
-      dropState,
-      network: networkText,
-      networkState,
-      recognition: recognitionText,
-      recognitionState
-    });
+    if (cameraRealtimeStatusEnabled) {
+      renderCameraRealtimeStatus({
+        mode: cameraRealtimeMode,
+        video: videoText,
+        videoState,
+        drop: dropText,
+        dropState,
+        network: networkText,
+        networkState,
+        recognition: recognitionText,
+        recognitionState
+      });
+    }
   } catch (error) {
     console.debug('camera realtime stats unavailable', error);
   } finally {

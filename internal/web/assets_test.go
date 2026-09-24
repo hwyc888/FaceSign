@@ -1029,3 +1029,18 @@ func TestCameraActionSelectorsUseQuerySelectorAll(t *testing.T) {
 		}
 	}
 }
+
+
+func TestAdaptiveRecognitionKeepsMonitoringWhenRealtimeOverlayHidden(t *testing.T) {
+	data, err := assets.ReadFile("assets/js/camera.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(data)
+	if strings.Contains(script, "if (!cameraRealtimeStatusEnabled || cameraRealtimeStatusBusy || !cameraOpen) return;") {
+		t.Fatal("adaptive AI monitoring must not stop when realtime status display is hidden")
+	}
+	if !strings.Contains(script, "if (!cameraOpen || cameraRealtimeStatusTimer) return;") {
+		t.Fatal("camera performance monitor must stay tied to camera activity, not overlay visibility")
+	}
+}
