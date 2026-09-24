@@ -24,6 +24,13 @@ body{margin:0}
 .video-wrap{position:relative;background:#0b1220;border-radius:13px;aspect-ratio:16/9;overflow:hidden;display:flex;align-items:center;justify-content:center}
 .video-wrap video{width:100%;height:100%;object-fit:cover}
 .face-overlay{position:absolute;inset:0;width:100%;height:100%;pointer-events:none}
+.camera-realtime-status{position:absolute;left:10px;right:10px;bottom:10px;z-index:4;display:flex;gap:6px;flex-wrap:wrap;align-items:center;pointer-events:none}
+.camera-stat{display:inline-flex;align-items:center;min-height:24px;padding:4px 8px;border-radius:999px;background:rgba(7,13,24,.78);border:1px solid rgba(255,255,255,.14);color:#e5edf8;font-size:11px;font-weight:700;line-height:1;backdrop-filter:blur(6px);-webkit-backdrop-filter:blur(6px)}
+.camera-stat.source{color:#dbeafe;border-color:rgba(147,197,253,.35)}
+.camera-stat.good{color:#dcfce7;border-color:rgba(134,239,172,.38)}
+.camera-stat.warn{color:#fef3c7;border-color:rgba(253,224,71,.38)}
+.camera-stat.bad{color:#fee2e2;border-color:rgba(252,165,165,.4)}
+@media(max-width:640px){.camera-realtime-status{left:6px;right:6px;bottom:6px;gap:4px}.camera-stat{font-size:10px;padding:4px 6px}}
 .actions{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:14px}
 button{border:1px solid #cfd6e4;background:#fff;color:#23304a;border-radius:9px;padding:10px 14px;font-weight:650;cursor:pointer}
 button:hover{background:#f7f9fc}
