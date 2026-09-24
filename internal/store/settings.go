@@ -7,13 +7,25 @@ import (
 )
 
 const (
-	autoStartCheckinSettingKey    = "auto_start_checkin"
-	realtimeStatusEnabledSettingKey = "realtime_status_enabled"
+	autoStartCheckinSettingKey          = "auto_start_checkin"
+	realtimeStatusEnabledSettingKey     = "realtime_status_enabled"
+	realtimeStatusModeSettingKey        = "realtime_status_mode"
+	realtimeStatusVideoSettingKey       = "realtime_status_video"
+	realtimeStatusDropSettingKey        = "realtime_status_drop"
+	realtimeStatusNetworkSettingKey     = "realtime_status_network"
+	realtimeStatusRecognitionSettingKey = "realtime_status_recognition"
+	realtimeStatusReasonSettingKey      = "realtime_status_reason"
 )
 
 type AppSettings struct {
-	AutoStartCheckin      bool `json:"auto_start_checkin"`
-	RealtimeStatusEnabled bool `json:"realtime_status_enabled"`
+	AutoStartCheckin           bool `json:"auto_start_checkin"`
+	RealtimeStatusEnabled      bool `json:"realtime_status_enabled"`
+	RealtimeStatusMode         bool `json:"realtime_status_mode"`
+	RealtimeStatusVideo        bool `json:"realtime_status_video"`
+	RealtimeStatusDrop         bool `json:"realtime_status_drop"`
+	RealtimeStatusNetwork      bool `json:"realtime_status_network"`
+	RealtimeStatusRecognition  bool `json:"realtime_status_recognition"`
+	RealtimeStatusReason       bool `json:"realtime_status_reason"`
 }
 
 func (s *Store) AppSettings(ctx context.Context) (AppSettings, error) {
@@ -25,9 +37,39 @@ func (s *Store) AppSettings(ctx context.Context) (AppSettings, error) {
 	if err != nil {
 		return AppSettings{}, err
 	}
+	mode, err := s.appSettingBool(ctx, realtimeStatusModeSettingKey, true)
+	if err != nil {
+		return AppSettings{}, err
+	}
+	video, err := s.appSettingBool(ctx, realtimeStatusVideoSettingKey, true)
+	if err != nil {
+		return AppSettings{}, err
+	}
+	drop, err := s.appSettingBool(ctx, realtimeStatusDropSettingKey, true)
+	if err != nil {
+		return AppSettings{}, err
+	}
+	network, err := s.appSettingBool(ctx, realtimeStatusNetworkSettingKey, true)
+	if err != nil {
+		return AppSettings{}, err
+	}
+	recognition, err := s.appSettingBool(ctx, realtimeStatusRecognitionSettingKey, true)
+	if err != nil {
+		return AppSettings{}, err
+	}
+	reason, err := s.appSettingBool(ctx, realtimeStatusReasonSettingKey, true)
+	if err != nil {
+		return AppSettings{}, err
+	}
 	return AppSettings{
-		AutoStartCheckin:      autoStart,
-		RealtimeStatusEnabled: realtimeStatus,
+		AutoStartCheckin:          autoStart,
+		RealtimeStatusEnabled:     realtimeStatus,
+		RealtimeStatusMode:        mode,
+		RealtimeStatusVideo:       video,
+		RealtimeStatusDrop:        drop,
+		RealtimeStatusNetwork:     network,
+		RealtimeStatusRecognition: recognition,
+		RealtimeStatusReason:      reason,
 	}, nil
 }
 
@@ -59,6 +101,12 @@ func (s *Store) UpdateAppSettings(ctx context.Context, settings AppSettings) err
 	}{
 		{autoStartCheckinSettingKey, settings.AutoStartCheckin},
 		{realtimeStatusEnabledSettingKey, settings.RealtimeStatusEnabled},
+		{realtimeStatusModeSettingKey, settings.RealtimeStatusMode},
+		{realtimeStatusVideoSettingKey, settings.RealtimeStatusVideo},
+		{realtimeStatusDropSettingKey, settings.RealtimeStatusDrop},
+		{realtimeStatusNetworkSettingKey, settings.RealtimeStatusNetwork},
+		{realtimeStatusRecognitionSettingKey, settings.RealtimeStatusRecognition},
+		{realtimeStatusReasonSettingKey, settings.RealtimeStatusReason},
 	}
 	for _, item := range values {
 		value := "0"
