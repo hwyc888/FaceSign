@@ -65,6 +65,14 @@ func newNetworkCameraStreamForPurpose(camera store.Camera, key, purpose string) 
 }
 
 func (stream *networkCameraStream) publish(data []byte, source string) error {
+	if stream.purpose == "recognition" {
+		stream.mu.RLock()
+		lastUpdated := stream.frame.updatedAt
+		stream.mu.RUnlock()
+		if !lastUpdated.IsZero() && time.Since(lastUpdated) < networkCameraRecognitionFrameInterval(stream.camera) {
+			return nil
+		}
+	}
 	if len(data) == 0 {
 		return errors.New("连续流返回空画面")
 	}
@@ -98,14 +106,12 @@ func (stream *networkCameraStream) publish(data []byte, source string) error {
 		updatedAt: time.Now(),
 	}
 	stream.frame = frame
-	if stream.purpose == "preview" {
-		if len(stream.history) >= networkCameraPreviewBufferFrames {
-			copy(stream.history, stream.history[1:])
-			stream.history[len(stream.history)-1] = pooledNetworkCameraFrame{}
-			stream.history = stream.history[:len(stream.history)-1]
-		}
-		stream.history = append(stream.history, frame)
+	if len(stream.history) >= networkCameraPreviewBufferFrames {
+		copy(stream.history, stream.history[1:])
+		stream.history[len(stream.history)-1] = pooledNetworkCameraFrame{}
+		stream.history = stream.history[:len(stream.history)-1]
 	}
+	stream.history = append(stream.history, frame)
 	stream.lastErr = nil
 	notify := stream.notify
 	stream.notify = make(chan struct{})
@@ -195,11 +201,6 @@ func (stream *networkCameraStream) waitNext(ctx context.Context, afterSequence u
 	defer timer.Stop()
 	for {
 		stream.mu.RLock()
-		if stream.purpose != "preview" && stream.frame.sequence > afterSequence && len(stream.frame.data) > 0 {
-			frame := stream.frame
-			stream.mu.RUnlock()
-			return frame, nil
-		}
 		for _, frame := range stream.history {
 			if frame.sequence > afterSequence && len(frame.data) > 0 {
 				stream.mu.RUnlock()
@@ -572,9 +573,6 @@ func ffmpegRTSPArgsForPurposeTransport(camera store.Camera, inputURL, purpose, t
 	scale := fmt.Sprintf("scale=%d:%d:force_original_aspect_ratio=decrease:force_divisible_by=2", width, height)
 	filter := scale
 	if purpose == "recognition" {
-		// AI frames must never upscale a Hikvision sub-stream. Cap inference input
-		// at 960x540 while the preview path keeps the configured display size.
-		scale = "scale=w='min(iw,960)':h='min(ih,540)':force_original_aspect_ratio=decrease:force_divisible_by=2"
 		filter = fmt.Sprintf("fps=%d,%s", networkCameraRecognitionFPS(camera), scale)
 	}
 	return []string{
@@ -606,7 +604,7 @@ func (s *Server) consumeRTSPCameraStream(ctx context.Context, stream *networkCam
 	if err != nil {
 		return err
 	}
-	source, err := resolveRTSPSourceForPurpose(ctx, stream.camera, false, stream.purpose)
+	source, err := resolveRTSPSource(ctx, stream.camera, false)
 	if err != nil {
 		return err
 	}
