@@ -296,7 +296,15 @@
             <input id="realtimeStatusEnabled" type="checkbox" checked>
             显示摄像头实时状态
           </label>
-          <p class="muted camera-settings-help">关闭后只隐藏状态条，不影响视频和人脸识别。摄像头画面支持鼠标双击全屏，再双击恢复。</p>
+          <div class="realtime-status-options">
+            <label class="camera-check"><input id="realtimeStatusMode" type="checkbox" checked> 通道</label>
+            <label class="camera-check"><input id="realtimeStatusVideo" type="checkbox" checked> 显示 FPS / 分辨率</label>
+            <label class="camera-check"><input id="realtimeStatusDrop" type="checkbox" checked> 丢帧</label>
+            <label class="camera-check"><input id="realtimeStatusNetwork" type="checkbox" checked> 网络丢包 / 抖动</label>
+            <label class="camera-check"><input id="realtimeStatusRecognition" type="checkbox" checked> 识别 FPS / 耗时</label>
+            <label class="camera-check"><input id="realtimeStatusReason" type="checkbox" checked> 异常原因</label>
+          </div>
+          <p class="muted camera-settings-help">可单独决定每个实时参数是否显示；关闭总开关时全部隐藏，但不影响视频和人脸识别。摄像头画面支持鼠标双击全屏，再双击恢复。</p>
         </div>
 
         <div class="card camera-settings-card settings-secondary-card">
