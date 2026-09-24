@@ -133,10 +133,13 @@ Copy-Item (Join-Path $source 'FaceSign.exe') $InstallDir -Force
 Copy-Item (Join-Path $source 'FaceSignManager.exe') $InstallDir -Force
 Copy-Item (Join-Path $source 'onnxruntime.dll') $InstallDir -Force
 $sourceFFmpeg = Join-Path $source 'ffmpeg.exe'
-if (-not (Test-Path $sourceFFmpeg -PathType Leaf)) {
-  throw 'Release package is missing ffmpeg.exe; RTSP continuous streaming runtime is required.'
+if (Test-Path $sourceFFmpeg -PathType Leaf) {
+  Copy-Item $sourceFFmpeg $InstallDir -Force
+} elseif (Test-Path $installedFFmpeg -PathType Leaf) {
+  Write-Host 'Upgrade package has no ffmpeg.exe; keeping the installed FFmpeg runtime.'
+} else {
+  throw 'This package has no ffmpeg.exe and the existing installation has no reusable FFmpeg runtime.'
 }
-Copy-Item $sourceFFmpeg $InstallDir -Force
 $sourceLicenses = Join-Path $source 'licenses'
 if (Test-Path $sourceLicenses -PathType Container) {
   New-Item -ItemType Directory -Force -Path (Join-Path $InstallDir 'licenses') | Out-Null
