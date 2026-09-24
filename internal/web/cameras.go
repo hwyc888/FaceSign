@@ -596,7 +596,7 @@ func (s *Server) cameraSourceFrame(ctx context.Context, item store.Camera) ([]by
 
 func (s *Server) cameraPreviewSourceFrame(ctx context.Context, item store.Camera) ([]byte, int, int, int, error) {
 	if item.Kind == "network" {
-		frame, width, height, _, err := s.networkCameraFrame(ctx, item)
+		frame, width, height, _, err := s.networkCameraPreviewFrame(ctx, item)
 		if err != nil {
 			return nil, 0, 0, http.StatusBadGateway, fmt.Errorf("读取网络摄像头失败: %w", err)
 		}
@@ -622,7 +622,7 @@ func (s *Server) cameraStream(w http.ResponseWriter, r *http.Request, item store
 	var continuous *networkCameraStream
 	var continuousSequence uint64
 	if item.Kind == "network" {
-		continuous = s.ensureNetworkCameraStream(item)
+		continuous = s.ensureNetworkCameraPreviewStream(item)
 		if continuous != nil {
 			if pooled, ok := continuous.current(0); ok {
 				continuousSequence = pooled.sequence
