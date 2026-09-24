@@ -700,17 +700,3 @@ func TestNetworkCameraFrameCacheSharesUpstreamFetch(t *testing.T) {
 		t.Fatalf("cache should refresh after one frame interval; calls=%d", upstreamCalls)
 	}
 }
-
-func TestRestoreH265RouteRejectsOtherCameraNames(t *testing.T) {
-	st, err := store.Open(filepath.Join(t.TempDir(), "restore-h265-guard.db"))
-	if err != nil { t.Fatal(err) }
-	defer st.Close()
-	camera, err := st.CreateCamera(context.Background(), store.CameraInput{Name:"其他摄像头", Kind:"network", Protocol:"rtsp", StreamURL:"rtsp://127.0.0.1:554/Streaming/channels/101", SnapshotURL:"http://127.0.0.1/ISAPI/Streaming/channels/1/picture", AuthMode:"none", Width:1280, Height:720, FPS:5, TimeoutMS:1000})
-	if err != nil { t.Fatal(err) }
-	s := &Server{store: st}
-	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/cameras/%d/restore-h265", camera.ID), nil)
-	rec := httptest.NewRecorder()
-	s.cameraAction(rec, req)
-	if rec.Code != http.StatusBadGateway { t.Fatalf("unexpected status=%d body=%s", rec.Code, rec.Body.String()) }
-	if !strings.Contains(rec.Body.String(), "只允许恢复“大门主校道立柱2”") { t.Fatalf("unexpected response: %s", rec.Body.String()) }
-}

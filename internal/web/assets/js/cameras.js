@@ -346,7 +346,6 @@ function renderCameraRows() {
         <div class="camera-row-actions">
           ${camera.is_default ? '' : `<button data-camera-default="${camera.id}">设为默认</button>`}
           <button data-camera-test="${camera.id}">测试</button>
-          ${camera.name === '大门主校道立柱2' && camera.kind === 'network' && camera.protocol === 'rtsp' ? `<button data-camera-restore-h265="${camera.id}" title="仅恢复101主码流编码为H.265，不修改其他参数">恢复H.265</button>` : ''}
           <button data-camera-edit="${camera.id}">编辑</button>
           <button class="danger" data-camera-delete="${camera.id}">删除</button>
         </div>
@@ -355,9 +354,8 @@ function renderCameraRows() {
   `).join('');
 
   $$('[data-camera-default]').forEach(button => button.onclick = () => setDefaultCamera(Number(button.dataset.cameraDefault)));
-  document.querySelectorAll('[data-camera-test]').forEach(button => button.onclick = () => testCamera(Number(button.dataset.cameraTest)));
-  document.querySelectorAll('[data-camera-restore-h265]').forEach(button => button.onclick = () => restorePillar2H265(Number(button.dataset.cameraRestoreH265)));
-  document.querySelectorAll('[data-camera-edit]').forEach(button => button.onclick = () => editCamera(Number(button.dataset.cameraEdit)));
+  $$('[data-camera-test]').forEach(button => button.onclick = () => testCamera(Number(button.dataset.cameraTest)));
+  $$('[data-camera-edit]').forEach(button => button.onclick = () => editCamera(Number(button.dataset.cameraEdit)));
   $$('[data-camera-delete]').forEach(button => button.onclick = () => deleteCamera(Number(button.dataset.cameraDelete)));
 }
 
@@ -521,28 +519,6 @@ async function deleteCamera(id) {
   }
 }
 
-async function restorePillar2H265(id) {
-  const camera = camerasCache.find(item => item.id === id);
-  if (!camera || camera.name !== '大门主校道立柱2') return;
-  if (!confirm('只把“大门主校道立柱2”的海康101主码流编码恢复为 H.265。\n不会修改 FPS、GOP、分辨率、码率或 FaceSign 数据库。\n\n确定继续吗？')) return;
-  try {
-    if (cameraOpen && activeCamera?.id === id) stopCamera();
-    const result = await api('/api/cameras/' + id + '/restore-h265', {method: 'POST'});
-    renderCameraConnectionTest({
-      ok: result.verified === true,
-      message: result.message || 'H.265 恢复完成',
-      checks: [
-        {name: '101主码流编码', status: result.verified ? 'ok' : 'error', message: result.verified ? '已回读确认 H.265' : '未能确认 H.265'},
-        {name: '其他视频参数', status: 'ok', message: 'FPS、GOP、分辨率、码率均未修改'},
-        {name: 'FaceSign数据库', status: 'ok', message: '未修改任何数据库字段'}
-      ]
-    });
-    toast(result.message || '立柱2已恢复 H.265');
-  } catch (e) {
-    renderCameraConnectionTest({ok: false, message: '恢复 H.265 失败：' + e.message, checks: [{name: '101主码流编码', status: 'error', message: e.message}]});
-    toast('恢复 H.265 失败：' + e.message);
-  }
-}
 async function testCamera(id) {
   const camera = camerasCache.find(item => item.id === id);
   if (!camera) return;

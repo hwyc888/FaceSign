@@ -998,12 +998,3 @@ func TestRecognitionOverlayScalesAIBoxesToPreviewResolution(t *testing.T) {
 		}
 	}
 }
-
-func TestPillar2H265RecoveryUIIsScoped(t *testing.T) {
-	data, err := assets.ReadFile("assets/js/cameras.js")
-	if err != nil { t.Fatal(err) }
-	script := string(data)
-	for _, want := range []string{"大门主校道立柱2", "data-camera-restore-h265", "/restore-h265", "不会修改 FPS、GOP、分辨率、码率或 FaceSign 数据库"} {
-		if !strings.Contains(script, want) { t.Fatalf("H265 recovery UI missing %q", want) }
-	}
-}
