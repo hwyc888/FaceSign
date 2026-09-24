@@ -489,6 +489,8 @@ func TestAutoStartCheckinSettingUIAndFlow(t *testing.T) {
 		"auto_start_checkin",
 		"enterCheckinPageAutoStart",
 		"setAutoRecognitionEnabled(true)",
+		"if (cameraOpen)",
+		"await startCamera()",
 	} {
 		if !strings.Contains(settingsScript, want) {
 			t.Fatalf("auto check-in setting logic missing %q", want)
