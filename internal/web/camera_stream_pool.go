@@ -490,16 +490,44 @@ func findFFmpeg() (string, error) {
 	if runtime.GOOS == "windows" {
 		name = "ffmpeg.exe"
 	}
+
+	candidates := make([]string, 0, 8)
 	if executable, err := os.Executable(); err == nil {
-		candidate := filepath.Join(filepath.Dir(executable), name)
-		if info, statErr := os.Stat(candidate); statErr == nil && !info.IsDir() {
+		base := filepath.Dir(executable)
+		candidates = append(candidates,
+			filepath.Join(base, name),
+			filepath.Join(base, "ffmpeg", "bin", name),
+			filepath.Join(base, "runtime", "ffmpeg", "bin", name),
+			filepath.Join(base, "bin", name),
+		)
+	}
+	if cwd, err := os.Getwd(); err == nil {
+		candidates = append(candidates,
+			filepath.Join(cwd, name),
+			filepath.Join(cwd, "ffmpeg", "bin", name),
+		)
+	}
+	if runtime.GOOS == "windows" {
+		if programData := strings.TrimSpace(os.Getenv("ProgramData")); programData != "" {
+			candidates = append(candidates, filepath.Join(programData, "FaceSign", name))
+		}
+	}
+
+	seen := make(map[string]bool)
+	for _, candidate := range candidates {
+		candidate = filepath.Clean(candidate)
+		if seen[candidate] {
+			continue
+		}
+		seen[candidate] = true
+		if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
 			return candidate, nil
 		}
 	}
 	if candidate, err := exec.LookPath(name); err == nil {
 		return candidate, nil
 	}
-	return "", errors.New("未找到 FFmpeg；RTSP 连续流需要发布包中的 ffmpeg.exe，系统会暂时使用 HTTP 抓图回退")
+	return "", errors.New("未找到 ffmpeg.exe；请使用 facesign-windows-amd64-full 或 lite 完整解压运行，不要只复制 FaceSign.exe；no-ffmpeg 版本不会提供 WebRTC/H.264 实时预览")
 }
 
 func ffmpegRTSPInputURL(camera store.Camera) (string, error) {
