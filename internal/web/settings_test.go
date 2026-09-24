@@ -34,6 +34,9 @@ func TestAppSettingsAPI(t *testing.T) {
 	if current.AutoStartCheckin {
 		t.Fatal("auto start check-in should default off")
 	}
+	if !current.RealtimeStatusEnabled {
+		t.Fatal("realtime status should default on")
+	}
 
 	put := httptest.NewRequest(http.MethodPut, "/api/settings", strings.NewReader(`{"auto_start_checkin":true}`))
 	put.Header.Set("Content-Type", "application/json")
@@ -49,5 +52,27 @@ func TestAppSettingsAPI(t *testing.T) {
 	}
 	if !persisted.AutoStartCheckin {
 		t.Fatal("PUT did not persist auto start check-in")
+	}
+	if !persisted.RealtimeStatusEnabled {
+		t.Fatal("partial auto-start update should preserve realtime status")
+	}
+
+	statusPut := httptest.NewRequest(http.MethodPut, "/api/settings", strings.NewReader(`{"realtime_status_enabled":false}`))
+	statusPut.Header.Set("Content-Type", "application/json")
+	statusRec := httptest.NewRecorder()
+	s.settings(statusRec, statusPut)
+	if statusRec.Code != http.StatusOK {
+		t.Fatalf("realtime status PUT status=%d body=%s", statusRec.Code, statusRec.Body.String())
+	}
+
+	persisted, err = st.AppSettings(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if persisted.RealtimeStatusEnabled {
+		t.Fatal("PUT did not disable realtime status")
+	}
+	if !persisted.AutoStartCheckin {
+		t.Fatal("partial realtime status update should preserve auto start check-in")
 	}
 }
