@@ -517,6 +517,26 @@ func (s *Server) cameraAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if len(parts) == 2 && parts[1] == "restore-h265" {
+		if r.Method != http.MethodPost {
+			methodNotAllowed(w)
+			return
+		}
+		item, err := s.store.CameraByID(r.Context(), id)
+		if err != nil {
+			writeCameraStoreError(w, err)
+			return
+		}
+		result, err := restoreHikvisionPillar2H265(r.Context(), item)
+		if err != nil {
+			writeError(w, http.StatusBadGateway, err)
+			return
+		}
+		s.invalidateNetworkCameraFrame(id)
+		writeJSON(w, http.StatusOK, result)
+		return
+	}
+
 	if len(parts) == 2 && (parts[1] == "frame" || parts[1] == "stream" || parts[1] == "webrtc" || parts[1] == "recognize") {
 		item, err := s.store.CameraByID(r.Context(), id)
 		if err != nil {
