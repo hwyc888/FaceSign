@@ -42,7 +42,10 @@ function friendlyCameraRealtimeReason(reason) {
     return 'RTSP 认证失败（401）；请检查海康 RTSP 用户名、密码和 RTSP Digest 认证设置';
   }
   if (text.includes('H.265') || lower.includes('hevc') || lower.includes('h265')) {
-    return '检测到 H.265/HEVC；FaceSign 已尝试海康子码流，如仍失败请把主码流或子码流改为 H.264';
+    if (text.includes('转码') || text.includes('编码器')) {
+      return '已检测到 H.265/HEVC，但本机 H.264 转码能力不可用；请使用带 FFmpeg 的 Full/Lite 版本';
+    }
+    return '检测到 H.265/HEVC；FaceSign 将自动转码为 H.264 后通过 WebRTC 实时显示';
   }
   if (lower.includes('connection refused') || text.includes('端口拒绝连接')) {
     return 'RTSP 端口拒绝连接；请确认摄像头 RTSP 服务已启用，并核对 554/实际 RTSP 端口';
@@ -419,6 +422,7 @@ function startMJPEGPreviewFallback(generation, image, video, reason = '') {
 async function startWebRTCH264Preview(generation, image, video) {
   if (!window.RTCPeerConnection) throw new Error('当前浏览器不支持 WebRTC');
   const peer = new RTCPeerConnection();
+  let negotiatedMode = 'WebRTC H.264直通';
   networkPreviewPeer = peer;
   peer.addTransceiver('video', {direction: 'recvonly'});
 
@@ -428,7 +432,7 @@ async function startWebRTCH264Preview(generation, image, video) {
     video.srcObject = remote;
     image.classList.add('hidden');
     video.classList.remove('hidden');
-    startCameraRealtimeVideoMonitor(video, 'WebRTC H.264');
+    startCameraRealtimeVideoMonitor(video, negotiatedMode);
     video.play().catch(error => console.warn('WebRTC preview play failed', error));
   };
 
@@ -468,6 +472,7 @@ async function startWebRTCH264Preview(generation, image, video) {
     throw new Error(data.error || `WebRTC 返回 HTTP ${response.status}`);
   }
   const answer = await response.json();
+  negotiatedMode = String(answer.mode || negotiatedMode);
   await peer.setRemoteDescription(answer);
 
   networkPreviewWatchdogTimer = setTimeout(() => {
