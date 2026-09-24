@@ -506,11 +506,11 @@ func TestStatusRefreshRunsExternalProbesInParallel(t *testing.T) {
 	oldInstallDir := installDirFlag
 	installDirFlag = t.TempDir()
 	queryTaskStateFn = func() (string, error) {
-		time.Sleep(250 * time.Millisecond)
+		time.Sleep(350 * time.Millisecond)
 		return "Ready", nil
 	}
 	faceSignPIDsFn = func() []int {
-		time.Sleep(250 * time.Millisecond)
+		time.Sleep(350 * time.Millisecond)
 		return nil
 	}
 	t.Cleanup(func() {
@@ -525,7 +525,7 @@ func TestStatusRefreshRunsExternalProbesInParallel(t *testing.T) {
 	if !strings.Contains(status, "服务状态") {
 		t.Fatalf("unexpected status text: %q", status)
 	}
-	if elapsed > 450*time.Millisecond {
+	if elapsed > 600*time.Millisecond {
 		t.Fatalf("status probes ran serially or stalled: %s", elapsed)
 	}
 }
