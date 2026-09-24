@@ -1008,3 +1008,24 @@ func TestRecognitionOverlayScalesAIBoxesToPreviewResolution(t *testing.T) {
 		}
 	}
 }
+
+
+func TestCameraActionSelectorsUseQuerySelectorAll(t *testing.T) {
+	data, err := assets.ReadFile("assets/js/cameras.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(data)
+	for _, selector := range []string{
+		"data-camera-default",
+		"data-camera-test",
+		"data-camera-optimize-h264",
+		"data-camera-edit",
+		"data-camera-delete",
+	} {
+		want := "$$('[" + selector + "]').forEach"
+		if !strings.Contains(script, want) {
+			t.Fatalf("camera action selector must use querySelectorAll: %s", want)
+		}
+	}
+}
