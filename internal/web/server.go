@@ -1,9 +1,11 @@
 package web
 
 import (
+	"fmt"
 	"io/fs"
 	"log/slog"
 	"net/http"
+	"runtime/debug"
 	"sync"
 	"time"
 
@@ -92,8 +94,27 @@ func (s *Server) Handler() http.Handler {
 func (s *Server) logging(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		started := time.Now()
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				logger := s.logger
+				if logger == nil {
+					logger = slog.Default()
+				}
+				logger.Error("http handler panic",
+					"method", r.Method,
+					"path", r.URL.Path,
+					"panic", fmt.Sprint(recovered),
+					"stack", string(debug.Stack()),
+				)
+				writeError(w, http.StatusInternalServerError, fmt.Errorf("FaceSign 处理请求时发生内部异常，请重试；详细原因已写入服务日志"))
+			}
+			logger := s.logger
+			if logger == nil {
+				logger = slog.Default()
+			}
+			logger.Debug("http request", "method", r.Method, "path", r.URL.Path, "elapsed", time.Since(started))
+		}()
 		next.ServeHTTP(w, r)
-		s.logger.Debug("http request", "method", r.Method, "path", r.URL.Path, "elapsed", time.Since(started))
 	})
 }
 
