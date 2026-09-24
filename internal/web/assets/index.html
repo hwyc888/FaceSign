@@ -319,6 +319,29 @@
           <p class="muted camera-settings-help">可单独决定每个实时参数是否显示；关闭总开关时全部隐藏，但不影响视频和人脸识别。摄像头画面支持鼠标双击全屏，再双击恢复。</p>
         </div>
 
+        <div class="card settings-secondary-card">
+          <div class="card-head">
+            <div>
+              <h2>识别累计统计</h2>
+              <p class="muted compact">从上次清零开始持续累计；已验证按学生去重，未录入按人体 Track 去重，刷新页面和重启程序后仍保留。</p>
+            </div>
+            <button id="clearRecognitionStats" class="danger" type="button">清零统计</button>
+          </div>
+          <div class="recognition-counts recognition-counts-settings">
+            <div class="recognition-count verified">
+              <span>已验证</span>
+              <strong id="recognitionStatsVerifiedSetting">0</strong>
+              <em>人</em>
+            </div>
+            <div class="recognition-count unregistered">
+              <span>未录入</span>
+              <strong id="recognitionStatsUnregisteredSetting">0</strong>
+              <em>人</em>
+            </div>
+          </div>
+          <p class="muted camera-settings-help">“清零统计”只清除这两个累计数字，不会删除考勤记录、学生资料或人脸样本。</p>
+        </div>
+
         <div class="card camera-settings-card settings-secondary-card">
           <div class="card-head">
             <div>
