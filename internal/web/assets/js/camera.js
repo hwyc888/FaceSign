@@ -3,6 +3,7 @@ let networkPreviewGeneration = 0;
 let networkPreviewPeer = null;
 let networkPreviewWatchdogTimer = null;
 
+let cameraRealtimeStatusEnabled = true;
 let cameraRealtimeStatusTimer = null;
 let cameraRealtimeStatusBusy = false;
 let cameraRealtimeVideo = null;
@@ -98,7 +99,27 @@ function renderCameraRealtimeStatus(values = {}) {
   });
   document.querySelectorAll('[data-camera-realtime-status]').forEach(node => {
     node.title = reason ? `摄像头实时运行状态：${reason}` : '摄像头实时运行状态';
+    node.classList.toggle('hidden', !cameraRealtimeStatusEnabled);
   });
+}
+
+function setCameraRealtimeStatusEnabled(enabled) {
+  cameraRealtimeStatusEnabled = Boolean(enabled);
+  document.querySelectorAll('[data-camera-realtime-status]').forEach(node => {
+    node.classList.toggle('hidden', !cameraRealtimeStatusEnabled);
+  });
+  if (!cameraRealtimeStatusEnabled) {
+    if (cameraRealtimeStatusTimer) {
+      clearInterval(cameraRealtimeStatusTimer);
+      cameraRealtimeStatusTimer = null;
+    }
+    return;
+  }
+  renderCameraRealtimeStatus({mode: cameraRealtimeMode});
+  if (cameraOpen) {
+    ensureCameraRealtimeStatusTimer();
+    updateCameraRealtimeStatus();
+  }
 }
 
 function cameraRealtimeRecognitionMetrics(now) {
@@ -119,7 +140,7 @@ function recordRecognitionRealtimeSample(durationMS) {
 }
 
 function ensureCameraRealtimeStatusTimer() {
-  if (cameraRealtimeStatusTimer) return;
+  if (!cameraRealtimeStatusEnabled || cameraRealtimeStatusTimer) return;
   cameraRealtimeStatusTimer = setInterval(updateCameraRealtimeStatus, 1000);
 }
 
@@ -152,7 +173,7 @@ function stopCameraRealtimeStatus() {
 }
 
 async function updateCameraRealtimeStatus() {
-  if (cameraRealtimeStatusBusy || !cameraOpen) return;
+  if (!cameraRealtimeStatusEnabled || cameraRealtimeStatusBusy || !cameraOpen) return;
   cameraRealtimeStatusBusy = true;
   try {
     const now = performance.now();
@@ -253,6 +274,39 @@ async function updateCameraRealtimeStatus() {
     cameraRealtimeStatusBusy = false;
   }
 }
+
+async function toggleCameraFullscreen(event) {
+  const media = event.currentTarget;
+  const container = media?.closest('[data-camera-fullscreen]');
+  if (!container) return;
+  event.preventDefault();
+  event.stopPropagation();
+
+  try {
+    if (document.fullscreenElement) {
+      await document.exitFullscreen();
+      return;
+    }
+    await container.requestFullscreen();
+  } catch (error) {
+    toast('无法切换全屏：' + (error?.message || '浏览器拒绝全屏操作'));
+  }
+}
+
+function setupCameraFullscreenHandlers() {
+  [
+    '#camera',
+    '#cameraNetworkWebRTC',
+    '#cameraNetwork',
+    '#enrollCamera',
+    '#enrollCameraNetworkWebRTC',
+    '#enrollCameraNetwork'
+  ].map($).filter(Boolean).forEach(media => {
+    media.addEventListener('dblclick', toggleCameraFullscreen);
+  });
+}
+
+setupCameraFullscreenHandlers();
 
 function updateCameraControls() {
   const opened = cameraOpen;
