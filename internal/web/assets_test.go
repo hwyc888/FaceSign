@@ -727,8 +727,12 @@ func TestRecognitionResultShowsVerifiedAndUnregisteredCounts(t *testing.T) {
 	for _, want := range []string{
 		`id="recognitionVerifiedCount"`,
 		`id="recognitionUnregisteredCount"`,
+		`id="recognitionStatsVerifiedSetting"`,
+		`id="recognitionStatsUnregisteredSetting"`,
+		`id="clearRecognitionStats"`,
 		"已验证",
 		"未录入",
+		"识别累计统计",
 	} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("recognition count UI missing %q", want)
@@ -741,15 +745,41 @@ func TestRecognitionResultShowsVerifiedAndUnregisteredCounts(t *testing.T) {
 	}
 	script := string(jsData)
 	for _, want := range []string{
+		"function renderRecognitionStats(stats = {})",
 		"function updateRecognitionCounts(r = {})",
-		"r.verified_count ?? r.recognized_count ?? 0",
-		"r.unregistered_count ?? 0",
+		"function loadRecognitionStats()",
+		"/api/recognition-stats",
+		"r.verified_total ?? 0",
+		"r.unregistered_total ?? 0",
 		"updateRecognitionCounts(r)",
-		"updateRecognitionCounts({})",
 	} {
 		if !strings.Contains(script, want) {
 			t.Fatalf("recognition count logic missing %q", want)
 		}
+	}
+
+	settingsData, err := assets.ReadFile("assets/js/settings.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	settingsScript := string(settingsData)
+	for _, want := range []string{
+		"clearRecognitionStats",
+		"method: 'DELETE'",
+		"renderRecognitionStats(stats)",
+		"识别累计统计已清零",
+	} {
+		if !strings.Contains(settingsScript, want) {
+			t.Fatalf("recognition stats reset UI missing %q", want)
+		}
+	}
+
+	bootData, err := assets.ReadFile("assets/js/boot.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(bootData), "loadRecognitionStats().catch(() => {})") {
+		t.Fatal("boot must load persistent recognition stats")
 	}
 
 	cssData, err := assets.ReadFile("assets/style.css")
