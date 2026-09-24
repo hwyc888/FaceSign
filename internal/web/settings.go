@@ -8,7 +8,8 @@ import (
 )
 
 type appSettingsRequest struct {
-	AutoStartCheckin *bool `json:"auto_start_checkin"`
+	AutoStartCheckin      *bool `json:"auto_start_checkin"`
+	RealtimeStatusEnabled *bool `json:"realtime_status_enabled"`
 }
 
 func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
@@ -26,11 +27,21 @@ func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, err)
 			return
 		}
-		if in.AutoStartCheckin == nil {
-			writeError(w, http.StatusBadRequest, errors.New("缺少自动签到设置"))
+		if in.AutoStartCheckin == nil && in.RealtimeStatusEnabled == nil {
+			writeError(w, http.StatusBadRequest, errors.New("缺少应用设置"))
 			return
 		}
-		settings := store.AppSettings{AutoStartCheckin: *in.AutoStartCheckin}
+		settings, err := s.store.AppSettings(r.Context())
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		if in.AutoStartCheckin != nil {
+			settings.AutoStartCheckin = *in.AutoStartCheckin
+		}
+		if in.RealtimeStatusEnabled != nil {
+			settings.RealtimeStatusEnabled = *in.RealtimeStatusEnabled
+		}
 		if err := s.store.UpdateAppSettings(r.Context(), settings); err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
