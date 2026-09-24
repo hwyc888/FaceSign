@@ -576,6 +576,10 @@ func (s *Server) cameraAction(w http.ResponseWriter, r *http.Request) {
 				writeError(w, http.StatusBadGateway, fmt.Errorf("摄像头帧解码失败: %w", err))
 				return
 			}
+			if item.Kind == "network" && strings.EqualFold(strings.TrimSpace(item.Protocol), "rtsp") {
+				s.recognizeNetworkCameraImage(w, r, item, img)
+				return
+			}
 			s.recognizeImage(w, r, img)
 			return
 		}

@@ -39,7 +39,7 @@ function renderRecognition(r) {
     return;
   }
 
-  const summary = `人体跟踪 ${r.tracked_person_count || persons.length} 人，检测人脸 ${r.detected_count || faces.length} 张，等待露脸/清晰 ${r.waiting_face_count || 0} 人，签到通过 ${r.verified_count || 0} 人，验证中 ${r.pending_count || 0} 人，需重新对准 ${r.timeout_count || 0} 人，疑似照片/屏幕 ${r.spoof_count || 0} 人，未录入 ${r.unregistered_count || 0} 人`;
+  const summary = `人体跟踪 ${r.tracked_person_count || persons.length} 人，检测人脸 ${r.detected_count || faces.length} 张，等待靠近/露脸/清晰 ${r.waiting_face_count || 0} 人，签到通过 ${r.verified_count || 0} 人，验证中 ${r.pending_count || 0} 人，需重新对准 ${r.timeout_count || 0} 人，疑似照片/屏幕 ${r.spoof_count || 0} 人，未录入 ${r.unregistered_count || 0} 人`;
 
   const faceHTML = faces.map((f, i) => {
     const quality = Number(f.quality_score || 0);
@@ -85,12 +85,17 @@ function renderRecognition(r) {
   }).join('');
 
   const waitingPersons = persons.filter(p => !p.face_visible);
-  const waitingHTML = waitingPersons.slice(0, 4).map(p => `
+  const waitingHTML = waitingPersons.slice(0, 4).map(p => {
+    const waitingStatus = esc(p.status || '等待露脸');
+    const waitingHint = p.status === '等待靠近'
+      ? '已检测到人员；继续靠近后自动切换主码流头肩区域做人脸识别'
+      : '已持续跟踪该人员；出现清晰正脸后自动选择最佳帧识别';
+    return `
     <div class="face-result pending">
-      <div class="face-title">${p.student ? esc(p.student.name) + ' · ' : ''}人体 Track ${esc(p.track_id || '-')} · 等待露脸</div>
-      <div class="face-meta">已持续跟踪该人员；出现清晰正脸后自动选择最佳帧识别${p.student ? ` | 已缓存身份 ${(Number(p.similarity || 0) * 100).toFixed(1)}%` : ''}</div>
-    </div>
-  `).join('');
+      <div class="face-title">${p.student ? esc(p.student.name) + ' · ' : ''}人体 Track ${esc(p.track_id || '-')} · ${waitingStatus}</div>
+      <div class="face-meta">${waitingHint}${p.student ? ` | 已缓存身份 ${(Number(p.similarity || 0) * 100).toFixed(1)}%` : ''}</div>
+    </div>`;
+  }).join('');
 
   el.innerHTML = `<div class="result-summary">${summary}</div>` + faceHTML + waitingHTML;
   drawFaceOverlay(faces, persons, r.frame_width, r.frame_height);
@@ -127,7 +132,8 @@ function drawFaceOverlay(faces, persons = [], sourceWidth = 0, sourceHeight = 0)
     ctx.fillStyle = '#8b5cf6';
     ctx.setLineDash([10, 8]);
     ctx.strokeRect(b.x || 0, b.y || 0, b.width || 0, b.height || 0);
-    const label = p.student ? p.student.name + ' · 等待露脸' : '人员 · 等待露脸';
+    const waitStatus = p.status || '等待露脸';
+    const label = p.student ? p.student.name + ' · ' + waitStatus : '人员 · ' + waitStatus;
     ctx.fillText(label, Math.max(0, b.x || 0), Math.max(24, b.y || 0) - 5);
     ctx.restore();
   });

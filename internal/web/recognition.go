@@ -99,12 +99,72 @@ func (s *Server) recognizeImage(w http.ResponseWriter, r *http.Request, img imag
 		s.logger.Warn("person detector failed; continuing with face-derived tracks", "error", err)
 		personDetections = nil
 	}
+	s.recognizePreparedImage(w, r, img, now, sessionID, personDetections, detections)
+}
+
+func (s *Server) recognizeNetworkCameraImage(w http.ResponseWriter, r *http.Request, camera store.Camera, personImg image.Image) {
+	now := time.Now()
+	sessionID := recognitionSessionID(r)
+	loadLevel := normalizeRecognitionLoadLevel(r.Header.Get("X-FaceSign-AI-Load"))
+
+	personDetections, err := s.personDetectionsForRecognition(sessionID, personImg, now, loadLevel)
+	if err != nil {
+		s.logger.Warn("person detector failed; falling back to face-first recognition", "camera_id", camera.ID, "error", err)
+		s.recognizeImage(w, r, personImg)
+		return
+	}
+
+	if len(personDetections) == 0 {
+		detections, detectErr := s.engine.DetectAll(personImg, s.detectionThreshold)
+		if detectErr != nil && !errors.Is(detectErr, face.ErrNoFace) {
+			writeFaceError(w, detectErr)
+			return
+		}
+		s.recognizePreparedImage(w, r, personImg, now, sessionID, personDetections, detections)
+		return
+	}
+
+	if !anyPersonReadyForFaceProbe(personDetections) {
+		s.recognizePreparedImage(w, r, personImg, now, sessionID, personDetections, nil)
+		return
+	}
+
+	faceImg := personImg
+	facePeople := personDetections
+	if frame, _, _, _, frameErr := s.cameraPreviewSourceFrame(r.Context(), camera); frameErr == nil {
+		if decoded, _, decodeErr := image.Decode(bytes.NewReader(frame)); decodeErr == nil {
+			faceImg = decoded
+			facePeople = scalePersonDetections(personDetections, personImg.Bounds(), faceImg.Bounds())
+		} else {
+			s.logger.Warn("main-stream face frame decode failed; using recognition frame", "camera_id", camera.ID, "error", decodeErr)
+		}
+	} else {
+		s.logger.Warn("main-stream face frame unavailable; using recognition frame", "camera_id", camera.ID, "error", frameErr)
+	}
+
+	detections, err := s.detectFacesInPersonROIs(faceImg, facePeople)
+	if err != nil {
+		writeFaceError(w, err)
+		return
+	}
+	s.recognizePreparedImage(w, r, faceImg, now, sessionID, facePeople, detections)
+}
+
+func (s *Server) recognizePreparedImage(
+	w http.ResponseWriter,
+	r *http.Request,
+	img image.Image,
+	now time.Time,
+	sessionID string,
+	personDetections []person.Detection,
+	detections []face.Detection,
+) {
 	personDetections = addFaceFallbackPersons(personDetections, detections, img.Bounds())
 	tracks := s.personTracker.Observe(sessionID, personDetections, now)
 	personResults := make([]recognitionPerson, len(tracks))
 	personIndex := make(map[string]int, len(tracks))
 	for i, track := range tracks {
-		status := "等待露脸"
+		status := personWaitingStatus(track.Rectangle)
 		if track.Student != nil {
 			status = "已识别，等待再次露脸"
 		}
