@@ -207,7 +207,7 @@ func TestFFmpegRTSPInputAddsCredentialsWithoutChangingStoredURL(t *testing.T) {
 	args := strings.Join(ffmpegRTSPArgs(camera, input), " ")
 	for _, want := range []string{
 		"-rtsp_transport tcp",
-		"-rw_timeout",
+		"-timeout",
 		"-vf scale=1280:720:force_original_aspect_ratio=decrease:force_divisible_by=2",
 		"-c:v mjpeg",
 		"-q:v 7",
@@ -219,6 +219,9 @@ func TestFFmpegRTSPInputAddsCredentialsWithoutChangingStoredURL(t *testing.T) {
 		if !strings.Contains(args, want) {
 			t.Fatalf("ffmpeg RTSP args missing %q: %s", want, args)
 		}
+	}
+	if strings.Contains(args, "-rw_timeout") {
+		t.Fatal("RTSP demuxer must use -timeout instead of unsupported -rw_timeout")
 	}
 	if strings.Contains(args, "fps=") {
 		t.Fatal("RTSP decoder should preserve source frame cadence; preview sampling is handled by FaceSign")
