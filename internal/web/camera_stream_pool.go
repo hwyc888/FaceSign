@@ -583,7 +583,7 @@ func ffmpegRTSPArgsForPurposeTransport(camera store.Camera, inputURL, purpose, t
 		"-flags", "low_delay",
 		"-max_delay", "500000",
 		"-rtsp_transport", transport,
-		"-rw_timeout", strconv.FormatInt(timeout.Microseconds(), 10),
+		"-timeout", strconv.FormatInt(timeout.Microseconds(), 10),
 		"-i", inputURL,
 		"-map", "0:v:0",
 		"-an",
