@@ -40,9 +40,10 @@ type pooledNetworkCameraFrame struct {
 }
 
 type networkCameraStream struct {
-	key    string
-	camera store.Camera
-	cancel context.CancelFunc
+	key     string
+	camera  store.Camera
+	purpose string
+	cancel  context.CancelFunc
 
 	mu      sync.RWMutex
 	frame   pooledNetworkCameraFrame
@@ -52,10 +53,15 @@ type networkCameraStream struct {
 }
 
 func newNetworkCameraStream(camera store.Camera, key string) *networkCameraStream {
+	return newNetworkCameraStreamForPurpose(camera, key, "recognition")
+}
+
+func newNetworkCameraStreamForPurpose(camera store.Camera, key, purpose string) *networkCameraStream {
 	return &networkCameraStream{
-		key:    key,
-		camera: camera,
-		notify: make(chan struct{}),
+		key:     key,
+		camera:  camera,
+		purpose: purpose,
+		notify:  make(chan struct{}),
 	}
 }
 
@@ -230,8 +236,9 @@ func networkCameraContinuousMode(camera store.Camera) string {
 	return ""
 }
 
-func networkCameraStreamKey(camera store.Camera) string {
+func networkCameraStreamKey(camera store.Camera, purpose string) string {
 	return strings.Join([]string{
+		purpose,
 		camera.Protocol,
 		camera.StreamURL,
 		camera.Username,
@@ -243,24 +250,40 @@ func networkCameraStreamKey(camera store.Camera) string {
 }
 
 func (s *Server) ensureNetworkCameraStream(camera store.Camera) *networkCameraStream {
+	return s.ensureNetworkCameraStreamForPurpose(camera, "recognition")
+}
+
+func (s *Server) ensureNetworkCameraPreviewStream(camera store.Camera) *networkCameraStream {
+	return s.ensureNetworkCameraStreamForPurpose(camera, "preview")
+}
+
+func (s *Server) ensureNetworkCameraStreamForPurpose(camera store.Camera, purpose string) *networkCameraStream {
 	if networkCameraContinuousMode(camera) == "" {
 		return nil
 	}
 
-	key := networkCameraStreamKey(camera)
+	key := networkCameraStreamKey(camera, purpose)
 	s.networkCameraStreamMu.Lock()
-	if s.networkCameraStreams == nil {
-		s.networkCameraStreams = make(map[int64]*networkCameraStream)
+	target := s.networkCameraStreams
+	if purpose == "preview" {
+		target = s.networkCameraPreviewStreams
+		if target == nil {
+			target = make(map[int64]*networkCameraStream)
+			s.networkCameraPreviewStreams = target
+		}
+	} else if target == nil {
+		target = make(map[int64]*networkCameraStream)
+		s.networkCameraStreams = target
 	}
-	if current := s.networkCameraStreams[camera.ID]; current != nil && current.key == key {
+	if current := target[camera.ID]; current != nil && current.key == key {
 		s.networkCameraStreamMu.Unlock()
 		return current
 	}
-	old := s.networkCameraStreams[camera.ID]
+	old := target[camera.ID]
 	ctx, cancel := context.WithCancel(context.Background())
-	stream := newNetworkCameraStream(camera, key)
+	stream := newNetworkCameraStreamForPurpose(camera, key, purpose)
 	stream.cancel = cancel
-	s.networkCameraStreams[camera.ID] = stream
+	target[camera.ID] = stream
 	s.networkCameraStreamMu.Unlock()
 
 	if old != nil && old.cancel != nil {
@@ -273,20 +296,28 @@ func (s *Server) ensureNetworkCameraStream(camera store.Camera) *networkCameraSt
 func (s *Server) stopNetworkCameraStream(cameraID int64) {
 	s.networkCameraStreamMu.Lock()
 	stream := s.networkCameraStreams[cameraID]
+	preview := s.networkCameraPreviewStreams[cameraID]
 	delete(s.networkCameraStreams, cameraID)
+	delete(s.networkCameraPreviewStreams, cameraID)
 	s.networkCameraStreamMu.Unlock()
-	if stream != nil && stream.cancel != nil {
-		stream.cancel()
+	for _, item := range []*networkCameraStream{stream, preview} {
+		if item != nil && item.cancel != nil {
+			item.cancel()
+		}
 	}
 }
 
 func (s *Server) stopAllNetworkCameraStreams() {
 	s.networkCameraStreamMu.Lock()
-	streams := make([]*networkCameraStream, 0, len(s.networkCameraStreams))
+	streams := make([]*networkCameraStream, 0, len(s.networkCameraStreams)+len(s.networkCameraPreviewStreams))
 	for _, stream := range s.networkCameraStreams {
 		streams = append(streams, stream)
 	}
+	for _, stream := range s.networkCameraPreviewStreams {
+		streams = append(streams, stream)
+	}
 	s.networkCameraStreams = make(map[int64]*networkCameraStream)
+	s.networkCameraPreviewStreams = make(map[int64]*networkCameraStream)
 	s.networkCameraStreamMu.Unlock()
 	for _, stream := range streams {
 		if stream != nil && stream.cancel != nil {
@@ -300,7 +331,14 @@ func (s *Server) Close() {
 }
 
 func (s *Server) networkCameraFrame(ctx context.Context, camera store.Camera) ([]byte, int, int, string, error) {
-	stream := s.ensureNetworkCameraStream(camera)
+	return s.networkCameraFrameFromStream(ctx, camera, s.ensureNetworkCameraStream(camera))
+}
+
+func (s *Server) networkCameraPreviewFrame(ctx context.Context, camera store.Camera) ([]byte, int, int, string, error) {
+	return s.networkCameraFrameFromStream(ctx, camera, s.ensureNetworkCameraPreviewStream(camera))
+}
+
+func (s *Server) networkCameraFrameFromStream(ctx context.Context, camera store.Camera, stream *networkCameraStream) ([]byte, int, int, string, error) {
 	if stream != nil {
 		if frame, ok := stream.current(networkCameraStreamFreshFor); ok {
 			return frame.data, frame.width, frame.height, frame.source, nil
