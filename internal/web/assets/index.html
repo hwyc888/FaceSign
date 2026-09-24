@@ -38,6 +38,13 @@
               <img id="cameraNetwork" class="network-camera-view hidden" alt="网络摄像头实时画面">
               <canvas id="faceOverlay" class="face-overlay"></canvas>
               <canvas id="canvas" hidden></canvas>
+              <div class="camera-realtime-status" data-camera-realtime-status title="摄像头实时运行状态">
+                <span class="camera-stat source" data-camera-stat="mode">通道：关闭</span>
+                <span class="camera-stat" data-camera-stat="video">显示：-- FPS</span>
+                <span class="camera-stat" data-camera-stat="drop">丢帧：--</span>
+                <span class="camera-stat" data-camera-stat="network">网络：--</span>
+                <span class="camera-stat" data-camera-stat="recognition">识别：0.0 FPS</span>
+              </div>
             </div>
             <div class="actions">
               <button class="primary" id="startCamera">打开摄像头</button>
@@ -96,6 +103,13 @@
                 <video id="enrollCamera" autoplay playsinline muted></video>
                 <video id="enrollCameraNetworkWebRTC" class="network-camera-view hidden" autoplay playsinline muted></video>
                 <img id="enrollCameraNetwork" class="network-camera-view hidden" alt="网络摄像头实时画面">
+                <div class="camera-realtime-status" data-camera-realtime-status title="摄像头实时运行状态">
+                  <span class="camera-stat source" data-camera-stat="mode">通道：关闭</span>
+                  <span class="camera-stat" data-camera-stat="video">显示：-- FPS</span>
+                  <span class="camera-stat" data-camera-stat="drop">丢帧：--</span>
+                  <span class="camera-stat" data-camera-stat="network">网络：--</span>
+                  <span class="camera-stat" data-camera-stat="recognition">识别：0.0 FPS</span>
+                </div>
                 <div class="capture-topbar">
                   <span class="capture-state neutral" id="enrollLiveState">摄像头已关闭</span>
                   <span class="capture-angle" id="enrollAngleState">当前角度：正面</span>
