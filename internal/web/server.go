@@ -81,6 +81,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/enrollment/check", s.enrollmentCheck)
 	mux.HandleFunc("/api/enrollment/create", s.createEnrollment)
 	mux.HandleFunc("/api/recognize", s.recognize)
+	mux.HandleFunc("/api/recognition-stats", s.recognitionStats)
 	mux.HandleFunc("/api/attendance/seats", s.attendanceSeats)
 	mux.HandleFunc("/api/attendance", s.attendance)
 	mux.HandleFunc("/api/cameras", s.cameras)
