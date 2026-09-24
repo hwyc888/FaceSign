@@ -1,6 +1,7 @@
 package web
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"errors"
@@ -59,6 +60,11 @@ candidateLoop:
 			}
 			codec, detail, probeErr := probeRTSPCandidate(resolveCtx, ffmpegPath, camera, candidate.URL, transport)
 			if probeErr != nil {
+				if strings.Contains(detail, "认证失败") {
+					if algorithm := inspectRTSPDigestAlgorithm(resolveCtx, candidate.URL); strings.Contains(strings.ToUpper(algorithm), "SHA") {
+						return resolvedRTSPSource{}, fmt.Errorf("摄像头 RTSP Digest 算法为 %s，而当前 FFmpeg RTSP 认证仅兼容 MD5；请在海康“配置 → 系统 → 安全管理/认证”中把 RTSP Digest 算法改为 MD5 后保存", algorithm)
+					}
+				}
 				if detail != "" {
 					diagnostics = append(diagnostics, candidate.Label+"/"+strings.ToUpper(transport)+": "+detail)
 				}
@@ -229,6 +235,65 @@ func probeRTSPCandidate(ctx context.Context, ffmpegPath string, camera store.Cam
 		return "", "RTSP 已连接但 FFmpeg 未识别出视频编码", errors.New("video codec not detected")
 	}
 	return codec, classifyRTSPProbeFailure(output, runErr, camera, inputURL), runErr
+}
+
+func inspectRTSPDigestAlgorithm(ctx context.Context, inputURL string) string {
+	parsed, err := url.Parse(inputURL)
+	if err != nil || parsed.Hostname() == "" || !strings.EqualFold(parsed.Scheme, "rtsp") {
+		return ""
+	}
+	port := parsed.Port()
+	if port == "" {
+		port = "554"
+	}
+	host := net.JoinHostPort(parsed.Hostname(), port)
+	dialer := net.Dialer{Timeout: 1500 * time.Millisecond}
+	conn, err := dialer.DialContext(ctx, "tcp", host)
+	if err != nil {
+		return ""
+	}
+	defer conn.Close()
+	_ = conn.SetDeadline(time.Now().Add(2 * time.Second))
+
+	clean := *parsed
+	clean.User = nil
+	requestURI := clean.String()
+	_, err = fmt.Fprintf(conn,
+		"DESCRIBE %s RTSP/1.0\r\nCSeq: 1\r\nAccept: application/sdp\r\nUser-Agent: FaceSign\r\n\r\n",
+		requestURI,
+	)
+	if err != nil {
+		return ""
+	}
+
+	reader := bufio.NewReader(conn)
+	status, err := reader.ReadString('\n')
+	if err != nil || !strings.Contains(status, "401") {
+		return ""
+	}
+	for {
+		line, err := reader.ReadString('\n')
+		if err != nil {
+			return ""
+		}
+		line = strings.TrimSpace(line)
+		if line == "" {
+			return ""
+		}
+		if !strings.HasPrefix(strings.ToLower(line), "www-authenticate:") {
+			continue
+		}
+		value := strings.TrimSpace(strings.TrimPrefix(line, line[:len("www-authenticate:")]))
+		if !strings.HasPrefix(strings.ToLower(value), "digest ") {
+			continue
+		}
+		params := parseDigestParams(strings.TrimSpace(value[7:]))
+		algorithm := strings.TrimSpace(params["algorithm"])
+		if algorithm == "" {
+			return "MD5"
+		}
+		return algorithm
+	}
 }
 
 func detectFFmpegVideoCodec(output string) string {
