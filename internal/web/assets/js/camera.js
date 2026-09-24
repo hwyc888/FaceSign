@@ -21,6 +21,54 @@ let cameraRealtimeStartedAt = 0;
 let cameraRealtimeLastVideoQuality = null;
 let cameraRealtimeLastRTPStats = null;
 let cameraRealtimeRecognitionSamples = [];
+let cameraRecognitionLoadLevel = 'normal';
+let cameraRecognitionRecoverySamples = 0;
+
+function cameraRecognitionLoadRank(level) {
+  if (level === 'protect') return 2;
+  if (level === 'reduced') return 1;
+  return 0;
+}
+
+function updateCameraRecognitionLoadLevel(fps, dropPct) {
+  let desired = 'normal';
+  if ((fps !== null && fps < 12) || (dropPct !== null && dropPct > 8)) {
+    desired = 'protect';
+  } else if (
+    (fps !== null && fps < 20) ||
+    (dropPct !== null && dropPct > 3) ||
+    cameraRealtimeMode.includes('MJPEG')
+  ) {
+    desired = 'reduced';
+  }
+
+  const currentRank = cameraRecognitionLoadRank(cameraRecognitionLoadLevel);
+  const desiredRank = cameraRecognitionLoadRank(desired);
+  if (desiredRank > currentRank) {
+    cameraRecognitionLoadLevel = desired;
+    cameraRecognitionRecoverySamples = 0;
+    return;
+  }
+  if (desiredRank < currentRank) {
+    cameraRecognitionRecoverySamples++;
+    if (cameraRecognitionRecoverySamples >= 4) {
+      cameraRecognitionLoadLevel = cameraRecognitionLoadLevel === 'protect' ? 'reduced' : 'normal';
+      cameraRecognitionRecoverySamples = 0;
+    }
+    return;
+  }
+  cameraRecognitionRecoverySamples = 0;
+}
+
+function cameraRecognitionLoadProfile() {
+  if (cameraRecognitionLoadLevel === 'protect') {
+    return {level: 'protect', maxFPS: 2, label: 'AI保护'};
+  }
+  if (cameraRecognitionLoadLevel === 'reduced') {
+    return {level: 'reduced', maxFPS: 3, label: 'AI降载'};
+  }
+  return {level: 'normal', maxFPS: 5, label: 'AI正常'};
+}
 
 function setCameraRealtimeField(name, text, state = '') {
   document.querySelectorAll(`[data-camera-stat="${name}"]`).forEach(node => {
@@ -186,6 +234,8 @@ function stopCameraRealtimeStatus() {
   cameraRealtimeLastVideoQuality = null;
   cameraRealtimeLastRTPStats = null;
   cameraRealtimeRecognitionSamples = [];
+  cameraRecognitionLoadLevel = 'normal';
+  cameraRecognitionRecoverySamples = 0;
   renderCameraRealtimeStatus({mode: '关闭'});
 }
 
@@ -245,6 +295,8 @@ async function updateCameraRealtimeStatus() {
     }
 
     const recognition = cameraRealtimeRecognitionMetrics(now);
+    updateCameraRecognitionLoadLevel(fps, dropPct);
+    const recognitionLoad = cameraRecognitionLoadProfile();
     let videoState = '';
     if (fps !== null) videoState = fps >= 15 ? 'good' : fps >= 8 ? 'warn' : 'bad';
     let dropState = '';
@@ -270,9 +322,10 @@ async function updateCameraRealtimeStatus() {
       ? `显示：-- FPS${resolution ? ` · ${resolution}` : ''}`
       : `显示：${fps.toFixed(1)} FPS${resolution ? ` · ${resolution}` : ''}`;
     const dropText = dropPct === null ? '丢帧：--' : `丢帧：${dropPct.toFixed(1)}%`;
+    const loadSuffix = recognizingNow && recognitionLoad.level !== 'normal' ? ` · ${recognitionLoad.label}` : '';
     const recognitionText = recognition.latency > 0
-      ? `识别：${recognition.fps.toFixed(1)} FPS · ${recognition.latency.toFixed(0)}ms`
-      : `识别：${recognition.fps.toFixed(1)} FPS`;
+      ? `识别：${recognition.fps.toFixed(1)} FPS · ${recognition.latency.toFixed(0)}ms${loadSuffix}`
+      : `识别：${recognition.fps.toFixed(1)} FPS${loadSuffix}`;
 
     renderCameraRealtimeStatus({
       mode: cameraRealtimeMode,

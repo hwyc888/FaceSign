@@ -167,12 +167,19 @@ async function recognizeFrame(options = {}) {
   if (recognizing) return null;
   recognizing = true;
   const performanceStartedAt = performance.now();
+  let completedRecognition = false;
   try {
     let r;
+    const loadProfile = typeof cameraRecognitionLoadProfile === 'function'
+      ? cameraRecognitionLoadProfile()
+      : {level: 'normal', maxFPS: 5};
     if (activeCamera && activeCamera.kind !== 'local') {
       r = await api(`/api/cameras/${activeCamera.id}/recognize`, {
         method: 'POST',
-        headers: {'X-FaceSign-Session': recognitionSessionID}
+        headers: {
+          'X-FaceSign-Session': recognitionSessionID,
+          'X-FaceSign-AI-Load': loadProfile.level
+        }
       });
     } else {
       const blob = await capture();
@@ -180,10 +187,15 @@ async function recognizeFrame(options = {}) {
       fd.append('file', blob, 'camera.jpg');
       r = await api('/api/recognize', {
         method: 'POST',
-        headers: {'X-FaceSign-Session': recognitionSessionID},
+        headers: {
+          'X-FaceSign-Session': recognitionSessionID,
+          'X-FaceSign-AI-Load': loadProfile.level
+        },
         body: fd
       });
     }
+    if (r?.skipped && r?.busy) return null;
+    completedRecognition = true;
     renderRecognition(r);
     if ((r.verified_count || r.recognized_count || 0) > 0) {
       loadToday();
@@ -195,7 +207,7 @@ async function recognizeFrame(options = {}) {
     if (!autoTimer && !options.silent) toast(e.message);
     return null;
   } finally {
-    if (typeof recordRecognitionRealtimeSample === 'function') {
+    if (completedRecognition && typeof recordRecognitionRealtimeSample === 'function') {
       recordRecognitionRealtimeSample(performance.now() - performanceStartedAt);
     }
     recognizing = false;
@@ -204,7 +216,11 @@ async function recognizeFrame(options = {}) {
 
 function recognitionFrameIntervalMS() {
   if (activeCamera && activeCamera.kind !== 'local') {
-    const fps = Math.max(1, Math.min(Number(activeCamera.fps || 5), 5));
+    const loadProfile = typeof cameraRecognitionLoadProfile === 'function'
+      ? cameraRecognitionLoadProfile()
+      : {level: 'normal', maxFPS: 5};
+    const configuredFPS = Math.max(1, Math.min(Number(activeCamera.fps || 5), 5));
+    const fps = Math.max(1, Math.min(configuredFPS, Number(loadProfile.maxFPS || 5)));
     return Math.max(200, Math.round(1000 / fps));
   }
   return 120;
