@@ -621,6 +621,13 @@ func TestNetworkCameraUsesWebRTCH264WithMJPEGFallbackAndDirectRecognition(t *tes
 		"/api/cameras/${activeCamera.id}/stream",
 		"peer.setRemoteDescription(answer)",
 		"WebRTC H.264 preview unavailable; using MJPEG fallback",
+		"function updateCameraRealtimeStatus()",
+		"getVideoPlaybackQuality",
+		"peer.getStats()",
+		"packetsReceived",
+		"packetsLost",
+		"framesPerSecond",
+		"recordRecognitionRealtimeSample",
 	} {
 		if !strings.Contains(cameraScript, want) {
 			t.Fatalf("network WebRTC preview missing %q", want)
@@ -645,6 +652,12 @@ func TestNetworkCameraUsesWebRTCH264WithMJPEGFallbackAndDirectRecognition(t *tes
 	for _, want := range []string{
 		`id="cameraNetworkWebRTC"`,
 		`id="enrollCameraNetworkWebRTC"`,
+		`data-camera-realtime-status`,
+		`data-camera-stat="mode"`,
+		`data-camera-stat="video"`,
+		`data-camera-stat="drop"`,
+		`data-camera-stat="network"`,
+		`data-camera-stat="recognition"`,
 		"WebRTC/H.264 实时预览",
 		"浏览器硬件解码",
 		"自动回退 MJPEG",
@@ -665,9 +678,29 @@ func TestNetworkCameraUsesWebRTCH264WithMJPEGFallbackAndDirectRecognition(t *tes
 		"function recognitionFrameIntervalMS()",
 		"Math.min(Number(activeCamera.fps || 5), 5)",
 		"setTimeout(runAutoRecognitionLoop, recognitionFrameIntervalMS())",
+		"recordRecognitionRealtimeSample(performance.now() - performanceStartedAt)",
 	} {
 		if !strings.Contains(recognitionScript, want) {
 			t.Fatalf("network direct recognition flow missing %q", want)
+		}
+	}
+}
+
+func TestCameraRealtimeStatusOverlayStyles(t *testing.T) {
+	cssData, err := assets.ReadFile("assets/style.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	css := string(cssData)
+	for _, want := range []string{
+		".camera-realtime-status",
+		".camera-stat",
+		".camera-stat.good",
+		".camera-stat.warn",
+		".camera-stat.bad",
+	} {
+		if !strings.Contains(css, want) {
+			t.Fatalf("camera realtime status style missing %q", want)
 		}
 	}
 }
