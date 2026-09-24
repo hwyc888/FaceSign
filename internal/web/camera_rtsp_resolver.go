@@ -51,6 +51,7 @@ func resolveRTSPSource(ctx context.Context, camera store.Camera, requireH264 boo
 	transports := []string{"tcp", "udp"}
 	var diagnostics []string
 	sawHEVC := false
+candidateLoop:
 	for _, candidate := range candidates {
 		for _, transport := range transports {
 			if resolveCtx.Err() != nil {
@@ -77,7 +78,7 @@ func resolveRTSPSource(ctx context.Context, camera store.Camera, requireH264 boo
 					}, nil
 				}
 				diagnostics = append(diagnostics, candidate.Label+"/"+strings.ToUpper(transport)+": 检测到 H.265/HEVC")
-				break
+				continue candidateLoop
 			default:
 				if !requireH264 {
 					return resolvedRTSPSource{
@@ -85,7 +86,7 @@ func resolveRTSPSource(ctx context.Context, camera store.Camera, requireH264 boo
 					}, nil
 				}
 				diagnostics = append(diagnostics, candidate.Label+"/"+strings.ToUpper(transport)+": 未检测到 H.264")
-				break
+				continue candidateLoop
 			}
 		}
 	}
@@ -135,8 +136,8 @@ func rtspCandidates(camera store.Camera) ([]rtspCandidate, error) {
 			label string
 		}{
 			{"/Streaming/channels/101", "海康主码流101"},
-			{"/ISAPI/Streaming/Channels/101", "海康ISAPI主码流101"},
 			{"/Streaming/channels/102", "海康子码流102"},
+			{"/ISAPI/Streaming/Channels/101", "海康ISAPI主码流101"},
 			{"/ISAPI/Streaming/Channels/102", "海康ISAPI子码流102"},
 			{"/ch1/main/av_stream", "海康兼容主码流"},
 			{"/ch1/sub/av_stream", "海康兼容子码流"},
@@ -193,10 +194,10 @@ func probeRTSPCandidate(ctx context.Context, ffmpegPath string, camera store.Cam
 	if timeout <= 0 {
 		timeout = 3 * time.Second
 	}
-	if timeout > 2500*time.Millisecond {
-		timeout = 2500 * time.Millisecond
+	if timeout > 1800*time.Millisecond {
+		timeout = 1800 * time.Millisecond
 	}
-	attemptCtx, cancel := context.WithTimeout(ctx, timeout+750*time.Millisecond)
+	attemptCtx, cancel := context.WithTimeout(ctx, timeout+500*time.Millisecond)
 	defer cancel()
 
 	args := []string{
