@@ -371,6 +371,8 @@ func (s *Server) recognizeImage(w http.ResponseWriter, r *http.Request, img imag
 
 	response := map[string]any{
 		"faces":                   results,
+		"frame_width":             img.Bounds().Dx(),
+		"frame_height":            img.Bounds().Dy(),
 		"persons":                 personResults,
 		"detected_count":          len(results),
 		"tracked_person_count":    len(personResults),
