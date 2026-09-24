@@ -74,6 +74,19 @@ function Ensure-FaceModels {
   }
 }
 
+function Get-TaskArgumentValue {
+  param(
+    [string]$Arguments,
+    [string]$Name
+  )
+  if ([string]::IsNullOrWhiteSpace($Arguments)) { return $null }
+  $pattern = '(?:^|\\s)--' + [regex]::Escape($Name) + '\\s+(?:"([^"]*)"|(\\S+))'
+  $match = [regex]::Match($Arguments, $pattern)
+  if (-not $match.Success) { return $null }
+  if ($match.Groups[1].Success) { return $match.Groups[1].Value }
+  return $match.Groups[2].Value
+}
+
 # Stop the current instance before replacing files. During an upgrade the
 # scheduled task is deliberately kept in place so custom ports/TLS hosts and
 # the user's startup-enabled state survive the update.
@@ -82,6 +95,22 @@ $isUpgrade = $null -ne $oldTask -and (Test-Path (Join-Path $InstallDir 'FaceSign
 $taskWasDisabled = $false
 if ($oldTask) {
   $taskWasDisabled = $oldTask.State -eq 'Disabled'
+  $oldAction = @($oldTask.Actions)[0]
+  $oldActionArgs = [string]$oldAction.Arguments
+
+  if (-not $PSBoundParameters.ContainsKey('Listen')) {
+    $value = Get-TaskArgumentValue -Arguments $oldActionArgs -Name 'listen'
+    if ($null -ne $value) { $Listen = $value }
+  }
+  if (-not $PSBoundParameters.ContainsKey('HTTPSListen')) {
+    $value = Get-TaskArgumentValue -Arguments $oldActionArgs -Name 'https-listen'
+    if ($null -ne $value) { $HTTPSListen = $value }
+  }
+  if (-not $PSBoundParameters.ContainsKey('TLSHosts')) {
+    $value = Get-TaskArgumentValue -Arguments $oldActionArgs -Name 'tls-hosts'
+    if ($null -ne $value) { $TLSHosts = $value }
+  }
+
   Stop-ScheduledTask -TaskName 'FaceSign' -ErrorAction SilentlyContinue
   Start-Sleep -Milliseconds 500
 }
@@ -143,11 +172,7 @@ if ($existingTask) {
   $existingExecute = [Environment]::ExpandEnvironmentVariables(([string]$existingAction.Execute).Trim('"'))
   $executeChanged = -not [string]::Equals($existingExecute, $exe, [System.StringComparison]::OrdinalIgnoreCase)
   if ($configurationExplicit -or $executeChanged) {
-    $actionArgs = [string]$existingAction.Arguments
-    if ($configurationExplicit -or [string]::IsNullOrWhiteSpace($actionArgs)) {
-      $actionArgs = $faceArgs
-    }
-    $action = New-ScheduledTaskAction -Execute $exe -Argument $actionArgs
+    $action = New-ScheduledTaskAction -Execute $exe -Argument $faceArgs
     Set-ScheduledTask -TaskName 'FaceSign' -Action $action | Out-Null
   }
 } else {
