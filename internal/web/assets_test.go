@@ -471,8 +471,12 @@ func TestAutoStartCheckinSettingUIAndFlow(t *testing.T) {
 	for _, want := range []string{
 		`id="autoStartCheckin"`,
 		`id="autoStartCheckinState"`,
+		`id="realtimeStatusEnabled"`,
+		`id="realtimeStatusEnabledState"`,
+		`data-camera-fullscreen`,
 		`/js/settings.js`,
 		"进入“人脸签到”时自动打开摄像头并开启自动识别",
+		"摄像头画面支持鼠标双击全屏，再双击恢复",
 	} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("auto check-in setting UI missing %q", want)
@@ -487,6 +491,8 @@ func TestAutoStartCheckinSettingUIAndFlow(t *testing.T) {
 	for _, want := range []string{
 		"/api/settings",
 		"auto_start_checkin",
+		"realtime_status_enabled",
+		"setCameraRealtimeStatusEnabled(realtimeEnabled)",
 		"enterCheckinPageAutoStart",
 		"setAutoRecognitionEnabled(true)",
 		"if (cameraOpen)",
@@ -695,6 +701,43 @@ func TestNetworkCameraUsesWebRTCH264WithMJPEGFallbackAndDirectRecognition(t *tes
 	} {
 		if !strings.Contains(recognitionScript, want) {
 			t.Fatalf("network direct recognition flow missing %q", want)
+		}
+	}
+}
+
+func TestCameraFullscreenAndRealtimeStatusSwitch(t *testing.T) {
+	cameraData, err := assets.ReadFile("assets/js/camera.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cameraScript := string(cameraData)
+	for _, want := range []string{
+		"function setCameraRealtimeStatusEnabled(enabled)",
+		"cameraRealtimeStatusEnabled = Boolean(enabled)",
+		"function toggleCameraFullscreen(event)",
+		"container.requestFullscreen()",
+		"document.exitFullscreen()",
+		"media.addEventListener('dblclick', toggleCameraFullscreen)",
+		"#cameraNetworkWebRTC",
+		"#enrollCameraNetworkWebRTC",
+	} {
+		if !strings.Contains(cameraScript, want) {
+			t.Fatalf("camera fullscreen/status switch logic missing %q", want)
+		}
+	}
+
+	cssData, err := assets.ReadFile("assets/style.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	css := string(cssData)
+	for _, want := range []string{
+		"[data-camera-fullscreen]:fullscreen",
+		"cursor:zoom-in",
+		"cursor:zoom-out",
+	} {
+		if !strings.Contains(css, want) {
+			t.Fatalf("camera fullscreen style missing %q", want)
 		}
 	}
 }
