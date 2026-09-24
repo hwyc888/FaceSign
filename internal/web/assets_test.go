@@ -998,3 +998,23 @@ func TestRecognitionOverlayScalesAIBoxesToPreviewResolution(t *testing.T) {
 		}
 	}
 }
+
+
+func TestNetworkCameraRetriesH264CompatibilityBeforeMJPEG(t *testing.T) {
+	data, err := assets.ReadFile("assets/js/camera.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(data)
+	for _, want := range []string{
+		"function retryWebRTCH264Compatibility(",
+		"startWebRTCH264Preview(generation, image, video, true)",
+		"force_transcode: forceTranscode",
+		"WebRTC H.264兼容重试",
+		"if (!forceTranscode) retryWebRTCH264Compatibility",
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("H264 compatibility retry missing %q", want)
+		}
+	}
+}

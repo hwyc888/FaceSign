@@ -19,14 +19,16 @@ import (
 )
 
 type cameraWebRTCSignal struct {
-	Type string `json:"type"`
-	SDP  string `json:"sdp"`
-	Mode string `json:"mode,omitempty"`
+	Type           string `json:"type"`
+	SDP            string `json:"sdp"`
+	Mode           string `json:"mode,omitempty"`
+	ForceTranscode bool   `json:"force_transcode,omitempty"`
 }
 
 type webRTCH264Encoder struct {
-	Name string
-	Mode string
+	Name      string
+	Mode      string
+	Transcode bool
 }
 
 func (s *Server) cameraWebRTCOffer(w http.ResponseWriter, r *http.Request, camera store.Camera) {
@@ -65,13 +67,21 @@ func (s *Server) cameraWebRTCOffer(w http.ResponseWriter, r *http.Request, camer
 	}
 
 	encoder := webRTCH264Encoder{Mode: "WebRTC H.264直通"}
-	if source.Codec == "hevc" {
+	if source.Codec == "hevc" || (source.Codec == "h264" && offer.ForceTranscode) {
 		encoderCtx, encoderCancel := context.WithTimeout(r.Context(), 10*time.Second)
 		encoder, err = selectWebRTCH264Encoder(encoderCtx, ffmpegPath)
 		encoderCancel()
 		if err != nil {
-			writeError(w, http.StatusServiceUnavailable, fmt.Errorf("WebRTC H.265 转码不可用: %w", err))
+			if source.Codec == "h264" {
+				writeError(w, http.StatusServiceUnavailable, fmt.Errorf("WebRTC H.264 兼容转码不可用: %w", err))
+			} else {
+				writeError(w, http.StatusServiceUnavailable, fmt.Errorf("WebRTC H.265 转码不可用: %w", err))
+			}
 			return
+		}
+		encoder.Transcode = true
+		if source.Codec == "h264" {
+			encoder.Mode = strings.Replace(encoder.Mode, "H.265→H.264", "H.264兼容", 1)
 		}
 	} else if source.Codec != "h264" {
 		writeError(w, http.StatusServiceUnavailable, fmt.Errorf("WebRTC 实时预览暂不支持 RTSP 编码 %q", source.Codec))
@@ -272,7 +282,7 @@ func probeWebRTCH264Encoder(ctx context.Context, ffmpegPath, encoder string) err
 }
 
 func webRTCH264OutputArgs(camera store.Camera, source resolvedRTSPSource, encoder webRTCH264Encoder) []string {
-	if source.Codec == "h264" {
+	if source.Codec == "h264" && !encoder.Transcode {
 		return []string{
 			"-c:v", "copy",
 			"-bsf:v", "h264_mp4toannexb,dump_extra=freq=keyframe",
