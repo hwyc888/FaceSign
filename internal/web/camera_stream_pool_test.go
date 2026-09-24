@@ -168,7 +168,7 @@ func TestRTSPFailureFallsBackToSnapshot(t *testing.T) {
 	for time.Now().Before(deadline) {
 		stream := s.ensureNetworkCameraStream(camera)
 		if stream.error() != nil {
-			if !strings.Contains(stream.error().Error(), "FFmpeg") {
+			if !strings.Contains(strings.ToLower(stream.error().Error()), "ffmpeg") {
 				t.Fatalf("unexpected RTSP primary error: %v", stream.error())
 			}
 			return
