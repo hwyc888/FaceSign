@@ -117,3 +117,25 @@ func TestPowerShellLiteralEscapesApostrophe(t *testing.T) {
 		t.Fatalf("powerShellLiteral()=%q want %q", got, want)
 	}
 }
+
+func TestPotentiallyBlockingManagerActionsAreAsync(t *testing.T) {
+	for _, id := range []int{
+		idStart,
+		idStop,
+		idRestart,
+		idEnableStartup,
+		idDisableStartup,
+		idOpenWeb,
+		idOpenLog,
+		idOpenDir,
+		idRefresh,
+		idUpgrade,
+	} {
+		if !isAsyncActionButton(id) {
+			t.Fatalf("manager action id=%d can block the UI thread", id)
+		}
+	}
+	if isAsyncActionButton(idExit) {
+		t.Fatal("exit must remain an immediate UI action")
+	}
+}

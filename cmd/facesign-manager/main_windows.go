@@ -28,8 +28,9 @@ const (
 	wmCreate     = 0x0001
 	wmDestroy    = 0x0002
 	wmCommand    = 0x0111
-	wmSetFont    = 0x0030
-	wmAsyncDone  = 0x8001
+	wmSetFont         = 0x0030
+	wmAsyncDone       = 0x8001
+	wmUpgradeSelected = 0x8002
 
 	wsVisible      = 0x10000000
 	wsChild        = 0x40000000
@@ -66,9 +67,11 @@ var (
 	mainWindow     syscall.Handle
 	statusBox      syscall.Handle
 	actionButtons  = make(map[int]syscall.Handle)
-	asyncBusy      bool
-	asyncResultMu  sync.Mutex
-	asyncResult    *uiActionResult
+	asyncBusy          bool
+	asyncResultMu      sync.Mutex
+	asyncResult        *uiActionResult
+	upgradeSelectionMu sync.Mutex
+	upgradeSelection   *upgradeSelectionResult
 
 	user32   = syscall.NewLazyDLL("user32.dll")
 	kernel32 = syscall.NewLazyDLL("kernel32.dll")
@@ -140,6 +143,11 @@ type uiActionResult struct {
 	Name   string
 	Status string
 	Err    error
+}
+
+type upgradeSelectionResult struct {
+	Path string
+	Err  error
 }
 
 func main() {
@@ -282,27 +290,24 @@ func windowProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		case idDisableStartup:
 			beginAsyncUIAction("关闭开机启动", disableStartup)
 		case idOpenWeb:
-			if err := openWeb(); err != nil {
-				showError(err)
-			}
+			beginAsyncUIAction("打开管理网页", openWeb)
 		case idOpenLog:
-			if err := openLog(); err != nil {
-				showError(err)
-			}
+			beginAsyncUIAction("查看启动日志", openLog)
 		case idOpenDir:
-			if err := shellOpen(installDirFlag); err != nil {
-				showError(err)
-			}
+			beginAsyncUIAction("打开安装目录", func() error { return shellOpen(installDirFlag) })
 		case idRefresh:
 			beginAsyncUIAction("刷新状态", nil)
 		case idUpgrade:
-			handleUpgrade(syscall.Handle(hwnd))
+			beginUpgradeSelection()
 		case idExit:
 			procDestroyWindow.Call(hwnd)
 		}
 		return 0
 	case wmAsyncDone:
 		finishAsyncUIAction()
+		return 0
+	case wmUpgradeSelected:
+		finishUpgradeSelection(syscall.Handle(hwnd))
 		return 0
 	case wmDestroy:
 		procPostQuitMessage.Call(0)
@@ -367,7 +372,7 @@ func createControl(class, text string, style uintptr, x, y, w, h int, parent sys
 
 func isAsyncActionButton(id int) bool {
 	switch id {
-	case idStart, idStop, idRestart, idEnableStartup, idDisableStartup, idRefresh, idUpgrade:
+	case idStart, idStop, idRestart, idEnableStartup, idDisableStartup, idOpenWeb, idOpenLog, idOpenDir, idRefresh, idUpgrade:
 		return true
 	default:
 		return false
@@ -601,17 +606,48 @@ func disableStartup() error {
 }
 
 
-func handleUpgrade(hwnd syscall.Handle) {
-	packageDir, err := chooseUpgradePackage()
-	if err != nil {
-		showError(err)
+func beginUpgradeSelection() {
+	if asyncBusy {
 		return
 	}
-	if packageDir == "" {
+	asyncBusy = true
+	setActionButtonsEnabled(false)
+	setStatusText("请选择解压后的 FaceSign 新版本目录。\r\n\r\n目录选择期间管理窗口仍可正常移动、最小化或关闭。")
+
+	target := mainWindow
+	go func() {
+		path, err := chooseUpgradePackage()
+		upgradeSelectionMu.Lock()
+		upgradeSelection = &upgradeSelectionResult{Path: path, Err: err}
+		upgradeSelectionMu.Unlock()
+		procPostMessageW.Call(uintptr(target), wmUpgradeSelected, 0, 0)
+	}()
+}
+
+func finishUpgradeSelection(hwnd syscall.Handle) {
+	upgradeSelectionMu.Lock()
+	result := upgradeSelection
+	upgradeSelection = nil
+	upgradeSelectionMu.Unlock()
+
+	asyncBusy = false
+	setActionButtonsEnabled(true)
+	if result == nil {
 		return
 	}
-	packageDir = normalizeUpgradePackageDir(packageDir)
+	if result.Err != nil {
+		setStatusText("选择升级目录失败。")
+		showError(result.Err)
+		return
+	}
+	if strings.TrimSpace(result.Path) == "" {
+		setStatusText("已取消升级。")
+		return
+	}
+
+	packageDir := normalizeUpgradePackageDir(result.Path)
 	if err := validateUpgradePackage(packageDir); err != nil {
+		setStatusText("升级包检查失败。")
 		showError(err)
 		return
 	}
@@ -620,9 +656,11 @@ func handleUpgrade(hwnd syscall.Handle) {
 		"\r\n\r\n升级时管理工具会自动关闭，升级完成后自动重新打开。" +
 		"\r\n数据库、人脸数据、证书、端口和开机启动状态都会保留。\r\n\r\n是否继续？"
 	if !confirmBox(mainWindow, message, "升级 FaceSign") {
+		setStatusText("已取消升级。")
 		return
 	}
 	if err := launchUpgradeHelper(packageDir); err != nil {
+		setStatusText("启动升级程序失败。")
 		showError(err)
 		return
 	}
