@@ -74,6 +74,7 @@ func (s *Server) classAction(w http.ResponseWriter, r *http.Request) {
 				writeError(w, status, err)
 				return
 			}
+			s.refreshFaceCacheAfterMutation(r.Context())
 			writeJSON(w, http.StatusOK, item)
 		case http.MethodDelete:
 			if err := s.store.DeleteClass(r.Context(), id); err != nil {
@@ -144,6 +145,7 @@ func (s *Server) classAction(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, err)
 			return
 		}
+		s.refreshFaceCacheAfterMutation(r.Context())
 		writeJSON(w, http.StatusOK, item)
 		return
 	}
