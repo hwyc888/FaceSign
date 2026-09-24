@@ -246,7 +246,9 @@ jobs:
           if ($liteManager -ne $minimalManager) { throw 'No-models no-FFmpeg package must contain the same FaceSignManager.exe as lite' }
           if (Test-Path 'dist-no-models-no-ffmpeg\ffmpeg.exe' -PathType Leaf) { throw 'No-models no-FFmpeg package must not contain ffmpeg.exe' }
           if (Test-Path 'dist-no-models-no-ffmpeg\licenses\FFMPEG_NOTICE.txt' -PathType Leaf) { throw 'No-models no-FFmpeg package must not contain FFmpeg notices' }
-          $embeddedFFmpegArchives = @(Get-ChildItem -Path 'dist-no-models-no-ffmpeg' -File -Recurse | Where-Object { $_.Name -match '(?i)^ffmpeg.*[.]zip
+          $embeddedFFmpegArchives = @(Get-ChildItem -Path 'dist-no-models-no-ffmpeg' -File -Recurse | Where-Object { $_.Name -match '(?i)^ffmpeg.*[.]zip$' })
+          if ($embeddedFFmpegArchives.Count -ne 0) { throw 'No-models no-FFmpeg package must not contain an FFmpeg archive' }
+
           foreach ($variant in @('dist-full','dist-lite')) {
             $ffmpeg = Join-Path $variant 'ffmpeg.exe'
             if (-not (Test-Path $ffmpeg -PathType Leaf)) { throw "$variant is missing ffmpeg.exe for RTSP decoding" }
