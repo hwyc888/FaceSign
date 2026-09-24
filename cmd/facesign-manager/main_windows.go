@@ -14,6 +14,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -238,6 +239,13 @@ func relaunchElevated() error {
 }
 
 func runGUI() error {
+	// A Win32 window and its message queue belong to the OS thread that created
+	// them. Without pinning this goroutine, Go may resume GetMessageW on a
+	// different thread after an async action, which can leave the real window
+	// thread without a message pump and make the manager appear "not responding".
+	runtime.LockOSThread()
+	defer runtime.UnlockOSThread()
+
 	instance, _, _ := procGetModuleHandleW.Call(0)
 	className := utf16("FaceSignManagerWindow")
 	cursor, _, _ := procLoadCursorW.Call(0, 32512)

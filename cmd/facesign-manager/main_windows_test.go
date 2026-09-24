@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"syscall"
 	"testing"
 	"time"
 )
@@ -291,4 +292,77 @@ func TestNoOpActionSkipsSlowStatusRefresh(t *testing.T) {
 	if queryCalls != 0 || pidCalls != 0 {
 		t.Fatalf("no-op action performed slow status refresh: query=%d pid=%d", queryCalls, pidCalls)
 	}
+}
+
+
+func TestRepeatedBusyActionDoesNotLaunchSecondWorker(t *testing.T) {
+	oldBusy := asyncBusy
+	oldMain := mainWindow
+	oldStatus := statusBox
+	oldButtons := actionButtons
+	oldState := queryTaskStateFn
+	oldPIDs := faceSignPIDsFn
+	oldAsyncResult := asyncResult
+	asyncBusy = false
+	mainWindow = 0
+	statusBox = 0
+	actionButtons = make(map[int]syscall.Handle)
+	queryTaskStateFn = func() (string, error) { return "Running", nil }
+	faceSignPIDsFn = func() []int { return []int{1} }
+	asyncResult = nil
+	t.Cleanup(func() {
+		asyncBusy = oldBusy
+		mainWindow = oldMain
+		statusBox = oldStatus
+		actionButtons = oldButtons
+		queryTaskStateFn = oldState
+		faceSignPIDsFn = oldPIDs
+		asyncResult = oldAsyncResult
+	})
+
+	firstStarted := make(chan struct{})
+	releaseFirst := make(chan struct{})
+	secondStarted := make(chan struct{}, 1)
+
+	started := time.Now()
+	beginAsyncUIAction("first", func() error {
+		close(firstStarted)
+		<-releaseFirst
+		return errAlreadyRunning
+	})
+	if elapsed := time.Since(started); elapsed > 100*time.Millisecond {
+		t.Fatalf("first async action blocked caller for %s", elapsed)
+	}
+	select {
+	case <-firstStarted:
+	case <-time.After(time.Second):
+		t.Fatal("first async action did not start")
+	}
+
+	started = time.Now()
+	beginAsyncUIAction("second", func() error {
+		secondStarted <- struct{}{}
+		return nil
+	})
+	if elapsed := time.Since(started); elapsed > 100*time.Millisecond {
+		t.Fatalf("second click while busy blocked caller for %s", elapsed)
+	}
+	select {
+	case <-secondStarted:
+		t.Fatal("second action started while manager was already busy")
+	default:
+	}
+
+	close(releaseFirst)
+	deadline := time.Now().Add(time.Second)
+	for time.Now().Before(deadline) {
+		asyncResultMu.Lock()
+		ready := asyncResult != nil
+		asyncResultMu.Unlock()
+		if ready {
+			return
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	t.Fatal("first async action did not finish")
 }
