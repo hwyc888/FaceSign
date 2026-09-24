@@ -628,6 +628,10 @@ func TestNetworkCameraUsesWebRTCH264WithMJPEGFallbackAndDirectRecognition(t *tes
 		"packetsLost",
 		"framesPerSecond",
 		"recordRecognitionRealtimeSample",
+		"friendlyCameraRealtimeReason",
+		"检测到 H.265/HEVC，请把摄像头视频编码改为 H.264",
+		"WebRTC ICE 协商失败或超时",
+		"WebRTC 已连接，但没有收到可播放的 H.264 视频帧",
 	} {
 		if !strings.Contains(cameraScript, want) {
 			t.Fatalf("network WebRTC preview missing %q", want)
@@ -658,6 +662,7 @@ func TestNetworkCameraUsesWebRTCH264WithMJPEGFallbackAndDirectRecognition(t *tes
 		`data-camera-stat="drop"`,
 		`data-camera-stat="network"`,
 		`data-camera-stat="recognition"`,
+		`data-camera-stat="reason"`,
 		"WebRTC/H.264 实时预览",
 		"浏览器硬件解码",
 		"自动回退 MJPEG",
@@ -698,6 +703,7 @@ func TestCameraRealtimeStatusOverlayStyles(t *testing.T) {
 		".camera-stat.good",
 		".camera-stat.warn",
 		".camera-stat.bad",
+		".camera-stat.reason",
 	} {
 		if !strings.Contains(css, want) {
 			t.Fatalf("camera realtime status style missing %q", want)
