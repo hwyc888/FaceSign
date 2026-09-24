@@ -34,8 +34,9 @@ type Server struct {
 	cameraAgentFrames      map[string]cameraAgentFrame
 	networkCameraMu        sync.Mutex
 	networkCameraFrames    map[int64]*networkCameraFrameCache
-	networkCameraStreamMu  sync.Mutex
-	networkCameraStreams   map[int64]*networkCameraStream
+	networkCameraStreamMu        sync.Mutex
+	networkCameraStreams         map[int64]*networkCameraStream
+	networkCameraPreviewStreams  map[int64]*networkCameraStream
 }
 
 func New(logger *slog.Logger, st *store.Store, engine *face.Engine, live *liveness.Engine, personEngine *person.Engine, matchThreshold, detectionThreshold float64, version string) (*Server, error) {
@@ -62,8 +63,9 @@ func New(logger *slog.Logger, st *store.Store, engine *face.Engine, live *livene
 		static:             http.FileServer(http.FS(sub)),
 		photoImports:       make(map[string]*photoImportSession),
 		cameraAgentFrames:    make(map[string]cameraAgentFrame),
-		networkCameraFrames:  make(map[int64]*networkCameraFrameCache),
-		networkCameraStreams: make(map[int64]*networkCameraStream),
+		networkCameraFrames:         make(map[int64]*networkCameraFrameCache),
+		networkCameraStreams:        make(map[int64]*networkCameraStream),
+		networkCameraPreviewStreams: make(map[int64]*networkCameraStream),
 	}, nil
 }
 
