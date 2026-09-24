@@ -93,7 +93,8 @@ func (s *Server) recognizeImage(w http.ResponseWriter, r *http.Request, img imag
 		}
 	}
 
-	personDetections, err := s.personDetectionsForRecognition(sessionID, img, now)
+	loadLevel := normalizeRecognitionLoadLevel(r.Header.Get("X-FaceSign-AI-Load"))
+	personDetections, err := s.personDetectionsForRecognition(sessionID, img, now, loadLevel)
 	if err != nil {
 		s.logger.Warn("person detector failed; continuing with face-derived tracks", "error", err)
 		personDetections = nil

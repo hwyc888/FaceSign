@@ -15,12 +15,12 @@ func TestPersonDetectionCacheReusesRecentDetections(t *testing.T) {
 			"session": {
 				at: now,
 				detections: []person.Detection{{Rectangle: image.Rect(10, 10, 100, 200), Score: 0.9}},
-				reuseRemaining: personDetectionReuseFrames,
+				reuseRemaining: personDetectionReuseFramesForLoad(recognitionLoadNormal),
 			},
 		},
 	}
 
-	got, err := s.personDetectionsForRecognition("session", image.NewRGBA(image.Rect(0, 0, 320, 240)), now.Add(200*time.Millisecond))
+	got, err := s.personDetectionsForRecognition("session", image.NewRGBA(image.Rect(0, 0, 320, 240)), now.Add(200*time.Millisecond), recognitionLoadNormal)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -41,11 +41,11 @@ func TestPersonDetectionCacheExpiresAtMaxAge(t *testing.T) {
 			"session": {
 				at: now.Add(-personDetectionMaxAge),
 				detections: []person.Detection{{Rectangle: image.Rect(10, 10, 100, 200), Score: 0.9}},
-				reuseRemaining: personDetectionReuseFrames,
+				reuseRemaining: personDetectionReuseFramesForLoad(recognitionLoadNormal),
 			},
 		},
 	}
-	got, err := s.personDetectionsForRecognition("session", image.NewRGBA(image.Rect(0, 0, 320, 240)), now)
+	got, err := s.personDetectionsForRecognition("session", image.NewRGBA(image.Rect(0, 0, 320, 240)), now, recognitionLoadNormal)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -61,22 +61,40 @@ func TestPersonDetectionCacheReusesOnlyTwoRecognitionFrames(t *testing.T) {
 			"session": {
 				at: now,
 				detections: []person.Detection{{Rectangle: image.Rect(10, 10, 100, 200), Score: 0.9}},
-				reuseRemaining: personDetectionReuseFrames,
+				reuseRemaining: personDetectionReuseFramesForLoad(recognitionLoadNormal),
 			},
 		},
 	}
 	img := image.NewRGBA(image.Rect(0, 0, 320, 240))
-	for i := 0; i < personDetectionReuseFrames; i++ {
-		got, err := s.personDetectionsForRecognition("session", img, now.Add(time.Duration(i+1)*100*time.Millisecond))
+	for i := 0; i < personDetectionReuseFramesForLoad(recognitionLoadNormal); i++ {
+		got, err := s.personDetectionsForRecognition("session", img, now.Add(time.Duration(i+1)*100*time.Millisecond), recognitionLoadNormal)
 		if err != nil || len(got) != 1 {
 			t.Fatalf("reuse %d failed: detections=%d err=%v", i+1, len(got), err)
 		}
 	}
-	got, err := s.personDetectionsForRecognition("session", img, now.Add(400*time.Millisecond))
+	got, err := s.personDetectionsForRecognition("session", img, now.Add(400*time.Millisecond), recognitionLoadNormal)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if len(got) != 0 {
 		t.Fatalf("third reuse must require a fresh YOLOX detection, got %#v", got)
+	}
+}
+
+
+func TestPersonDetectionReuseAdaptsToVideoLoad(t *testing.T) {
+	cases := []struct {
+		level string
+		want  int
+	}{
+		{recognitionLoadNormal, 2},
+		{recognitionLoadReduced, 3},
+		{recognitionLoadProtect, 4},
+		{"invalid", 2},
+	}
+	for _, tc := range cases {
+		if got := personDetectionReuseFramesForLoad(tc.level); got != tc.want {
+			t.Fatalf("load %q reuse=%d want=%d", tc.level, got, tc.want)
+		}
 	}
 }
