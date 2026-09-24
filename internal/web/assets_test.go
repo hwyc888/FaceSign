@@ -555,6 +555,9 @@ func TestCameraSettingsSupportsPreSaveConnectionDiagnostics(t *testing.T) {
 		"testCurrentCameraConfig",
 		"/api/cameras/test",
 		"renderCameraConnectionTest",
+		"cameraTestFetchErrorMessage",
+		"FaceSign 服务仍在线，但摄像头测试请求被异常中断",
+		"无法连接 FaceSign 服务",
 		"preview_base64",
 		"camera_id: editingCameraID || 0",
 	} {
