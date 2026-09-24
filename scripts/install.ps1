@@ -169,8 +169,13 @@ $existingTask = Get-ScheduledTask -TaskName 'FaceSign' -ErrorAction SilentlyCont
 $configurationExplicit = $PSBoundParameters.ContainsKey('Listen') -or
   $PSBoundParameters.ContainsKey('HTTPSListen') -or
   $PSBoundParameters.ContainsKey('TLSHosts')
+$settings = New-ScheduledTaskSettingsSet -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew
 
 if ($existingTask) {
+  # Older installations may have retained a different multiple-instance policy.
+  # Normalize it during every install/upgrade so repeated Start clicks can never
+  # create parallel FaceSign service instances.
+  Set-ScheduledTask -TaskName 'FaceSign' -Settings $settings | Out-Null
   $existingAction = @($existingTask.Actions)[0]
   $existingExecute = [Environment]::ExpandEnvironmentVariables(([string]$existingAction.Execute).Trim('"'))
   $executeChanged = -not [string]::Equals($existingExecute, $exe, [System.StringComparison]::OrdinalIgnoreCase)
@@ -182,7 +187,6 @@ if ($existingTask) {
   $action = New-ScheduledTaskAction -Execute $exe -Argument $faceArgs
   $trigger = New-ScheduledTaskTrigger -AtStartup
   $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
-  $settings = New-ScheduledTaskSettingsSet -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero)
   Register-ScheduledTask -TaskName 'FaceSign' -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
 }
 

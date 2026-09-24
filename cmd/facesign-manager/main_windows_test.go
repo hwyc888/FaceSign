@@ -529,3 +529,86 @@ func TestStatusRefreshRunsExternalProbesInParallel(t *testing.T) {
 		t.Fatalf("status probes ran serially or stalled: %s", elapsed)
 	}
 }
+
+
+func TestStopMultipleProcessesIgnoresTaskkillErrorsAfterExit(t *testing.T) {
+	pidCalls := 0
+	var commands []string
+	withManagerServiceFakes(
+		t,
+		func() []int {
+			pidCalls++
+			if pidCalls <= 10 {
+				return []int{1968, 2952}
+			}
+			return nil
+		},
+		func() (string, error) { return "Ready", nil },
+		func(name string, args ...string) ([]byte, error) {
+			command := name + " " + strings.Join(args, " ")
+			commands = append(commands, command)
+			if name == "taskkill.exe" {
+				return []byte{0xff, 0xfe, 0xfd}, errors.New("exit status 1")
+			}
+			return nil, nil
+		},
+	)
+
+	if err := stopFaceSign(); err != nil {
+		t.Fatalf("stop should succeed once FaceSign PIDs are gone, got %v", err)
+	}
+
+	var kills []string
+	for _, command := range commands {
+		if strings.HasPrefix(command, "taskkill.exe ") {
+			kills = append(kills, command)
+		}
+	}
+	if len(kills) != 2 {
+		t.Fatalf("expected one force-kill per FaceSign PID, commands=%v", commands)
+	}
+	if !strings.Contains(kills[0], "/PID 1968") || !strings.Contains(kills[1], "/PID 2952") {
+		t.Fatalf("unexpected PID kill commands: %v", kills)
+	}
+	for _, command := range kills {
+		if strings.Contains(command, " /T ") || strings.Contains(command, " /IM ") {
+			t.Fatalf("stop must not use process-tree/image kill: %s", command)
+		}
+	}
+}
+
+func TestStopFailureReportsRemainingPIDsWithoutGarbledTaskkillText(t *testing.T) {
+	withManagerServiceFakes(
+		t,
+		func() []int { return []int{1968, 2952} },
+		func() (string, error) { return "Ready", nil },
+		func(name string, args ...string) ([]byte, error) {
+			if name == "taskkill.exe" {
+				return []byte{0xff, 0xfe, 0xfd}, errors.New("exit status 1")
+			}
+			return nil, nil
+		},
+	)
+
+	err := stopFaceSign()
+	if err == nil {
+		t.Fatal("expected stop failure while FaceSign PIDs remain")
+	}
+	message := err.Error()
+	if !strings.Contains(message, "1968, 2952") {
+		t.Fatalf("remaining PIDs missing from error: %q", message)
+	}
+	if strings.ContainsRune(message, '\uFFFD') {
+		t.Fatalf("garbled taskkill output leaked into user error: %q", message)
+	}
+}
+
+func TestCommandErrorMessageHidesInvalidWindowsCodePageOutput(t *testing.T) {
+	message := commandErrorMessage("taskkill.exe", []byte{0xff, 0xfe, 0xfd}, errors.New("exit status 1"))
+	if strings.ContainsRune(message, '\uFFFD') {
+		t.Fatalf("invalid Windows command output leaked into UI: %q", message)
+	}
+	if !strings.Contains(message, "taskkill.exe") || !strings.Contains(message, "exit status 1") {
+		t.Fatalf("unexpected fallback command error: %q", message)
+	}
+}

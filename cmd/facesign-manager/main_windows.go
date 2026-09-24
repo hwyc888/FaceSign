@@ -20,6 +20,7 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	"unicode/utf8"
 	"unsafe"
 )
 
@@ -605,7 +606,7 @@ func startFaceSign() error {
 }
 
 func stopFaceSign() (retErr error) {
-	// Repeated Stop is a fast no-op. There is no need to disable/end the task
+	// Repeated Stop is a fast no-op. There is no need to touch Task Scheduler
 	// when no FaceSign process exists.
 	if len(faceSignPIDsFn()) == 0 {
 		return errAlreadyStopped
@@ -624,30 +625,57 @@ func stopFaceSign() (retErr error) {
 	if temporarilyDisabled {
 		defer func() {
 			if _, err := execHiddenFn("schtasks.exe", "/Change", "/TN", taskName, "/ENABLE"); err != nil && retErr == nil {
-				retErr = fmt.Errorf("FaceSign 已停止，但恢复开机启动状态失败: %w", err)
+				retErr = fmt.Errorf("FaceSign 已停止，但恢复开机启动状态失败")
 			}
 		}()
 	}
 
 	if taskExists {
+		// First let Task Scheduler terminate the task it owns. Do not immediately
+		// fall back to taskkill: the process may need a short moment to disappear.
 		_, _ = execHiddenFn("schtasks.exe", "/End", "/TN", taskName)
-	}
-	sleepFn(250 * time.Millisecond)
-
-	if len(faceSignPIDsFn()) > 0 {
-		if _, err := execHiddenFn("taskkill.exe", "/F", "/T", "/IM", "FaceSign.exe"); err != nil && len(faceSignPIDsFn()) > 0 {
-			return fmt.Errorf("无法结束 FaceSign SYSTEM 进程: %w。请确认管理工具已允许管理员权限；若仍失败，请检查安全软件或还原保护软件", err)
-		}
-	}
-
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		if len(faceSignPIDsFn()) == 0 {
+		if waitForFaceSignExit(8, 125*time.Millisecond) {
 			return nil
 		}
-		sleepFn(200 * time.Millisecond)
 	}
-	return errors.New("FaceSign 进程在5秒内仍未退出。请查看启动日志或 Windows 事件日志")
+
+	// Only the FaceSign parent processes are force-killed. The old /T /IM form
+	// also tried to terminate child decoder processes and could return Access
+	// Denied even while FaceSign itself was already shutting down. Kill each
+	// remaining FaceSign PID independently and judge success by the final process
+	// state rather than taskkill's localized exit text.
+	remaining := faceSignPIDsFn()
+	for _, pid := range remaining {
+		_, _ = execHiddenFn("taskkill.exe", "/F", "/PID", strconv.Itoa(pid))
+	}
+	if waitForFaceSignExit(25, 200*time.Millisecond) {
+		return nil
+	}
+
+	remaining = faceSignPIDsFn()
+	values := make([]string, len(remaining))
+	for i, pid := range remaining {
+		values[i] = strconv.Itoa(pid)
+	}
+	return fmt.Errorf(
+		"FaceSign 仍有进程未退出（PID: %s）。计划任务已停止，但 Windows 未能结束这些残留进程；请检查安全软件或系统进程保护",
+		strings.Join(values, ", "),
+	)
+}
+
+func waitForFaceSignExit(maxChecks int, interval time.Duration) bool {
+	if maxChecks < 1 {
+		maxChecks = 1
+	}
+	for i := 0; i < maxChecks; i++ {
+		if len(faceSignPIDsFn()) == 0 {
+			return true
+		}
+		if i+1 < maxChecks {
+			sleepFn(interval)
+		}
+	}
+	return false
 }
 
 func restartFaceSign() error {
@@ -946,13 +974,17 @@ func execHidden(name string, args ...string) ([]byte, error) {
 		return out, fmt.Errorf("%s 执行超过8秒，已自动终止", filepath.Base(name))
 	}
 	if err != nil {
-		message := strings.TrimSpace(string(out))
-		if message == "" {
-			message = err.Error()
-		}
-		return out, errors.New(message)
+		return out, errors.New(commandErrorMessage(name, out, err))
 	}
 	return out, nil
+}
+
+func commandErrorMessage(name string, out []byte, err error) string {
+	message := strings.TrimSpace(string(out))
+	if message == "" || !utf8.ValidString(message) {
+		return fmt.Sprintf("%s 执行失败: %v", filepath.Base(name), err)
+	}
+	return message
 }
 
 func faceSignPIDs() []int {

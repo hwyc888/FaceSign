@@ -53,7 +53,7 @@ The manager automatically requests administrator rights because the installed Fa
 
 - Start, stop and restart FaceSign. Repeated Start/Stop clicks are idempotent: starting an already-running service or stopping an already-stopped service returns immediately instead of re-running Task Scheduler commands. The native Win32 GUI message loop is pinned to its creating OS thread so background work cannot strand the window on a different thread.
 - **Upgrade FaceSign** directly from the management window: choose the newly extracted release directory, confirm once, and the manager closes itself, runs `scripts\upgrade.ps1`, then reopens after the in-place upgrade finishes. Directory selection and every service/shell operation run off the GUI thread so the management window stays responsive. The database, face data, TLS identity, service arguments and startup state are preserved.
-- Stop the scheduled task first, then terminate any remaining `FaceSign.exe` process, so Task Manager "Access denied" is no longer required for normal shutdown.
+- Stop the scheduled task first, wait for its owned process to exit, then terminate only remaining `FaceSign.exe` PIDs individually. The manager no longer uses `taskkill /T /IM`, so an FFmpeg/decoder child-process error cannot falsely report that FaceSign itself failed to stop. Older scheduled tasks are also normalized to `MultipleInstances=IgnoreNew` during upgrade.
 - Enable or disable startup without deleting the task.
 - Open the FaceSign management webpage.
 - Show the current PID, HTTP/HTTPS listen addresses, running build version and persistent root-CA expiry.
