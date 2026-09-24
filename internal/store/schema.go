@@ -54,6 +54,12 @@ func (s *Store) init(ctx context.Context) error {
             key TEXT PRIMARY KEY,
             value TEXT NOT NULL DEFAULT ''
         )`,
+		`CREATE TABLE IF NOT EXISTS recognition_stats_seen (
+            kind TEXT NOT NULL,
+            subject_key TEXT NOT NULL,
+            created_at INTEGER NOT NULL,
+            PRIMARY KEY(kind, subject_key)
+        )`,
 		`CREATE TABLE IF NOT EXISTS cameras (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL UNIQUE,
