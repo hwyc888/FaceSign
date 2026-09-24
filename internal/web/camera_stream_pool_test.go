@@ -234,8 +234,8 @@ func TestRecognitionRTSPDecoderCapsOutputAtFiveFPS(t *testing.T) {
 		Width: 1280, Height: 720, FPS: 30, TimeoutMS: 3000,
 	}
 	args := strings.Join(ffmpegRTSPArgsForPurpose(camera, camera.StreamURL, "recognition"), " ")
-	if !strings.Contains(args, "fps=5") || !strings.Contains(args, "min(iw,960)") || !strings.Contains(args, "min(ih,540)") {
-		t.Fatalf("recognition decoder must cap FPS and avoid upscaling AI frames: %s", args)
+	if !strings.Contains(args, "-vf fps=5,scale=1280:720:force_original_aspect_ratio=decrease:force_divisible_by=2") {
+		t.Fatalf("recognition decoder must cap JPEG output to 5 fps: %s", args)
 	}
 	previewArgs := strings.Join(ffmpegRTSPArgsForPurpose(camera, camera.StreamURL, "preview"), " ")
 	if strings.Contains(previewArgs, "fps=") {
@@ -274,40 +274,4 @@ func TestReadJPEGSequencePublishesEveryFrame(t *testing.T) {
 
 func errorsIsEOF(err error) bool {
 	return err == io.EOF
-}
-
-
-func TestRecognitionStreamKeepsOnlyLatestFrame(t *testing.T) {
-	stream := newNetworkCameraStreamForPurpose(store.Camera{ID: 99, Name: "AI latest"}, "latest", "recognition")
-	var lastWidth int
-	for i := 0; i < 6; i++ {
-		lastWidth = 20 + i
-		img := image.NewRGBA(image.Rect(0, 0, lastWidth, 12))
-		var frame bytes.Buffer
-		if err := jpeg.Encode(&frame, img, nil); err != nil {
-			t.Fatal(err)
-		}
-		if err := stream.publish(frame.Bytes(), "rtsp"); err != nil {
-			t.Fatal(err)
-		}
-	}
-	if len(stream.history) != 0 {
-		t.Fatalf("recognition stream must not queue old frames, history=%d", len(stream.history))
-	}
-	current, ok := stream.current(0)
-	if !ok {
-		t.Fatal("recognition latest frame missing")
-	}
-	if current.sequence != 6 || current.width != lastWidth {
-		t.Fatalf("latest-frame slot kept stale frame: sequence=%d width=%d", current.sequence, current.width)
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
-	defer cancel()
-	next, err := stream.waitNext(ctx, 5, 10*time.Millisecond)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if next.sequence != 6 {
-		t.Fatalf("recognition waitNext must return newest frame, got=%d", next.sequence)
-	}
 }

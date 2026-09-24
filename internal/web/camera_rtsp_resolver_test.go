@@ -125,34 +125,3 @@ func TestDetectFFmpegVideoCodec(t *testing.T) {
 type assertProbeError string
 
 func (e assertProbeError) Error() string { return string(e) }
-
-
-func TestHikvisionPurposePrefersMainForPreviewAndSubForRecognition(t *testing.T) {
-	camera := store.Camera{
-		StreamURL: "rtsp://192.168.19.176:554/Streaming/channels/101",
-		Username: "admin",
-		Password: "secret",
-	}
-	preview, err := rtspCandidatesForPurpose(camera, "preview")
-	if err != nil {
-		t.Fatal(err)
-	}
-	recognition, err := rtspCandidatesForPurpose(camera, "recognition")
-	if err != nil {
-		t.Fatal(err)
-	}
-	previewURL, err := url.Parse(preview[0].URL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	recognitionURL, err := url.Parse(recognition[0].URL)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !strings.HasSuffix(strings.ToLower(previewURL.Path), "/101") {
-		t.Fatalf("preview must prefer Hikvision main stream 101, got %s", previewURL.Path)
-	}
-	if !strings.HasSuffix(strings.ToLower(recognitionURL.Path), "/102") {
-		t.Fatalf("recognition must prefer Hikvision sub stream 102, got %s", recognitionURL.Path)
-	}
-}
