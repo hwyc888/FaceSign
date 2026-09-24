@@ -1,4 +1,4 @@
-let appSettingsCache = {auto_start_checkin: false};
+let appSettingsCache = {auto_start_checkin: false, realtime_status_enabled: true};
 let appSettingsLoaded = false;
 
 function renderAppSettings() {
@@ -7,6 +7,15 @@ function renderAppSettings() {
   const enabled = Boolean(appSettingsCache.auto_start_checkin);
   if (checkbox) checkbox.checked = enabled;
   if (state) state.textContent = enabled ? '已开启' : '已关闭';
+
+  const realtimeCheckbox = $('#realtimeStatusEnabled');
+  const realtimeState = $('#realtimeStatusEnabledState');
+  const realtimeEnabled = appSettingsCache.realtime_status_enabled !== false;
+  if (realtimeCheckbox) realtimeCheckbox.checked = realtimeEnabled;
+  if (realtimeState) realtimeState.textContent = realtimeEnabled ? '已显示' : '已隐藏';
+  if (typeof setCameraRealtimeStatusEnabled === 'function') {
+    setCameraRealtimeStatusEnabled(realtimeEnabled);
+  }
 }
 
 async function loadAppSettings(force = false) {
@@ -54,3 +63,24 @@ $('#autoStartCheckin').addEventListener('change', async event => {
     event.target.disabled = false;
   }
 });
+
+$('#realtimeStatusEnabled').addEventListener('change', async event => {
+  const enabled = event.target.checked;
+  event.target.disabled = true;
+  try {
+    appSettingsCache = await api('/api/settings', {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({realtime_status_enabled: enabled})
+    });
+    appSettingsLoaded = true;
+    renderAppSettings();
+    toast(enabled ? '已显示摄像头实时状态' : '已隐藏摄像头实时状态');
+  } catch (e) {
+    event.target.checked = !enabled;
+    toast(e.message);
+  } finally {
+    event.target.disabled = false;
+  }
+});
+
