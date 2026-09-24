@@ -366,3 +366,135 @@ func TestRepeatedBusyActionDoesNotLaunchSecondWorker(t *testing.T) {
 	}
 	t.Fatal("first async action did not finish")
 }
+
+
+func TestStartStoppedFaceSignRunsTaskOnce(t *testing.T) {
+	var commands []string
+	withManagerServiceFakes(
+		t,
+		func() []int { return nil },
+		func() (string, error) { return "Ready", nil },
+		func(name string, args ...string) ([]byte, error) {
+			commands = append(commands, name+" "+strings.Join(args, " "))
+			return nil, nil
+		},
+	)
+	if err := startFaceSign(); err != nil {
+		t.Fatal(err)
+	}
+	if len(commands) != 1 || !strings.Contains(commands[0], "/Run") {
+		t.Fatalf("unexpected start commands: %v", commands)
+	}
+}
+
+func TestStartDisabledFaceSignRestoresDisabledState(t *testing.T) {
+	var commands []string
+	withManagerServiceFakes(
+		t,
+		func() []int { return nil },
+		func() (string, error) { return "Disabled", nil },
+		func(name string, args ...string) ([]byte, error) {
+			commands = append(commands, name+" "+strings.Join(args, " "))
+			return nil, nil
+		},
+	)
+	if err := startFaceSign(); err != nil {
+		t.Fatal(err)
+	}
+	if len(commands) != 3 ||
+		!strings.Contains(commands[0], "/ENABLE") ||
+		!strings.Contains(commands[1], "/Run") ||
+		!strings.Contains(commands[2], "/DISABLE") {
+		t.Fatalf("disabled start did not restore state, commands=%v", commands)
+	}
+}
+
+func TestStopRunningFaceSignEndsTaskAndRestoresStartup(t *testing.T) {
+	pidCalls := 0
+	var commands []string
+	withManagerServiceFakes(
+		t,
+		func() []int {
+			pidCalls++
+			if pidCalls <= 1 {
+				return []int{4321}
+			}
+			return nil
+		},
+		func() (string, error) { return "Ready", nil },
+		func(name string, args ...string) ([]byte, error) {
+			commands = append(commands, name+" "+strings.Join(args, " "))
+			return nil, nil
+		},
+	)
+	if err := stopFaceSign(); err != nil {
+		t.Fatal(err)
+	}
+	if len(commands) != 3 ||
+		!strings.Contains(commands[0], "/DISABLE") ||
+		!strings.Contains(commands[1], "/End") ||
+		!strings.Contains(commands[2], "/ENABLE") {
+		t.Fatalf("unexpected stop commands: %v", commands)
+	}
+}
+
+func TestRestartRunningFaceSignUsesStopThenStart(t *testing.T) {
+	pidCalls := 0
+	var commands []string
+	withManagerServiceFakes(
+		t,
+		func() []int {
+			pidCalls++
+			if pidCalls <= 2 {
+				return []int{777}
+			}
+			return nil
+		},
+		func() (string, error) { return "Ready", nil },
+		func(name string, args ...string) ([]byte, error) {
+			commands = append(commands, name+" "+strings.Join(args, " "))
+			return nil, nil
+		},
+	)
+	if err := restartFaceSign(); err != nil {
+		t.Fatal(err)
+	}
+	if len(commands) != 4 ||
+		!strings.Contains(commands[0], "/DISABLE") ||
+		!strings.Contains(commands[1], "/End") ||
+		!strings.Contains(commands[2], "/ENABLE") ||
+		!strings.Contains(commands[3], "/Run") {
+		t.Fatalf("unexpected restart commands: %v", commands)
+	}
+}
+
+func TestStartupStateChangesUseSingleSchedulerCommand(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		state       string
+		run         func() error
+		wantCommand string
+	}{
+		{name: "enable disabled task", state: "Disabled", run: enableStartup, wantCommand: "/ENABLE"},
+		{name: "disable enabled task", state: "Ready", run: disableStartup, wantCommand: "/DISABLE"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var commands []string
+			withManagerServiceFakes(
+				t,
+				func() []int { return nil },
+				func() (string, error) { return tc.state, nil },
+				func(name string, args ...string) ([]byte, error) {
+					commands = append(commands, name+" "+strings.Join(args, " "))
+					return nil, nil
+				},
+			)
+			if err := tc.run(); err != nil {
+				t.Fatal(err)
+			}
+			if len(commands) != 1 || !strings.Contains(commands[0], tc.wantCommand) {
+				t.Fatalf("unexpected startup command: %v", commands)
+			}
+		})
+	}
+}
