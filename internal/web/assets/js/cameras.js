@@ -219,6 +219,17 @@ function renderCameraConnectionTest(result) {
   }
 }
 
+async function cameraTestFetchErrorMessage(error) {
+  if (!(error instanceof TypeError)) return error?.message || String(error || '未知错误');
+  try {
+    const health = await fetch('/api/health', {cache: 'no-store'});
+    if (health.ok) {
+      return 'FaceSign 服务仍在线，但摄像头测试请求被异常中断；这不是普通的摄像头地址或密码错误，请查看 FaceSign 服务日志后重试。';
+    }
+  } catch {}
+  return '无法连接 FaceSign 服务。请先刷新当前页面确认 FaceSign 是否仍在运行，再重新测试摄像头。';
+}
+
 async function testCurrentCameraConfig() {
   const button = $('#testCameraConfig');
   const kind = $('#cameraKind').value;
@@ -282,12 +293,13 @@ async function testCurrentCameraConfig() {
     renderCameraConnectionTest(result);
     toast(result.ok ? '网络摄像头连接测试成功' : '连接测试失败：' + result.message);
   } catch (e) {
+    const message = await cameraTestFetchErrorMessage(e);
     renderCameraConnectionTest({
       ok: false,
-      message: e.message,
-      checks: [{name: '连接测试', status: 'error', message: e.message}]
+      message,
+      checks: [{name: '连接测试', status: 'error', message}]
     });
-    toast('摄像头测试失败：' + e.message);
+    toast('摄像头测试失败：' + message);
   } finally {
     if (button) button.disabled = false;
   }
