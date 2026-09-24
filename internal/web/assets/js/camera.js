@@ -453,31 +453,6 @@ function waitForICEGatheringComplete(peer, timeoutMS = 4000) {
   });
 }
 
-function retryWebRTCH264Compatibility(generation, image, video, reason = '') {
-  if (generation !== networkPreviewGeneration || !cameraOpen || !activeCamera || activeCamera.kind === 'local') {
-    return;
-  }
-
-  clearNetworkPreviewTimers();
-  closeNetworkPreviewPeer();
-  if (video) {
-    video.pause();
-    video.srcObject = null;
-    video.classList.add('hidden');
-  }
-  startCameraRealtimeVideoMonitor(null, 'WebRTC H.264兼容重试', reason);
-
-  startWebRTCH264Preview(generation, image, video, true).catch(error => {
-    if (generation !== networkPreviewGeneration) return;
-    startMJPEGPreviewFallback(
-      generation,
-      image,
-      video,
-      error?.message || reason || 'H.264兼容转码失败'
-    );
-  });
-}
-
 function startMJPEGPreviewFallback(generation, image, video, reason = '') {
   if (generation !== networkPreviewGeneration || !cameraOpen || !activeCamera || activeCamera.kind === 'local') {
     return;
@@ -515,10 +490,10 @@ function startMJPEGPreviewFallback(generation, image, video, reason = '') {
   }
 }
 
-async function startWebRTCH264Preview(generation, image, video, forceTranscode = false) {
+async function startWebRTCH264Preview(generation, image, video) {
   if (!window.RTCPeerConnection) throw new Error('当前浏览器不支持 WebRTC');
   const peer = new RTCPeerConnection();
-  let negotiatedMode = forceTranscode ? 'WebRTC H.264兼容转码' : 'WebRTC H.264直通';
+  let negotiatedMode = 'WebRTC H.264直通';
   networkPreviewPeer = peer;
   peer.addTransceiver('video', {direction: 'recvonly'});
 
@@ -536,9 +511,7 @@ async function startWebRTCH264Preview(generation, image, video, forceTranscode =
     if (generation !== networkPreviewGeneration || peer !== networkPreviewPeer) return;
     const state = peer.connectionState;
     if (state === 'failed' || state === 'closed') {
-      const reason = `WebRTC 状态：${state}`;
-      if (!forceTranscode) retryWebRTCH264Compatibility(generation, image, video, reason);
-      else startMJPEGPreviewFallback(generation, image, video, reason);
+      startMJPEGPreviewFallback(generation, image, video, `WebRTC 状态：${state}`);
       return;
     }
     if (state === 'disconnected') {
@@ -546,8 +519,7 @@ async function startWebRTCH264Preview(generation, image, video, forceTranscode =
       networkPreviewRetryTimer = setTimeout(() => {
         networkPreviewRetryTimer = null;
         if (generation === networkPreviewGeneration && peer === networkPreviewPeer && peer.connectionState === 'disconnected') {
-          if (!forceTranscode) retryWebRTCH264Compatibility(generation, image, video, 'WebRTC 连接中断');
-          else startMJPEGPreviewFallback(generation, image, video, 'WebRTC 连接中断');
+          startMJPEGPreviewFallback(generation, image, video, 'WebRTC 连接中断');
         }
       }, 1500);
     }
@@ -564,11 +536,7 @@ async function startWebRTCH264Preview(generation, image, video, forceTranscode =
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     cache: 'no-store',
-    body: JSON.stringify({
-      type: local.type,
-      sdp: local.sdp,
-      force_transcode: forceTranscode
-    })
+    body: JSON.stringify({type: local.type, sdp: local.sdp})
   });
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
@@ -582,9 +550,7 @@ async function startWebRTCH264Preview(generation, image, video, forceTranscode =
     networkPreviewWatchdogTimer = null;
     if (generation !== networkPreviewGeneration || peer !== networkPreviewPeer) return;
     if (!video.videoWidth || !video.videoHeight || video.readyState < 2) {
-      const reason = 'WebRTC 已连接但未收到可播放 H.264 画面';
-      if (!forceTranscode) retryWebRTCH264Compatibility(generation, image, video, reason);
-      else startMJPEGPreviewFallback(generation, image, video, reason);
+      startMJPEGPreviewFallback(generation, image, video, 'WebRTC 已连接但未收到可播放 H.264 画面');
     }
   }, 6000);
 }
@@ -618,7 +584,7 @@ function startNetworkPreview() {
 
   startWebRTCH264Preview(generation, image, video).catch(error => {
     if (generation !== networkPreviewGeneration) return;
-    retryWebRTCH264Compatibility(generation, image, video, error.message);
+    startMJPEGPreviewFallback(generation, image, video, error.message);
   });
 }
 

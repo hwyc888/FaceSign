@@ -59,28 +59,3 @@ func TestWebRTCH264OutputArgsUsesHigherBitrateFor1080p(t *testing.T) {
 		t.Fatalf("1080p transcode bitrate missing: %s", args)
 	}
 }
-
-
-func TestWebRTCH264OutputArgsCompatibilityTranscodesH264(t *testing.T) {
-	camera := store.Camera{Width: 1280, Height: 720}
-	source := resolvedRTSPSource{Codec: "h264"}
-	encoder := webRTCH264Encoder{
-		Name:      "libopenh264",
-		Mode:      "WebRTC H.264兼容软件转码",
-		Transcode: true,
-	}
-	args := strings.Join(webRTCH264OutputArgs(camera, source, encoder), " ")
-
-	for _, want := range []string{
-		"-vf scale=1280:720:force_original_aspect_ratio=decrease:force_divisible_by=2,format=yuv420p",
-		"-c:v libopenh264",
-		"-bf 0",
-	} {
-		if !strings.Contains(args, want) {
-			t.Fatalf("H264 compatibility transcode missing %q: %s", want, args)
-		}
-	}
-	if strings.Contains(args, "-c:v copy") {
-		t.Fatalf("forced H264 compatibility path must transcode: %s", args)
-	}
-}
