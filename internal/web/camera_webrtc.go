@@ -55,7 +55,9 @@ func (s *Server) cameraWebRTCOffer(w http.ResponseWriter, r *http.Request, camer
 	}
 
 	probeCtx, probeCancel := context.WithTimeout(r.Context(), cameraWebRTCProbeTimeout(camera)+4*time.Second)
-	source, err := resolveRTSPSourceForPurpose(probeCtx, camera, true, "preview")
+	// Preview must stay on the Hikvision main stream (101). If it is HEVC,
+	// transcode that main stream instead of silently switching display to 102.
+	source, err := resolveRTSPSourceForPurpose(probeCtx, camera, false, "preview")
 	probeCancel()
 	if err != nil {
 		writeError(w, http.StatusServiceUnavailable, fmt.Errorf("WebRTC 实时预览不可用: %w", err))
