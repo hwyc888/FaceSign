@@ -283,7 +283,7 @@ func inspectRTSPDigestAlgorithm(ctx context.Context, inputURL string) string {
 		if !strings.HasPrefix(strings.ToLower(line), "www-authenticate:") {
 			continue
 		}
-		value := strings.TrimSpace(strings.TrimPrefix(line, line[:len("www-authenticate:")]))
+		value := strings.TrimSpace(line[len("www-authenticate:"):])
 		if !strings.HasPrefix(strings.ToLower(value), "digest ") {
 			continue
 		}
