@@ -24,13 +24,34 @@ function setCameraRealtimeField(name, text, state = '') {
 function friendlyCameraRealtimeReason(reason) {
   const original = String(reason || '').trim();
   if (!original) return '';
-  const text = original.replace(/^WebRTC H\.264 预览不可用[:：]\s*/i, '').trim();
+  let text = original.replace(/^WebRTC H\.264 预览不可用[:：]\s*/i, '').trim();
   const lower = text.toLowerCase();
-  if (text.includes('H.265') || lower.includes('hevc') || lower.includes('h265')) {
-    return '检测到 H.265/HEVC，请把摄像头视频编码改为 H.264';
+
+  const ffmpegMissing =
+    lower.includes('未找到 ffmpeg') ||
+    lower.includes('facesign_ffmpeg 指定的 ffmpeg 不存在') ||
+    lower.includes('release package is missing ffmpeg') ||
+    lower.includes('ffmpeg.exe 不存在');
+  if (ffmpegMissing) {
+    return '未找到 ffmpeg.exe；请使用 facesign-windows-amd64-full / lite 完整解压运行，不要只复制 FaceSign.exe';
   }
-  if (lower.includes('ffmpeg')) {
-    return 'FFmpeg 不可用，无法建立 WebRTC/H.264 实时通道';
+  if (lower.includes('sha-256') || lower.includes('sha256')) {
+    return '摄像头 RTSP Digest 使用 SHA256；请在海康认证设置中把 RTSP Digest 算法改为 MD5 后重试';
+  }
+  if (lower.includes('401 unauthorized') || text.includes('RTSP 认证失败') || text.includes('认证失败（401）')) {
+    return 'RTSP 认证失败（401）；请检查海康 RTSP 用户名、密码和 RTSP Digest 认证设置';
+  }
+  if (text.includes('H.265') || lower.includes('hevc') || lower.includes('h265')) {
+    return '检测到 H.265/HEVC；FaceSign 已尝试海康子码流，如仍失败请把主码流或子码流改为 H.264';
+  }
+  if (lower.includes('connection refused') || text.includes('端口拒绝连接')) {
+    return 'RTSP 端口拒绝连接；请确认摄像头 RTSP 服务已启用，并核对 554/实际 RTSP 端口';
+  }
+  if (lower.includes('timed out') || lower.includes('timeout') || text.includes('连接超时')) {
+    return 'RTSP 连接超时；请检查摄像头 RTSP 端口、网络/VLAN 和摄像头 RTSP 服务';
+  }
+  if (lower.includes('404') || text.includes('路径不存在')) {
+    return 'RTSP 路径不存在；FaceSign 已尝试海康 101/102/ISAPI 兼容路径，请检查设备 RTSP 服务';
   }
   if (text.includes('ICE')) {
     return 'WebRTC ICE 协商失败或超时，请检查本机网络/防火墙';
@@ -39,10 +60,10 @@ function friendlyCameraRealtimeReason(reason) {
     return 'WebRTC 已连接，但没有收到可播放的 H.264 视频帧';
   }
   if (text.includes('未检测到 H.264')) {
-    return 'RTSP 中未检测到 H.264，请检查摄像头编码和码流地址';
+    return 'RTSP 已连接但未检测到 H.264，请检查摄像头主/子码流编码';
   }
   if (text.includes('检测 RTSP 编码失败')) {
-    return 'RTSP 编码检测失败，请检查 RTSP 地址、账号、密码和 554 端口';
+    return 'RTSP 编码检测失败；请检查 RTSP 地址、账号、密码和端口';
   }
   if (text.includes('连接中断')) {
     return 'WebRTC 连接中断，已自动回退到 MJPEG';
@@ -53,7 +74,9 @@ function friendlyCameraRealtimeReason(reason) {
   if (lower.includes('状态：closed') || lower.includes('状态: closed')) {
     return 'WebRTC 连接已关闭，已自动回退到 MJPEG';
   }
-  return text.length > 96 ? `${text.slice(0, 96)}…` : text;
+
+  text = text.replace(/^FFmpeg[:：]\s*/i, '').trim();
+  return text.length > 160 ? `${text.slice(0, 160)}…` : text;
 }
 
 function renderCameraRealtimeStatus(values = {}) {
