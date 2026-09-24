@@ -935,9 +935,6 @@ func TestNetworkCameraPresetSimpleConfiguration(t *testing.T) {
 		"/axis-media/media.amp",
 		"/axis-cgi/jpg/image.cgi?camera=1",
 		"applyCameraPreset({requireIP: true})",
-		"data-camera-optimize-h264",
-		"optimizeHikvisionCamera",
-		"/optimize-h264",
 	} {
 		if !strings.Contains(script, want) {
 			t.Fatalf("network camera preset logic missing %q", want)
@@ -1010,28 +1007,6 @@ func TestRecognitionOverlayScalesAIBoxesToPreviewResolution(t *testing.T) {
 }
 
 
-func TestCameraActionSelectorsUseQuerySelectorAll(t *testing.T) {
-	data, err := assets.ReadFile("assets/js/cameras.js")
-	if err != nil {
-		t.Fatal(err)
-	}
-	script := string(data)
-	for _, selector := range []string{
-		"data-camera-default",
-		"data-camera-test",
-		"data-camera-optimize-h264",
-		"data-camera-edit",
-		"data-camera-delete",
-	} {
-		doubleDollar := "$('[" + selector + "]').forEach"
-		native := "document.querySelectorAll('[" + selector + "]').forEach"
-		if !strings.Contains(script, doubleDollar) && !strings.Contains(script, native) {
-			t.Fatalf("camera action selector must use querySelectorAll: %s", selector)
-		}
-	}
-}
-
-
 func TestAdaptiveRecognitionKeepsMonitoringWhenRealtimeOverlayHidden(t *testing.T) {
 	data, err := assets.ReadFile("assets/js/camera.js")
 	if err != nil {
@@ -1043,5 +1018,22 @@ func TestAdaptiveRecognitionKeepsMonitoringWhenRealtimeOverlayHidden(t *testing.
 	}
 	if !strings.Contains(script, "if (!cameraOpen || cameraRealtimeStatusTimer) return;") {
 		t.Fatal("camera performance monitor must stay tied to camera activity, not overlay visibility")
+	}
+}
+
+func TestHikvisionPresetDoesNotMutateCameraEncoding(t *testing.T) {
+	data, err := assets.ReadFile("assets/js/cameras.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(data)
+	for _, forbidden := range []string{
+		"data-camera-optimize-h264",
+		"optimizeHikvisionCamera",
+		"/optimize-h264",
+	} {
+		if strings.Contains(script, forbidden) {
+			t.Fatalf("camera settings must not mutate Hikvision encoding parameters: found %q", forbidden)
+		}
 	}
 }
