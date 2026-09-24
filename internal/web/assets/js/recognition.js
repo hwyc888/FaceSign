@@ -128,6 +128,7 @@ function drawFaceOverlay(faces, persons = []) {
 async function recognizeFrame(options = {}) {
   if (recognizing) return null;
   recognizing = true;
+  const performanceStartedAt = performance.now();
   try {
     let r;
     if (activeCamera && activeCamera.kind !== 'local') {
@@ -156,6 +157,9 @@ async function recognizeFrame(options = {}) {
     if (!autoTimer && !options.silent) toast(e.message);
     return null;
   } finally {
+    if (typeof recordRecognitionRealtimeSample === 'function') {
+      recordRecognitionRealtimeSample(performance.now() - performanceStartedAt);
+    }
     recognizing = false;
   }
 }
