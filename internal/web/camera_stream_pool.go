@@ -66,6 +66,14 @@ func newNetworkCameraStreamForPurpose(camera store.Camera, key, purpose string) 
 }
 
 func (stream *networkCameraStream) publish(data []byte, source string) error {
+	if stream.purpose == "recognition" {
+		stream.mu.RLock()
+		lastUpdated := stream.frame.updatedAt
+		stream.mu.RUnlock()
+		if !lastUpdated.IsZero() && time.Since(lastUpdated) < networkCameraRecognitionFrameInterval(stream.camera) {
+			return nil
+		}
+	}
 	if len(data) == 0 {
 		return errors.New("连续流返回空画面")
 	}
@@ -506,7 +514,26 @@ func ffmpegRTSPInputURL(camera store.Camera) (string, error) {
 	return parsed.String(), nil
 }
 
+func networkCameraRecognitionFPS(camera store.Camera) int {
+	fps := camera.FPS
+	if fps <= 0 {
+		fps = 5
+	}
+	if fps > 5 {
+		fps = 5
+	}
+	return fps
+}
+
+func networkCameraRecognitionFrameInterval(camera store.Camera) time.Duration {
+	return time.Second / time.Duration(networkCameraRecognitionFPS(camera))
+}
+
 func ffmpegRTSPArgs(camera store.Camera, inputURL string) []string {
+	return ffmpegRTSPArgsForPurpose(camera, inputURL, "preview")
+}
+
+func ffmpegRTSPArgsForPurpose(camera store.Camera, inputURL, purpose string) []string {
 	timeout := time.Duration(camera.TimeoutMS) * time.Millisecond
 	if timeout <= 0 {
 		timeout = 3 * time.Second
@@ -520,6 +547,10 @@ func ffmpegRTSPArgs(camera store.Camera, inputURL string) []string {
 		height = 720
 	}
 	scale := fmt.Sprintf("scale=%d:%d:force_original_aspect_ratio=decrease:force_divisible_by=2", width, height)
+	filter := scale
+	if purpose == "recognition" {
+		filter = fmt.Sprintf("fps=%d,%s", networkCameraRecognitionFPS(camera), scale)
+	}
 	return []string{
 		"-hide_banner",
 		"-loglevel", "error",
@@ -534,7 +565,7 @@ func ffmpegRTSPArgs(camera store.Camera, inputURL string) []string {
 		"-an",
 		"-sn",
 		"-dn",
-		"-vf", scale,
+		"-vf", filter,
 		"-c:v", "mjpeg",
 		"-q:v", "7",
 		"-fps_mode", "passthrough",
@@ -554,7 +585,7 @@ func (s *Server) consumeRTSPCameraStream(ctx context.Context, stream *networkCam
 		return err
 	}
 
-	command := exec.CommandContext(ctx, ffmpegPath, ffmpegRTSPArgs(stream.camera, inputURL)...)
+	command := exec.CommandContext(ctx, ffmpegPath, ffmpegRTSPArgsForPurpose(stream.camera, inputURL, stream.purpose)...)
 	command.Stderr = io.Discard
 	command.WaitDelay = 2 * time.Second
 	stdout, err := command.StdoutPipe()
