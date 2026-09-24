@@ -32,7 +32,7 @@
       <section class="page active" id="page-checkin">
         <div class="grid two">
           <div class="card camera-card">
-            <div class="video-wrap">
+            <div class="video-wrap" data-camera-fullscreen title="双击摄像头画面可全屏，再双击退出全屏">
               <video id="camera" autoplay playsinline muted></video>
               <video id="cameraNetworkWebRTC" class="network-camera-view hidden" autoplay playsinline muted></video>
               <img id="cameraNetwork" class="network-camera-view hidden" alt="网络摄像头实时画面">
@@ -100,7 +100,7 @@
 
           <div class="capture-workbench">
             <div class="capture-main">
-              <div class="enroll-video-wrap">
+              <div class="enroll-video-wrap" data-camera-fullscreen title="双击摄像头画面可全屏，再双击退出全屏">
                 <video id="enrollCamera" autoplay playsinline muted></video>
                 <video id="enrollCameraNetworkWebRTC" class="network-camera-view hidden" autoplay playsinline muted></video>
                 <img id="enrollCameraNetwork" class="network-camera-view hidden" alt="网络摄像头实时画面">
@@ -282,6 +282,21 @@
             进入“人脸签到”时自动打开摄像头并开启自动识别
           </label>
           <p class="muted camera-settings-help">关闭时仍可在签到页面手动打开摄像头和“自动识别”；离开签到页面后自动识别会停止，避免后台误签到。</p>
+        </div>
+
+        <div class="card settings-secondary-card">
+          <div class="card-head">
+            <div>
+              <h2>摄像头画面显示</h2>
+              <p class="muted compact">控制签到页和人脸采集页是否显示实时通道、FPS、丢帧、网络和识别性能状态。</p>
+            </div>
+            <span class="mode-pill" id="realtimeStatusEnabledState">正在读取...</span>
+          </div>
+          <label class="camera-check">
+            <input id="realtimeStatusEnabled" type="checkbox" checked>
+            显示摄像头实时状态
+          </label>
+          <p class="muted camera-settings-help">关闭后只隐藏状态条，不影响视频和人脸识别。摄像头画面支持鼠标双击全屏，再双击恢复。</p>
         </div>
 
         <div class="card camera-settings-card settings-secondary-card">
