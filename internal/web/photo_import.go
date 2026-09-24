@@ -515,9 +515,6 @@ func (s *Server) photoImportCommit(w http.ResponseWriter, r *http.Request, sessi
 		}
 	}
 
-	if imported > 0 {
-		s.refreshFaceCacheAfterMutation(r.Context())
-	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"imported": imported,
 		"skipped":  skipped,
@@ -527,13 +524,18 @@ func (s *Server) photoImportCommit(w http.ResponseWriter, r *http.Request, sessi
 }
 
 func (s *Server) loadPhotoKnownFaces(ctx context.Context) ([]photoKnownFace, error) {
-	samples, err := s.cachedFaceSamples(ctx)
+	samples, err := s.store.ListFaceSamples(ctx)
 	if err != nil {
 		return nil, err
 	}
 	out := make([]photoKnownFace, 0, len(samples))
 	for _, sample := range samples {
-		out = append(out, photoKnownFace{Student: sample.Student, Feature: sample.Feature})
+		feature, err := face.Decode(sample.Embedding)
+		if err != nil {
+			s.logger.Warn("skip invalid face sample during photo import", "student_id", sample.Student.ID, "sample_id", sample.ID, "error", err)
+			continue
+		}
+		out = append(out, photoKnownFace{Student: sample.Student, Feature: feature})
 	}
 	return out, nil
 }

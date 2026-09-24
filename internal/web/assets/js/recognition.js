@@ -35,7 +35,7 @@ function renderRecognition(r) {
   if (!faces.length && !persons.length) {
     el.className = 'result empty';
     el.textContent = '未检测到人员或人脸';
-    drawFaceOverlay([], [], r.frame_width, r.frame_height);
+    drawFaceOverlay([], []);
     return;
   }
 
@@ -93,10 +93,10 @@ function renderRecognition(r) {
   `).join('');
 
   el.innerHTML = `<div class="result-summary">${summary}</div>` + faceHTML + waitingHTML;
-  drawFaceOverlay(faces, persons, r.frame_width, r.frame_height);
+  drawFaceOverlay(faces, persons);
 }
 
-function drawFaceOverlay(faces, persons = [], sourceWidth = 0, sourceHeight = 0) {
+function drawFaceOverlay(faces, persons = []) {
   const overlay = $('#faceOverlay');
   if (!overlay) return;
   const dimensions = typeof cameraFrameDimensions === 'function'
@@ -104,23 +104,13 @@ function drawFaceOverlay(faces, persons = [], sourceWidth = 0, sourceHeight = 0)
     : {width: 1280, height: 720};
   overlay.width = dimensions.width || 1280;
   overlay.height = dimensions.height || 720;
-  const sourceW = Math.max(1, Number(sourceWidth || overlay.width));
-  const sourceH = Math.max(1, Number(sourceHeight || overlay.height));
-  const scaleX = overlay.width / sourceW;
-  const scaleY = overlay.height / sourceH;
-  const scaledBox = box => ({
-    x: Number(box?.x || 0) * scaleX,
-    y: Number(box?.y || 0) * scaleY,
-    width: Number(box?.width || 0) * scaleX,
-    height: Number(box?.height || 0) * scaleY
-  });
   const ctx = overlay.getContext('2d');
   ctx.clearRect(0, 0, overlay.width, overlay.height);
   ctx.lineWidth = Math.max(2, overlay.width / 400);
   ctx.font = `${Math.max(18, Math.round(overlay.width / 55))}px Segoe UI, Arial`;
 
   persons.forEach(p => {
-    const b = scaledBox(p.box);
+    const b = p.box || {};
     if (p.face_visible) return;
     ctx.save();
     ctx.strokeStyle = '#8b5cf6';
@@ -133,7 +123,7 @@ function drawFaceOverlay(faces, persons = [], sourceWidth = 0, sourceHeight = 0)
   });
 
   faces.forEach(f => {
-    const b = scaledBox(f.box);
+    const b = f.box || {};
     let color = '#f59e0b';
     let label = '未录入';
     const quality = Math.round(Number(f.quality_score || 0) * 100);

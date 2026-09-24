@@ -59,7 +59,6 @@ func (s *Server) studentAction(w http.ResponseWriter, r *http.Request) {
 				writeError(w, http.StatusNotFound, err)
 				return
 			}
-			s.refreshFaceCacheAfterMutation(r.Context())
 			writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 		case http.MethodPut:
 			var in struct {
@@ -135,7 +134,6 @@ func (s *Server) studentAction(w http.ResponseWriter, r *http.Request) {
 				}
 			}
 
-			s.refreshFaceCacheAfterMutation(r.Context())
 			response := map[string]any{"ok": true}
 			if updated != nil {
 				if in.SeatNo != nil {
@@ -183,7 +181,6 @@ func (s *Server) studentAction(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusNotFound, err)
 			return
 		}
-		s.refreshFaceCacheAfterMutation(r.Context())
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 		return
 	}

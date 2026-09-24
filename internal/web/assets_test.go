@@ -977,24 +977,3 @@ func TestNetworkCameraUIExplainsContinuousStreamPrimaryAndSnapshotFallback(t *te
 		}
 	}
 }
-
-
-func TestRecognitionOverlayScalesAIBoxesToPreviewResolution(t *testing.T) {
-	data, err := assets.ReadFile("assets/js/recognition.js")
-	if err != nil {
-		t.Fatal(err)
-	}
-	script := string(data)
-	for _, want := range []string{
-		"r.frame_width",
-		"r.frame_height",
-		"const scaleX = overlay.width / sourceW",
-		"const scaleY = overlay.height / sourceH",
-		"const b = scaledBox(p.box)",
-		"const b = scaledBox(f.box)",
-	} {
-		if !strings.Contains(script, want) {
-			t.Fatalf("101/102 overlay scaling missing %q", want)
-		}
-	}
-}
