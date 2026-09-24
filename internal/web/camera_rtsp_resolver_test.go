@@ -1,6 +1,8 @@
 package web
 
 import (
+	"context"
+	"net"
 	"net/url"
 	"strings"
 	"testing"
@@ -77,6 +79,33 @@ func TestRTSPDiagnosticRedactsPasswordAndClassifiesAuthFailure(t *testing.T) {
 	if strings.Contains(detail, camera.Password) {
 		t.Fatalf("diagnostic leaked camera password: %q", detail)
 	}
+}
+
+func TestInspectRTSPDigestAlgorithmDetectsSHA256(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer listener.Close()
+
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		conn, err := listener.Accept()
+		if err != nil {
+			return
+		}
+		defer conn.Close()
+		buf := make([]byte, 2048)
+		_, _ = conn.Read(buf)
+		_, _ = conn.Write([]byte("RTSP/1.0 401 Unauthorized\r\nCSeq: 1\r\nWWW-Authenticate: Digest realm=\"Hikvision\", nonce=\"abc\", algorithm=SHA-256, qop=\"auth\"\r\n\r\n"))
+	}()
+
+	algorithm := inspectRTSPDigestAlgorithm(context.Background(), "rtsp://admin:secret@"+listener.Addr().String()+"/Streaming/channels/101")
+	if algorithm != "SHA-256" {
+		t.Fatalf("digest algorithm=%q want SHA-256", algorithm)
+	}
+	<-done
 }
 
 func TestDetectFFmpegVideoCodec(t *testing.T) {
