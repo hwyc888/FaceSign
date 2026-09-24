@@ -1,6 +1,7 @@
 package web
 
 import (
+	"context"
 	"fmt"
 	"io/fs"
 	"log/slog"
@@ -23,6 +24,11 @@ type Server struct {
 	personEngine        *person.Engine
 	tracker             *recognitionTracker
 	personTracker       *personTracker
+	faceCacheMu         sync.RWMutex
+	faceCacheLoaded     bool
+	faceCache           []decodedFaceSample
+	personDetectionMu   sync.Mutex
+	personDetectionCache map[string]personDetectionCacheEntry
 	matchThreshold     float64
 	detectionThreshold float64
 	version            string
@@ -48,7 +54,7 @@ func New(logger *slog.Logger, st *store.Store, engine *face.Engine, live *livene
 	if err != nil {
 		return nil, err
 	}
-	return &Server{
+	server := &Server{
 		logger:             logger,
 		store:              st,
 		engine:             engine,
@@ -56,6 +62,7 @@ func New(logger *slog.Logger, st *store.Store, engine *face.Engine, live *livene
 		personEngine:        personEngine,
 		tracker:            newRecognitionTracker(),
 		personTracker:      newPersonTracker(),
+		personDetectionCache: make(map[string]personDetectionCacheEntry),
 		matchThreshold:     matchThreshold,
 		detectionThreshold: detectionThreshold,
 		version:            version,
@@ -66,7 +73,11 @@ func New(logger *slog.Logger, st *store.Store, engine *face.Engine, live *livene
 		networkCameraFrames:         make(map[int64]*networkCameraFrameCache),
 		networkCameraStreams:        make(map[int64]*networkCameraStream),
 		networkCameraPreviewStreams: make(map[int64]*networkCameraStream),
-	}, nil
+	}
+	if err := server.reloadFaceCache(context.Background()); err != nil {
+		return nil, fmt.Errorf("预加载人脸特征缓存失败: %w", err)
+	}
+	return server, nil
 }
 
 func (s *Server) Handler() http.Handler {

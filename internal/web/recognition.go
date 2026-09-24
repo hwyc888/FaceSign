@@ -53,11 +53,6 @@ type recognitionPerson struct {
 	Similarity      float64        `json:"similarity,omitempty"`
 }
 
-type decodedFaceSample struct {
-	Student store.Student
-	Feature []float32
-}
-
 type matchCandidate struct {
 	DetectionIndex int
 	Student        store.Student
@@ -99,13 +94,10 @@ func (s *Server) recognizeImage(w http.ResponseWriter, r *http.Request, img imag
 		}
 	}
 
-	personDetections := make([]person.Detection, 0)
-	if s.personEngine != nil {
-		personDetections, err = s.personEngine.Detect(img, 0.32)
-		if err != nil {
-			s.logger.Warn("person detector failed; continuing with face-derived tracks", "error", err)
-			personDetections = nil
-		}
+	personDetections, err := s.personDetectionsForRecognition(sessionID, img, now)
+	if err != nil {
+		s.logger.Warn("person detector failed; continuing with face-derived tracks", "error", err)
+		personDetections = nil
 	}
 	personDetections = addFaceFallbackPersons(personDetections, detections, img.Bounds())
 	tracks := s.personTracker.Observe(sessionID, personDetections, now)
@@ -192,19 +184,10 @@ func (s *Server) recognizeImage(w http.ResponseWriter, r *http.Request, img imag
 
 	var decoded []decodedFaceSample
 	if anyTrue(needsFeature) {
-		samples, err := s.store.ListFaceSamples(r.Context())
+		decoded, err = s.cachedFaceSamples(r.Context())
 		if err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
-		}
-		decoded = make([]decodedFaceSample, 0, len(samples))
-		for _, sample := range samples {
-			stored, err := face.Decode(sample.Embedding)
-			if err != nil {
-				s.logger.Warn("skip invalid face sample", "student_id", sample.Student.ID, "sample_id", sample.ID, "error", err)
-				continue
-			}
-			decoded = append(decoded, decodedFaceSample{Student: sample.Student, Feature: stored})
 		}
 
 		for i, need := range needsFeature {
