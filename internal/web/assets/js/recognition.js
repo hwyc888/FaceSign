@@ -179,7 +179,7 @@ async function recognizeFrame(options = {}) {
     let r;
     const loadProfile = typeof cameraRecognitionLoadProfile === 'function'
       ? cameraRecognitionLoadProfile()
-      : {level: 'normal', maxFPS: 5};
+      : {level: 'normal', maxFPS: 5, minGapMS: 100};
     if (activeCamera && activeCamera.kind !== 'local') {
       r = await api(`/api/cameras/${activeCamera.id}/recognize`, {
         method: 'POST',
@@ -229,11 +229,16 @@ function recognitionFrameIntervalMS() {
   if (activeCamera && activeCamera.kind !== 'local') {
     const loadProfile = typeof cameraRecognitionLoadProfile === 'function'
       ? cameraRecognitionLoadProfile()
-      : {level: 'normal', maxFPS: 5};
+      : {level: 'normal', maxFPS: 5, minGapMS: 100};
     const configuredFPS = Math.max(1, Math.min(Number(activeCamera.fps || 5), 5));
     const fps = Math.max(1, Math.min(configuredFPS, Number(loadProfile.maxFPS || 5)));
     const targetIntervalMS = Math.max(200, Math.round(1000 / fps));
-    return Math.max(40, Math.round(targetIntervalMS - Math.min(recognitionLastDurationMS, targetIntervalMS - 40)));
+    const minGapMS = Math.max(80, Number(loadProfile.minGapMS || 100));
+    const recoverableMS = Math.max(0, targetIntervalMS - minGapMS);
+    return Math.max(
+      minGapMS,
+      Math.round(targetIntervalMS - Math.min(recognitionLastDurationMS, recoverableMS))
+    );
   }
   return 120;
 }

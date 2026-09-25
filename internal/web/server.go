@@ -29,8 +29,9 @@ type Server struct {
 	faceCache           []decodedFaceSample
 	personDetectionMu    sync.Mutex
 	personDetectionCache map[string]personDetectionCacheEntry
-	cameraRecognitionMu   sync.Mutex
-	cameraRecognitionBusy map[int64]bool
+	cameraRecognitionMu     sync.Mutex
+	cameraRecognitionBusy   map[int64]bool
+	cameraRecognitionNextAt map[int64]time.Time
 	matchThreshold     float64
 	detectionThreshold float64
 	version            string
@@ -65,7 +66,8 @@ func New(logger *slog.Logger, st *store.Store, engine *face.Engine, live *livene
 		tracker:            newRecognitionTracker(),
 		personTracker:      newPersonTracker(),
 		personDetectionCache:  make(map[string]personDetectionCacheEntry),
-		cameraRecognitionBusy: make(map[int64]bool),
+		cameraRecognitionBusy:   make(map[int64]bool),
+		cameraRecognitionNextAt: make(map[int64]time.Time),
 		matchThreshold:     matchThreshold,
 		detectionThreshold: detectionThreshold,
 		version:            version,

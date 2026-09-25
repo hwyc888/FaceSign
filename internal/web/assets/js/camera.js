@@ -64,12 +64,12 @@ function updateCameraRecognitionLoadLevel(fps, dropPct) {
 
 function cameraRecognitionLoadProfile() {
   if (cameraRecognitionLoadLevel === 'protect') {
-    return {level: 'protect', maxFPS: 2, label: 'AI保护'};
+    return {level: 'protect', maxFPS: 1, minGapMS: 500, label: 'AI保护'};
   }
   if (cameraRecognitionLoadLevel === 'reduced') {
-    return {level: 'reduced', maxFPS: 3, label: 'AI降载'};
+    return {level: 'reduced', maxFPS: 2, minGapMS: 250, label: 'AI降载'};
   }
-  return {level: 'normal', maxFPS: 5, label: 'AI正常'};
+  return {level: 'normal', maxFPS: 5, minGapMS: 100, label: 'AI正常'};
 }
 
 function setCameraRealtimeField(name, text, state = '') {

@@ -104,8 +104,8 @@ func TestMJPEGContinuousStreamFeedsSharedPool(t *testing.T) {
 	}
 }
 
-func TestNetworkCameraPreviewBufferPreservesShortBursts(t *testing.T) {
-	stream := newNetworkCameraStreamForPurpose(store.Camera{ID: 91, Name: "Buffered preview"}, "buffered", "preview")
+func TestNetworkCameraPreviewKeepsLatestFrameInsteadOfBacklog(t *testing.T) {
+	stream := newNetworkCameraStreamForPurpose(store.Camera{ID: 91, Name: "Realtime preview"}, "latest-preview", "preview")
 	for i := 0; i < 6; i++ {
 		img := image.NewRGBA(image.Rect(0, 0, 20+i, 12))
 		var frame bytes.Buffer
@@ -123,18 +123,10 @@ func TestNetworkCameraPreviewBufferPreservesShortBursts(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if next.sequence != 3 {
-		t.Fatalf("preview buffer should preserve the next frame in a short burst: got sequence=%d want=3", next.sequence)
-	}
-	next, err = stream.waitNext(ctx, next.sequence, 10*time.Millisecond)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if next.sequence != 4 {
-		t.Fatalf("preview buffer should advance sequentially: got sequence=%d want=4", next.sequence)
+	if next.sequence != 6 {
+		t.Fatalf("realtime preview must drop stale queued frames: got sequence=%d want=6", next.sequence)
 	}
 }
-
 func TestRTSPFailureFallsBackToSnapshot(t *testing.T) {
 	t.Setenv("FACESIGN_FFMPEG", filepath.Join(t.TempDir(), "missing-ffmpeg"))
 
@@ -291,9 +283,6 @@ func TestRecognitionStreamKeepsOnlyLatestFrame(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if len(stream.history) != 0 {
-		t.Fatalf("recognition stream must not queue old frames, history=%d", len(stream.history))
-	}
 	current, ok := stream.current(0)
 	if !ok {
 		t.Fatal("recognition latest frame missing")
@@ -309,5 +298,28 @@ func TestRecognitionStreamKeepsOnlyLatestFrame(t *testing.T) {
 	}
 	if next.sequence != 6 {
 		t.Fatalf("recognition waitNext must return newest frame, got=%d", next.sequence)
+	}
+}
+
+
+func TestIdleRecognitionStreamCanBeReleased(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	stream := newNetworkCameraStreamForPurpose(store.Camera{ID: 100, Name: "Idle AI"}, "idle-ai", "recognition")
+	stream.cancel = cancel
+	stream.mu.Lock()
+	stream.lastUsedAt = time.Now().Add(-networkCameraRecognitionIdleFor - time.Second)
+	stream.mu.Unlock()
+
+	s := &Server{networkCameraStreams: map[int64]*networkCameraStream{100: stream}}
+	if !s.stopNetworkCameraRecognitionStreamIfIdle(100, stream, time.Now()) {
+		t.Fatal("idle recognition stream should be released")
+	}
+	if s.networkCameraStreams[100] != nil {
+		t.Fatal("idle recognition stream remained in the server pool")
+	}
+	select {
+	case <-ctx.Done():
+	default:
+		t.Fatal("idle recognition stream cancel function was not called")
 	}
 }

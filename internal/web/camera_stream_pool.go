@@ -24,9 +24,9 @@ import (
 const (
 	networkCameraStreamFreshFor = 2 * time.Second
 	networkCameraStreamRetryMin  = 500 * time.Millisecond
-	networkCameraStreamRetryMax  = 5 * time.Second
-	maxContinuousFrameBytes      = 16 << 20
-	networkCameraPreviewBufferFrames = 4
+	networkCameraStreamRetryMax     = 5 * time.Second
+	networkCameraRecognitionIdleFor = 5 * time.Second
+	maxContinuousFrameBytes         = 16 << 20
 )
 
 type pooledNetworkCameraFrame struct {
@@ -44,11 +44,11 @@ type networkCameraStream struct {
 	purpose string
 	cancel  context.CancelFunc
 
-	mu      sync.RWMutex
-	frame   pooledNetworkCameraFrame
-	lastErr error
-	notify  chan struct{}
-	history []pooledNetworkCameraFrame
+	mu         sync.RWMutex
+	frame      pooledNetworkCameraFrame
+	lastErr    error
+	notify     chan struct{}
+	lastUsedAt time.Time
 }
 
 func newNetworkCameraStream(camera store.Camera, key string) *networkCameraStream {
@@ -59,8 +59,9 @@ func newNetworkCameraStreamForPurpose(camera store.Camera, key, purpose string) 
 	return &networkCameraStream{
 		key:     key,
 		camera:  camera,
-		purpose: purpose,
-		notify:  make(chan struct{}),
+		purpose:    purpose,
+		notify:     make(chan struct{}),
+		lastUsedAt: time.Now(),
 	}
 }
 
@@ -98,14 +99,6 @@ func (stream *networkCameraStream) publish(data []byte, source string) error {
 		updatedAt: time.Now(),
 	}
 	stream.frame = frame
-	if stream.purpose == "preview" {
-		if len(stream.history) >= networkCameraPreviewBufferFrames {
-			copy(stream.history, stream.history[1:])
-			stream.history[len(stream.history)-1] = pooledNetworkCameraFrame{}
-			stream.history = stream.history[:len(stream.history)-1]
-		}
-		stream.history = append(stream.history, frame)
-	}
 	stream.lastErr = nil
 	notify := stream.notify
 	stream.notify = make(chan struct{})
@@ -130,6 +123,28 @@ func (stream *networkCameraStream) error() error {
 	stream.mu.RLock()
 	defer stream.mu.RUnlock()
 	return stream.lastErr
+}
+
+func (stream *networkCameraStream) touch() {
+	if stream == nil || stream.purpose != "recognition" {
+		return
+	}
+	stream.mu.Lock()
+	stream.lastUsedAt = time.Now()
+	stream.mu.Unlock()
+}
+
+func (stream *networkCameraStream) idleFor(now time.Time) time.Duration {
+	if stream == nil || stream.purpose != "recognition" {
+		return 0
+	}
+	stream.mu.RLock()
+	lastUsedAt := stream.lastUsedAt
+	stream.mu.RUnlock()
+	if lastUsedAt.IsZero() || now.Before(lastUsedAt) {
+		return 0
+	}
+	return now.Sub(lastUsedAt)
 }
 
 func (stream *networkCameraStream) current(maxAge time.Duration) (pooledNetworkCameraFrame, bool) {
@@ -195,16 +210,10 @@ func (stream *networkCameraStream) waitNext(ctx context.Context, afterSequence u
 	defer timer.Stop()
 	for {
 		stream.mu.RLock()
-		if stream.purpose != "preview" && stream.frame.sequence > afterSequence && len(stream.frame.data) > 0 {
+		if stream.frame.sequence > afterSequence && len(stream.frame.data) > 0 {
 			frame := stream.frame
 			stream.mu.RUnlock()
 			return frame, nil
-		}
-		for _, frame := range stream.history {
-			if frame.sequence > afterSequence && len(frame.data) > 0 {
-				stream.mu.RUnlock()
-				return frame, nil
-			}
 		}
 		notify := stream.notify
 		lastErr := stream.lastErr
@@ -222,7 +231,6 @@ func (stream *networkCameraStream) waitNext(ctx context.Context, afterSequence u
 		}
 	}
 }
-
 func networkCameraContinuousMode(camera store.Camera) string {
 	if camera.Kind != "network" {
 		return ""
@@ -282,6 +290,7 @@ func (s *Server) ensureNetworkCameraStreamForPurpose(camera store.Camera, purpos
 		s.networkCameraStreams = target
 	}
 	if current := target[camera.ID]; current != nil && current.key == key {
+		current.touch()
 		s.networkCameraStreamMu.Unlock()
 		return current
 	}
@@ -296,7 +305,44 @@ func (s *Server) ensureNetworkCameraStreamForPurpose(camera store.Camera, purpos
 		old.cancel()
 	}
 	go s.runNetworkCameraStream(ctx, stream)
+	if purpose == "recognition" {
+		go s.watchNetworkCameraRecognitionIdle(ctx, camera.ID, stream)
+	}
 	return stream
+}
+
+func (s *Server) watchNetworkCameraRecognitionIdle(ctx context.Context, cameraID int64, stream *networkCameraStream) {
+	ticker := time.NewTicker(time.Second)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case now := <-ticker.C:
+			if s.stopNetworkCameraRecognitionStreamIfIdle(cameraID, stream, now) {
+				return
+			}
+		}
+	}
+}
+
+func (s *Server) stopNetworkCameraRecognitionStreamIfIdle(cameraID int64, stream *networkCameraStream, now time.Time) bool {
+	if stream == nil || stream.purpose != "recognition" {
+		return false
+	}
+
+	s.networkCameraStreamMu.Lock()
+	if s.networkCameraStreams[cameraID] != stream || stream.idleFor(now) < networkCameraRecognitionIdleFor {
+		s.networkCameraStreamMu.Unlock()
+		return false
+	}
+	delete(s.networkCameraStreams, cameraID)
+	s.networkCameraStreamMu.Unlock()
+
+	if stream.cancel != nil {
+		stream.cancel()
+	}
+	return true
 }
 
 func (s *Server) stopNetworkCameraStream(cameraID int64) {
