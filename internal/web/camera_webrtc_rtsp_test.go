@@ -39,3 +39,32 @@ func TestWebRTCH264TranscodeCapabilityRemainsGeneric(t *testing.T) {
 		t.Fatalf("HEVC transcode capability must remain generic, got %q", capability.SDPFmtpLine)
 	}
 }
+
+func TestWebRTCH265NativeCapability(t *testing.T) {
+	capability := webRTCH265CodecCapability()
+	if capability.MimeType != "video/H265" || capability.ClockRate != 90000 {
+		t.Fatalf("unexpected H265 capability: %#v", capability)
+	}
+	if capability.SDPFmtpLine != "" {
+		t.Fatalf("H265 direct capability should stay generic for browser negotiation, got %q", capability.SDPFmtpLine)
+	}
+}
+
+func TestWebRTCOfferSupportsH265(t *testing.T) {
+	tests := []struct {
+		name string
+		sdp  string
+		want bool
+	}{
+		{name: "h265", sdp: "v=0\r\na=rtpmap:116 H265/90000\r\n", want: true},
+		{name: "hevc alias", sdp: "v=0\na=rtpmap:116 HEVC/90000\n", want: true},
+		{name: "h264 only", sdp: "v=0\r\na=rtpmap:102 H264/90000\r\n", want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := webRTCOfferSupportsH265(tt.sdp); got != tt.want {
+				t.Fatalf("webRTCOfferSupportsH265()=%v want %v", got, tt.want)
+			}
+		})
+	}
+}

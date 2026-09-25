@@ -105,7 +105,7 @@ function friendlyCameraRealtimeReason(reason) {
     if (text.includes('转码') || text.includes('编码器')) {
       return '已检测到 H.265/HEVC，但本机 H.264 转码能力不可用；请使用带 FFmpeg 的 Full/Lite 版本';
     }
-    return '检测到 H.265/HEVC；FaceSign 将自动转码为 H.264 后通过 WebRTC 实时显示';
+    return '检测到 H.265/HEVC；浏览器支持时优先 H.265 原码直通，不支持或直通失败时自动转为 H.264';
   }
   if (lower.includes('connection refused') || text.includes('端口拒绝连接')) {
     return 'RTSP 端口拒绝连接；请确认摄像头 RTSP 服务已启用，并核对 554/实际 RTSP 端口';
@@ -119,8 +119,8 @@ function friendlyCameraRealtimeReason(reason) {
   if (text.includes('ICE')) {
     return 'WebRTC ICE 协商失败或超时，请检查本机网络/防火墙';
   }
-  if (text.includes('未收到可播放 H.264 画面')) {
-    return 'WebRTC 已连接，但没有收到可播放的 H.264 视频帧';
+  if (text.includes('未收到可播放视频画面')) {
+    return 'WebRTC 已连接，但没有收到可播放的视频帧';
   }
   if (text.includes('未检测到 H.264')) {
     return 'RTSP 已连接但未检测到 H.264，请检查摄像头主/子码流编码';
@@ -537,16 +537,28 @@ function startMJPEGPreviewFallback(generation, image, video, reason = '') {
   reconnect();
 
   if (reason) {
-    console.warn('WebRTC H.264 preview unavailable; using MJPEG fallback:', reason);
+    console.warn('WebRTC preview unavailable; using MJPEG fallback:', reason);
   }
 }
 
-async function startWebRTCH264Preview(generation, image, video) {
+async function startWebRTCPreview(generation, image, video, forceH264 = false) {
   if (!window.RTCPeerConnection) throw new Error('当前浏览器不支持 WebRTC');
   const peer = new RTCPeerConnection();
-  let negotiatedMode = 'WebRTC H.264直通';
+  let negotiatedMode = 'WebRTC 自动协商';
   networkPreviewPeer = peer;
   peer.addTransceiver('video', {direction: 'recvonly'});
+
+  const retryH265AsH264 = reason => {
+    if (forceH264 || !negotiatedMode.includes('H.265原码直连')) return false;
+    clearNetworkPreviewTimers();
+    closeNetworkPreviewPeer();
+    startCameraRealtimeVideoMonitor(null, 'H.265直通回退', reason || 'H.265 原码直通失败，正在切换 H.264');
+    startWebRTCPreview(generation, image, video, true).catch(error => {
+      if (generation !== networkPreviewGeneration) return;
+      startMJPEGPreviewFallback(generation, image, video, error.message);
+    });
+    return true;
+  };
 
   peer.ontrack = event => {
     if (generation !== networkPreviewGeneration || peer !== networkPreviewPeer) return;
@@ -562,6 +574,7 @@ async function startWebRTCH264Preview(generation, image, video) {
     if (generation !== networkPreviewGeneration || peer !== networkPreviewPeer) return;
     const state = peer.connectionState;
     if (state === 'failed' || state === 'closed') {
+      if (retryH265AsH264(`H.265 WebRTC 状态：${state}`)) return;
       startMJPEGPreviewFallback(generation, image, video, `WebRTC 状态：${state}`);
       return;
     }
@@ -570,6 +583,7 @@ async function startWebRTCH264Preview(generation, image, video) {
       networkPreviewRetryTimer = setTimeout(() => {
         networkPreviewRetryTimer = null;
         if (generation === networkPreviewGeneration && peer === networkPreviewPeer && peer.connectionState === 'disconnected') {
+          if (retryH265AsH264('H.265 WebRTC 连接中断')) return;
           startMJPEGPreviewFallback(generation, image, video, 'WebRTC 连接中断');
         }
       }, 1500);
@@ -587,7 +601,7 @@ async function startWebRTCH264Preview(generation, image, video) {
     method: 'POST',
     headers: {'Content-Type': 'application/json'},
     cache: 'no-store',
-    body: JSON.stringify({type: local.type, sdp: local.sdp})
+    body: JSON.stringify({type: local.type, sdp: local.sdp, force_h264: forceH264})
   });
   if (!response.ok) {
     const data = await response.json().catch(() => ({}));
@@ -595,13 +609,19 @@ async function startWebRTCH264Preview(generation, image, video) {
   }
   const answer = await response.json();
   negotiatedMode = String(answer.mode || negotiatedMode);
-  await peer.setRemoteDescription(answer);
+  try {
+    await peer.setRemoteDescription(answer);
+  } catch (error) {
+    if (retryH265AsH264(`H.265 WebRTC 协商失败：${error?.message || error}`)) return;
+    throw error;
+  }
 
   networkPreviewWatchdogTimer = setTimeout(() => {
     networkPreviewWatchdogTimer = null;
     if (generation !== networkPreviewGeneration || peer !== networkPreviewPeer) return;
     if (!video.videoWidth || !video.videoHeight || video.readyState < 2) {
-      startMJPEGPreviewFallback(generation, image, video, 'WebRTC 已连接但未收到可播放 H.264 画面');
+      if (retryH265AsH264('H.265 原码直通已连接但浏览器没有可播放画面')) return;
+      startMJPEGPreviewFallback(generation, image, video, 'WebRTC 已连接但未收到可播放视频画面');
     }
   }, 6000);
 }
@@ -633,7 +653,7 @@ function startNetworkPreview() {
     return;
   }
 
-  startWebRTCH264Preview(generation, image, video).catch(error => {
+  startWebRTCPreview(generation, image, video).catch(error => {
     if (generation !== networkPreviewGeneration) return;
     startMJPEGPreviewFallback(generation, image, video, error.message);
   });

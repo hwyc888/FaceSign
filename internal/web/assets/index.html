@@ -429,7 +429,7 @@
             </label>
             <label>识别帧率
               <input id="cameraFPS" type="number" min="1" max="60" value="30" required>
-              <small>RTSP 网络摄像头优先使用 WebRTC/H.264 实时预览，由浏览器硬件解码；WebRTC 不可用、摄像头不是 H.264 或连接异常时自动回退 MJPEG。人脸识别仍建议 3–5 FPS，HTTP Snapshot 仅作最终兼容回退。</small>
+              <small>RTSP 网络摄像头优先使用 WebRTC/H.264/H.265 原码实时预览，由浏览器硬件解码；H.265 浏览器不支持或原码直通失败时自动转为 H.264，WebRTC 仍不可用时再回退 MJPEG。人脸识别仍建议 3–5 FPS，HTTP Snapshot 仅作最终兼容回退。</small>
             </label>
             <label data-camera-advanced class="hidden">网络超时(ms)（高级）
               <input id="cameraTimeout" type="number" min="500" max="30000" value="3000">

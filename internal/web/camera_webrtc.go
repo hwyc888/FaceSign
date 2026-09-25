@@ -19,9 +19,10 @@ import (
 )
 
 type cameraWebRTCSignal struct {
-	Type string `json:"type"`
-	SDP  string `json:"sdp"`
-	Mode string `json:"mode,omitempty"`
+	Type      string `json:"type"`
+	SDP       string `json:"sdp"`
+	Mode      string `json:"mode,omitempty"`
+	ForceH264 bool   `json:"force_h264,omitempty"`
 }
 
 type webRTCH264Encoder struct {
@@ -35,7 +36,7 @@ func (s *Server) cameraWebRTCOffer(w http.ResponseWriter, r *http.Request, camer
 		return
 	}
 	if camera.Kind != "network" || strings.ToLower(strings.TrimSpace(camera.Protocol)) != "rtsp" {
-		writeError(w, http.StatusBadRequest, errors.New("WebRTC H.264 预览仅用于 RTSP 网络摄像头"))
+		writeError(w, http.StatusBadRequest, errors.New("WebRTC 实时预览仅用于 RTSP 网络摄像头"))
 		return
 	}
 	var offer cameraWebRTCSignal
@@ -49,8 +50,6 @@ func (s *Server) cameraWebRTCOffer(w http.ResponseWriter, r *http.Request, camer
 	}
 
 	probeCtx, probeCancel := context.WithTimeout(r.Context(), cameraWebRTCProbeTimeout(camera)+4*time.Second)
-	// H.264 preview is resolved natively so it can stay RTP end-to-end without
-	// starting FFmpeg. HEVC still uses the existing hardware/software transcode path.
 	source, err := resolveWebRTCRTSPSource(probeCtx, camera)
 	probeCancel()
 	if err != nil {
@@ -58,21 +57,41 @@ func (s *Server) cameraWebRTCOffer(w http.ResponseWriter, r *http.Request, camer
 		return
 	}
 
+	directH265 := false
 	encoder := webRTCH264Encoder{Mode: "WebRTC H.264原码直连"}
-	if source.Codec == "hevc" {
-		ffmpegPath, findErr := findFFmpeg()
-		if findErr != nil {
-			writeError(w, http.StatusServiceUnavailable, fmt.Errorf("WebRTC H.265 转码不可用: %w", findErr))
-			return
+	switch source.Codec {
+	case "h264":
+	case "hevc":
+		if !offer.ForceH264 && source.H265 != nil && webRTCOfferSupportsH265(offer.SDP) {
+			directCtx, directCancel := context.WithTimeout(r.Context(), 4*time.Second)
+			directErr := probeRTSPH265Direct(directCtx, camera, source)
+			directCancel()
+			if directErr == nil {
+				directH265 = true
+				encoder.Mode = "WebRTC H.265原码直连"
+			} else {
+				s.logger.Warn("camera WebRTC H265 direct probe failed; falling back to H264 transcode",
+					"camera_id", camera.ID,
+					"camera", camera.Name,
+					"error", directErr,
+				)
+			}
 		}
-		encoderCtx, encoderCancel := context.WithTimeout(r.Context(), 10*time.Second)
-		encoder, err = selectWebRTCH264Encoder(encoderCtx, ffmpegPath)
-		encoderCancel()
-		if err != nil {
-			writeError(w, http.StatusServiceUnavailable, fmt.Errorf("WebRTC H.265 转码不可用: %w", err))
-			return
+		if !directH265 {
+			ffmpegPath, findErr := findFFmpeg()
+			if findErr != nil {
+				writeError(w, http.StatusServiceUnavailable, fmt.Errorf("WebRTC H.265 转码不可用: %w", findErr))
+				return
+			}
+			encoderCtx, encoderCancel := context.WithTimeout(r.Context(), 10*time.Second)
+			encoder, err = selectWebRTCH264Encoder(encoderCtx, ffmpegPath)
+			encoderCancel()
+			if err != nil {
+				writeError(w, http.StatusServiceUnavailable, fmt.Errorf("WebRTC H.265 转码不可用: %w", err))
+				return
+			}
 		}
-	} else if source.Codec != "h264" {
+	default:
 		writeError(w, http.StatusServiceUnavailable, fmt.Errorf("WebRTC 实时预览暂不支持 RTSP 编码 %q", source.Codec))
 		return
 	}
@@ -83,14 +102,18 @@ func (s *Server) cameraWebRTCOffer(w http.ResponseWriter, r *http.Request, camer
 		return
 	}
 
+	codecCapability := webRTCH264CodecCapability(source)
+	if directH265 {
+		codecCapability = webRTCH265CodecCapability()
+	}
 	videoTrack, err := webrtc.NewTrackLocalStaticRTP(
-		webRTCH264CodecCapability(source),
+		codecCapability,
 		"video",
 		"facesign-camera",
 	)
 	if err != nil {
 		_ = peer.Close()
-		writeError(w, http.StatusInternalServerError, fmt.Errorf("创建 WebRTC H.264 视频轨失败: %w", err))
+		writeError(w, http.StatusInternalServerError, fmt.Errorf("创建 WebRTC 视频轨失败: %w", err))
 		return
 	}
 
@@ -174,13 +197,16 @@ func (s *Server) cameraWebRTCOffer(w http.ResponseWriter, r *http.Request, camer
 		}
 
 		var streamErr error
-		if source.Codec == "h264" {
+		switch {
+		case source.Codec == "h264":
 			streamErr = streamRTSPH264DirectToWebRTC(streamCtx, camera, videoTrack, source)
-		} else {
+		case directH265:
+			streamErr = streamRTSPH265DirectToWebRTC(streamCtx, camera, videoTrack, source)
+		default:
 			streamErr = streamRTSPH264ToWebRTC(streamCtx, camera, videoTrack, source.resolvedRTSPSource, encoder)
 		}
 		if streamErr != nil && streamCtx.Err() == nil {
-			s.logger.Warn("camera WebRTC H264 stream stopped",
+			s.logger.Warn("camera WebRTC stream stopped",
 				"camera_id", camera.ID,
 				"camera", camera.Name,
 				"mode", encoder.Mode,
@@ -194,6 +220,20 @@ func (s *Server) cameraWebRTCOffer(w http.ResponseWriter, r *http.Request, camer
 		SDP:  local.SDP,
 		Mode: encoder.Mode,
 	})
+}
+
+func webRTCOfferSupportsH265(sdp string) bool {
+	for _, line := range strings.Split(strings.ReplaceAll(sdp, "\r\n", "\n"), "\n") {
+		fields := strings.Fields(strings.TrimSpace(line))
+		if len(fields) < 2 || !strings.HasPrefix(strings.ToLower(fields[0]), "a=rtpmap:") {
+			continue
+		}
+		codec := strings.ToUpper(fields[1])
+		if strings.HasPrefix(codec, "H265/90000") || strings.HasPrefix(codec, "HEVC/90000") {
+			return true
+		}
+	}
+	return false
 }
 
 func drainCameraWebRTCRTCP(sender *webrtc.RTPSender) {

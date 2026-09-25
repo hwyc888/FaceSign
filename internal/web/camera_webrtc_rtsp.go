@@ -20,6 +20,7 @@ import (
 type webRTCRTSPSource struct {
 	resolvedRTSPSource
 	H264 *format.H264
+	H265 *format.H265
 }
 
 func webRTCH264CodecCapability(source webRTCRTSPSource) webrtc.RTPCodecCapability {
@@ -42,6 +43,13 @@ func webRTCH264CodecCapability(source webRTCRTSPSource) webrtc.RTPCodecCapabilit
 		profileLevelID,
 	)
 	return capability
+}
+
+func webRTCH265CodecCapability() webrtc.RTPCodecCapability {
+	return webrtc.RTPCodecCapability{
+		MimeType:  webrtc.MimeTypeH265,
+		ClockRate: 90000,
+	}
 }
 
 func webRTSPClientTimeout(camera store.Camera) time.Duration {
@@ -141,6 +149,7 @@ func describeWebRTSPCandidate(ctx context.Context, camera store.Camera, candidat
 				Codec:     "hevc",
 				Label:     candidate.Label,
 			},
+			H265: h265,
 		}, nil
 	}
 
@@ -232,5 +241,128 @@ func streamRTSPH264DirectToWebRTC(
 			return errors.New("RTSP H.264 原码流已结束")
 		}
 		return fmt.Errorf("RTSP H.264 原码流中断: %w", err)
+	}
+}
+
+func probeRTSPH265Direct(
+	ctx context.Context,
+	camera store.Camera,
+	source webRTCRTSPSource,
+) error {
+	target, err := base.ParseURL(source.URL)
+	if err != nil {
+		return fmt.Errorf("RTSP 地址格式不正确: %w", err)
+	}
+
+	client := newWebRTSPClient(ctx, target, camera)
+	if err := client.Start(); err != nil {
+		return fmt.Errorf("连接 RTSP H.265 失败: %w", err)
+	}
+	defer client.Close()
+
+	desc, _, err := client.Describe(target)
+	if err != nil {
+		return fmt.Errorf("读取 RTSP H.265 描述失败: %w", err)
+	}
+
+	var h265 *format.H265
+	h265Media := desc.FindFormat(&h265)
+	if h265Media == nil {
+		return errors.New("RTSP 码流已不再是 H.265")
+	}
+	if err := client.SetupAll(desc.BaseURL, []*description.Media{h265Media}); err != nil {
+		return fmt.Errorf("建立 RTSP H.265 RTP 通道失败: %w", err)
+	}
+
+	firstPacket := make(chan struct{}, 1)
+	client.OnPacketRTP(h265Media, h265, func(_ *rtp.Packet) {
+		select {
+		case firstPacket <- struct{}{}:
+		default:
+		}
+	})
+
+	if _, err := client.Play(nil); err != nil {
+		return fmt.Errorf("启动 RTSP H.265 播放失败: %w", err)
+	}
+
+	waitErr := make(chan error, 1)
+	go func() {
+		waitErr <- client.Wait()
+	}()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-firstPacket:
+		return nil
+	case err := <-waitErr:
+		if err == nil {
+			return errors.New("RTSP H.265 原码流未收到视频包")
+		}
+		return fmt.Errorf("RTSP H.265 原码流中断: %w", err)
+	}
+}
+
+func streamRTSPH265DirectToWebRTC(
+	ctx context.Context,
+	camera store.Camera,
+	track *webrtc.TrackLocalStaticRTP,
+	source webRTCRTSPSource,
+) error {
+	target, err := base.ParseURL(source.URL)
+	if err != nil {
+		return fmt.Errorf("RTSP 地址格式不正确: %w", err)
+	}
+
+	client := newWebRTSPClient(ctx, target, camera)
+	if err := client.Start(); err != nil {
+		return fmt.Errorf("连接 RTSP H.265 失败: %w", err)
+	}
+	defer client.Close()
+
+	desc, _, err := client.Describe(target)
+	if err != nil {
+		return fmt.Errorf("读取 RTSP H.265 描述失败: %w", err)
+	}
+
+	var h265 *format.H265
+	h265Media := desc.FindFormat(&h265)
+	if h265Media == nil {
+		return errors.New("RTSP 码流已不再是 H.265")
+	}
+	if err := client.SetupAll(desc.BaseURL, []*description.Media{h265Media}); err != nil {
+		return fmt.Errorf("建立 RTSP H.265 RTP 通道失败: %w", err)
+	}
+
+	writeErr := make(chan error, 1)
+	client.OnPacketRTP(h265Media, h265, func(pkt *rtp.Packet) {
+		if err := track.WriteRTP(pkt); err != nil {
+			select {
+			case writeErr <- err:
+			default:
+			}
+		}
+	})
+
+	if _, err := client.Play(nil); err != nil {
+		return fmt.Errorf("启动 RTSP H.265 播放失败: %w", err)
+	}
+
+	waitErr := make(chan error, 1)
+	go func() {
+		waitErr <- client.Wait()
+	}()
+
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case err := <-writeErr:
+		return fmt.Errorf("发送原始 H.265 RTP 到 WebRTC 失败: %w", err)
+	case err := <-waitErr:
+		if err == nil {
+			return errors.New("RTSP H.265 原码流已结束")
+		}
+		return fmt.Errorf("RTSP H.265 原码流中断: %w", err)
 	}
 }

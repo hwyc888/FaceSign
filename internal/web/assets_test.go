@@ -624,7 +624,7 @@ func TestCameraAuthenticationAutoDetectUI(t *testing.T) {
 }
 
 
-func TestNetworkCameraUsesWebRTCH264WithMJPEGFallbackAndDirectRecognition(t *testing.T) {
+func TestNetworkCameraUsesWebRTCH264H265WithMJPEGFallbackAndDirectRecognition(t *testing.T) {
 	cameraData, err := assets.ReadFile("assets/js/camera.js")
 	if err != nil {
 		t.Fatal(err)
@@ -633,7 +633,7 @@ func TestNetworkCameraUsesWebRTCH264WithMJPEGFallbackAndDirectRecognition(t *tes
 	for _, want := range []string{
 		"function activeNetworkCameraImage()",
 		"function activeNetworkCameraVideo()",
-		"function startWebRTCH264Preview(",
+		"function startWebRTCPreview(",
 		"function startMJPEGPreviewFallback(",
 		"function stopNetworkPreview()",
 		"new RTCPeerConnection()",
@@ -641,7 +641,7 @@ func TestNetworkCameraUsesWebRTCH264WithMJPEGFallbackAndDirectRecognition(t *tes
 		"/api/cameras/${activeCamera.id}/webrtc",
 		"/api/cameras/${activeCamera.id}/stream",
 		"peer.setRemoteDescription(answer)",
-		"WebRTC H.264 preview unavailable; using MJPEG fallback",
+		"WebRTC preview unavailable; using MJPEG fallback",
 		"function updateCameraRealtimeStatus()",
 		"getVideoPlaybackQuality",
 		"peer.getStats()",
@@ -660,11 +660,13 @@ func TestNetworkCameraUsesWebRTCH264WithMJPEGFallbackAndDirectRecognition(t *tes
 		"未找到 ffmpeg.exe；请使用 facesign-windows-amd64-full / lite 完整解压运行",
 		"摄像头 RTSP Digest 使用 SHA256",
 		"RTSP 认证失败（401）",
-		"检测到 H.265/HEVC；FaceSign 将自动转码为 H.264 后通过 WebRTC 实时显示",
+		"检测到 H.265/HEVC；浏览器支持时优先 H.265 原码直通，不支持或直通失败时自动转为 H.264",
 		"negotiatedMode = String(answer.mode || negotiatedMode)",
-		"WebRTC H.264直通",
+		"WebRTC 自动协商",
+		"force_h264: forceH264",
+		"H.265原码直连",
 		"WebRTC ICE 协商失败或超时",
-		"WebRTC 已连接，但没有收到可播放的 H.264 视频帧",
+		"WebRTC 已连接，但没有收到可播放的视频帧",
 	} {
 		if !strings.Contains(cameraScript, want) {
 			t.Fatalf("network WebRTC preview missing %q", want)
@@ -699,9 +701,10 @@ func TestNetworkCameraUsesWebRTCH264WithMJPEGFallbackAndDirectRecognition(t *tes
 		`data-camera-stat="network"`,
 		`data-camera-stat="recognition"`,
 		`data-camera-stat="reason"`,
-		"WebRTC/H.264 实时预览",
+		"WebRTC/H.264/H.265 原码实时预览",
 		"浏览器硬件解码",
-		"自动回退 MJPEG",
+		"H.265 浏览器不支持或原码直通失败时自动转为 H.264",
+		"再回退 MJPEG",
 	} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("network WebRTC preview UI missing %q", want)
@@ -961,9 +964,9 @@ func TestNetworkCameraUIExplainsContinuousStreamPrimaryAndSnapshotFallback(t *te
 		"RTSP 连续流 + HTTP 抓图回退（推荐）",
 		"MJPEG 连续流（主通道）",
 		"HTTP/HTTPS 单帧抓图（兼容模式）",
-		"WebRTC/H.264 实时预览",
+		"WebRTC/H.264/H.265 原码实时预览",
 		"浏览器硬件解码",
-		"自动回退 MJPEG",
+		"H.265 浏览器不支持或原码直通失败时自动转为 H.264",
 		"人脸识别仍建议 3–5 FPS",
 		"HTTP Snapshot 仅作最终兼容回退",
 	} {
