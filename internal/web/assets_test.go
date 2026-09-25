@@ -717,7 +717,7 @@ func TestNetworkCameraUsesWebRTCH264WithMJPEGFallbackAndDirectRecognition(t *tes
 		"X-FaceSign-AI-Load",
 		"r?.skipped && r?.busy",
 		"setTimeout(runAutoRecognitionLoop, recognitionFrameIntervalMS())",
-		"recordRecognitionRealtimeSample(performance.now() - performanceStartedAt)",
+		"recordRecognitionRealtimeSample(durationMS)",
 	} {
 		if !strings.Contains(recognitionScript, want) {
 			t.Fatalf("network direct recognition flow missing %q", want)
