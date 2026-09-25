@@ -1,8 +1,12 @@
 param(
-  [string]$InstallDir = "$env:ProgramData\FaceSign",
+  [string]$InstallDir = "",
   [bool]$OpenBrowser = $true
 )
 $ErrorActionPreference = 'Stop'
+if ([string]::IsNullOrWhiteSpace($InstallDir)) {
+  $InstallDir = Split-Path -Parent $PSScriptRoot
+}
+$InstallDir = [IO.Path]::GetFullPath($InstallDir)
 
 $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
 $principal = New-Object Security.Principal.WindowsPrincipal($identity)

@@ -115,6 +115,40 @@ func TestValidateUpgradePackage(t *testing.T) {
 	}
 }
 
+func TestDefaultInstallDirUsesManagerDirectoryEvenWhenLegacyProgramDataExists(t *testing.T) {
+	legacy := t.TempDir()
+	if err := os.WriteFile(filepath.Join(legacy, "FaceSign.exe"), []byte("legacy"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("ProgramData", legacy)
+
+	exe, err := os.Executable()
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := filepath.Dir(exe)
+	if got := defaultInstallDir(); !strings.EqualFold(filepath.Clean(got), filepath.Clean(want)) {
+		t.Fatalf("defaultInstallDir()=%q want manager directory %q", got, want)
+	}
+}
+
+func TestInstallPowerShellCommandKeepsInstallInCurrentDirectory(t *testing.T) {
+	dir := "D:\\FaceSign Portable\\Teacher's"
+	command := installPowerShellCommand(dir)
+	for _, want := range []string{
+		powerShellLiteral(filepath.Join(dir, "scripts", "install.ps1")),
+		"-InstallDir " + powerShellLiteral(dir),
+		"-OpenBrowser:$false",
+	} {
+		if !strings.Contains(command, want) {
+			t.Fatalf("install command missing %q: %s", want, command)
+		}
+	}
+	if strings.Contains(strings.ToLower(command), "programdata") {
+		t.Fatalf("install command must not target ProgramData: %s", command)
+	}
+}
+
 func TestPowerShellLiteralEscapesApostrophe(t *testing.T) {
 	if got, want := powerShellLiteral("C:\\Teacher's\\FaceSign"), "'C:\\Teacher''s\\FaceSign'"; got != want {
 		t.Fatalf("powerShellLiteral()=%q want %q", got, want)
@@ -133,6 +167,7 @@ func TestPotentiallyBlockingManagerActionsAreAsync(t *testing.T) {
 		idOpenDir,
 		idRefresh,
 		idUpgrade,
+		idInstall,
 	} {
 		if !isAsyncActionButton(id) {
 			t.Fatalf("manager action id=%d can block the UI thread", id)

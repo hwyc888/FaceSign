@@ -62,6 +62,7 @@ const (
 	idRefresh        = 1009
 	idExit           = 1010
 	idUpgrade        = 1011
+	idInstall        = 1012
 )
 
 var (
@@ -190,17 +191,14 @@ func main() {
 }
 
 func defaultInstallDir() string {
-	if programData := strings.TrimSpace(os.Getenv("ProgramData")); programData != "" {
-		candidate := filepath.Join(programData, "FaceSign")
-		if _, err := os.Stat(filepath.Join(candidate, "FaceSign.exe")); err == nil {
-			return candidate
-		}
-	}
 	exe, err := os.Executable()
 	if err == nil {
 		return filepath.Dir(exe)
 	}
-	return filepath.Join("C:\\ProgramData", "FaceSign")
+	if cwd, cwdErr := os.Getwd(); cwdErr == nil {
+		return cwd
+	}
+	return "."
 }
 
 func isAdministrator() bool {
@@ -327,6 +325,8 @@ func windowProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 			beginAsyncUIAction("刷新状态", nil)
 		case idUpgrade:
 			beginUpgradeSelection()
+		case idInstall:
+			beginAsyncUIAction("安装/注册本目录", installCurrentDirectory)
 		case idExit:
 			procDestroyWindow.Call(hwnd)
 		}
@@ -351,7 +351,7 @@ func windowProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 func createControls(hwnd syscall.Handle) {
 	font, _, _ := procGetStockObject.Call(defaultGUIFont)
 	createStatic(hwnd, "FaceSign 服务管理", 24, 20, 650, 28)
-	createStatic(hwnd, "用于管理以 SYSTEM 权限运行的 FaceSign。停止服务时会先结束计划任务，再终止残留进程。", 24, 52, 650, 38)
+	createStatic(hwnd, "便携模式直接运行本目录 FaceSign.exe；需要开机启动时点“安装/注册本目录”，程序和数据不会复制到 C 盘。", 24, 52, 650, 38)
 
 	statusBox = createControl("EDIT", "", uintptr(wsChild|wsVisible|wsBorder|wsVScroll|esMultiline|esReadonly|esAutoVScroll), 24, 96, 650, 190, hwnd, 0)
 	procSendMessageW.Call(uintptr(statusBox), wmSetFont, font, 1)
@@ -369,8 +369,9 @@ func createControls(hwnd syscall.Handle) {
 		{idDisableStartup, "关闭开机启动", 190, 356, 150},
 		{idOpenWeb, "打开管理网页", 356, 356, 150},
 		{idOpenLog, "查看启动日志", 522, 356, 150},
-		{idOpenDir, "打开安装目录", 24, 402, 150},
+		{idOpenDir, "打开当前目录", 24, 402, 150},
 		{idUpgrade, "升级 FaceSign", 190, 402, 150},
+		{idInstall, "安装/注册本目录", 356, 402, 150},
 		{idExit, "关闭管理工具", 522, 402, 150},
 	}
 	for _, b := range buttons {
@@ -403,7 +404,7 @@ func createControl(class, text string, style uintptr, x, y, w, h int, parent sys
 
 func isAsyncActionButton(id int) bool {
 	switch id {
-	case idStart, idStop, idRestart, idEnableStartup, idDisableStartup, idOpenWeb, idOpenLog, idOpenDir, idRefresh, idUpgrade:
+	case idStart, idStop, idRestart, idEnableStartup, idDisableStartup, idOpenWeb, idOpenLog, idOpenDir, idRefresh, idUpgrade, idInstall:
 		return true
 	default:
 		return false
@@ -532,7 +533,7 @@ func buildStatusText() string {
 		taskText = "已安装"
 		startupText = "已关闭"
 	case "missing":
-		taskText = "未安装"
+		taskText = "未安装（便携模式可直接运行）"
 		startupText = "-"
 	case "查询失败":
 		taskText = "查询失败"
@@ -557,7 +558,7 @@ func buildStatusText() string {
 		v = "未读取"
 	}
 	text := fmt.Sprintf(
-		"服务状态：%s\r\n计划任务：%s\r\n开机启动：%s\r\nHTTP：%s\r\nHTTPS：%s\r\n运行版本：%s\r\n根证书：%s\r\n安装目录：%s\r\n管理工具版本：%s",
+		"服务状态：%s\r\n计划任务：%s\r\n开机启动：%s\r\nHTTP：%s\r\nHTTPS：%s\r\n运行版本：%s\r\n根证书：%s\r\n当前目录：%s\r\n管理工具版本：%s",
 		running, taskText, startupText, httpListen, httpsListen, v, certText, installDirFlag, version,
 	)
 	return text
@@ -584,7 +585,7 @@ func startFaceSign() error {
 		return fmt.Errorf("读取 FaceSign 计划任务状态失败: %w", err)
 	}
 	if strings.EqualFold(state, "missing") {
-		return errors.New("FaceSign 计划任务尚未安装。请先以管理员身份运行发布包中的 scripts\\install.ps1")
+		return errors.New("FaceSign 计划任务尚未安装。便携模式请直接运行本目录 FaceSign.exe；需要开机启动请点击“安装/注册本目录”")
 	}
 	wasDisabled := strings.EqualFold(state, "disabled")
 	if wasDisabled {
@@ -724,6 +725,53 @@ func disableStartup() error {
 	return nil
 }
 
+
+func installPowerShellCommand(installDir string) string {
+	script := filepath.Join(installDir, "scripts", "install.ps1")
+	return fmt.Sprintf(
+		"& %s -InstallDir %s -OpenBrowser:$false",
+		powerShellLiteral(script),
+		powerShellLiteral(installDir),
+	)
+}
+
+func installCurrentDirectory() error {
+	required := []string{
+		filepath.Join(installDirFlag, "FaceSign.exe"),
+		filepath.Join(installDirFlag, "FaceSignManager.exe"),
+		filepath.Join(installDirFlag, "onnxruntime.dll"),
+		filepath.Join(installDirFlag, "scripts", "install.ps1"),
+	}
+	for _, path := range required {
+		if info, err := os.Stat(path); err != nil || info.IsDir() {
+			return fmt.Errorf("当前目录不是完整的 FaceSign 发布包，缺少：%s", filepath.Base(path))
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+	defer cancel()
+	cmd := exec.CommandContext(
+		ctx,
+		"powershell.exe",
+		"-NoProfile",
+		"-ExecutionPolicy", "Bypass",
+		"-Command", installPowerShellCommand(installDirFlag),
+	)
+	cmd.Dir = installDirFlag
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	out, err := cmd.CombinedOutput()
+	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+		return errors.New("安装超过10分钟，已自动终止；请检查网络、模型文件或 Windows 计划任务")
+	}
+	if err != nil {
+		message := strings.TrimSpace(string(out))
+		if message == "" || !utf8.ValidString(message) {
+			message = err.Error()
+		}
+		return fmt.Errorf("安装本目录失败: %s", message)
+	}
+	return nil
+}
 
 func beginUpgradeSelection() {
 	if asyncBusy {

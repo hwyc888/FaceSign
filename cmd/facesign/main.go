@@ -95,7 +95,7 @@ func run(logger *slog.Logger) error {
 
 	httpListener, err := net.Listen("tcp", cfg.Listen)
 	if err != nil {
-		return fmt.Errorf("HTTP 端口 %s 无法监听: %w；很可能已有 FaceSign 或其他程序占用了 8080。升级已安装版本请以管理员身份运行 scripts/install.ps1，不要直接双击新的 EXE", cfg.Listen, err)
+		return fmt.Errorf("HTTP 端口 %s 无法监听: %w；很可能已有 FaceSign 或其他程序占用了 8080。便携版请先关闭旧实例；已注册为开机任务的版本请通过 FaceSignManager.exe 管理或升级", cfg.Listen, err)
 	}
 	defer httpListener.Close()
 

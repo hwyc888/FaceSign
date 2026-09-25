@@ -1,5 +1,9 @@
-param([string]$InstallDir = "$env:ProgramData\FaceSign")
+param([string]$InstallDir = "")
 $ErrorActionPreference = 'SilentlyContinue'
+if ([string]::IsNullOrWhiteSpace($InstallDir)) {
+  $InstallDir = Split-Path -Parent $PSScriptRoot
+}
+$InstallDir = [IO.Path]::GetFullPath($InstallDir)
 Stop-ScheduledTask -TaskName 'FaceSign'
 Get-Process -Name 'FaceSign' -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue
 Unregister-ScheduledTask -TaskName 'FaceSign' -Confirm:$false

@@ -1,9 +1,9 @@
-# FaceSign\n\nFaceSign is a compact school face-attendance application written in Go for Windows.\n\n## Design goals\n\n- One application process: web UI, SQLite, face detection, face feature extraction, matching and attendance.\n- No Python runtime.\n- No Docker.\n- No GPU requirement; CPU inference is the default.\n- Browser camera UI is embedded in the Go executable.\n- Portable Windows release built by GitHub Actions.\n\n## Face recognition stack\n\n- YuNet ONNX model for face detection.\n- SFace ONNX model for face embeddings.\n- anti-spoof-mn3 ONNX model for passive RGB liveness / presentation-attack screening.\n- Multi-frame liveness voting before attendance is written.\n- ONNX Runtime CPU for inference.\n- `go-onnxface` Go API for YuNet/SFace integration.\n\nONNX Runtime is distributed as `onnxruntime.dll` beside `FaceSign.exe`. This is a native library, not a Python dependency.\n\n## Features\n\n- Add and delete students.\n- Class and student number fields.\n- Browser camera enrollment.\n- One face template per student, replaceable by re-enrollment.\n- Face recognition and daily check-in.\n- One check-in record per student per day.\n- Attendance history by date.\n- Embedded responsive left-sidebar UI.\n- SQLite data stored locally.\n- Windows startup installation through Task Scheduler.\n\n## Windows program package
+# FaceSign\n\nFaceSign is a compact school face-attendance application written in Go for Windows.\n\n## Design goals\n\n- One application process: web UI, SQLite, face detection, face feature extraction, matching and attendance.\n- No Python runtime.\n- No Docker.\n- No GPU requirement; CPU inference is the default.\n- Browser camera UI is embedded in the Go executable.\n- Portable Windows release built by GitHub Actions.\n\n## Face recognition stack\n\n- YuNet ONNX model for face detection.\n- SFace ONNX model for face embeddings.\n- anti-spoof-mn3 ONNX model for passive RGB liveness / presentation-attack screening.\n- Multi-frame liveness voting before attendance is written.\n- ONNX Runtime CPU for inference.\n- `go-onnxface` Go API for YuNet/SFace integration.\n\nONNX Runtime is distributed as `onnxruntime.dll` beside `FaceSign.exe`. This is a native library, not a Python dependency.\n\n## Features\n\n- Add and delete students.\n- Class and student number fields.\n- Browser camera enrollment.\n- One face template per student, replaceable by re-enrollment.\n- Face recognition and daily check-in.\n- One check-in record per student per day.\n- Attendance history by date.\n- Embedded responsive left-sidebar UI.\n- SQLite data stored locally.\n- Portable-first Windows operation: unzip and run directly; optional startup registration through the management tool.\n\n## Windows program package
 
 Each successful Windows build now publishes **two release artifacts** from the same `FaceSign.exe` build:
 
-- `facesign-windows-amd64-full`: complete offline package. It contains the four pinned ONNX models and is recommended for a new PC, offline deployment, or recovery.
-- `facesign-windows-amd64-lite`: lightweight upgrade package. It does not contain ONNX models and is recommended when FaceSign is already installed and `C:\\ProgramData\\FaceSign\\models` already contains valid models.
+- `facesign-windows-amd64-full`: complete offline **portable package**. Unzip it anywhere with write permission and run `FaceSign.exe` directly; no installation is required. It contains the four pinned ONNX models and is recommended for a new PC, offline deployment, or recovery.
+- `facesign-windows-amd64-lite`: lightweight upgrade package. It does not contain ONNX models and is recommended when the existing FaceSign directory already contains valid models.
 
 Both packages contain the same program and native runtime:
 
@@ -33,7 +33,7 @@ models/
 
 The installer always uses this order:
 
-1. Reuse valid models already installed in `C:\\ProgramData\\FaceSign\\models`.
+1. Reuse valid models already present in the selected/current FaceSign directory.
 2. If the extracted package contains valid local models, copy only the missing ones.
 3. Only if a required model is still missing or invalid, download that pinned model once and verify its SHA-256 checksum.
 
@@ -45,13 +45,20 @@ FaceSign now listens on HTTP `0.0.0.0:8080` and HTTPS `0.0.0.0:8443`. The Window
 
 If startup fails, check `facesign-error.log` beside the executable. If that directory is not writable, the fallback log is `%TEMP%\\facesign-error.log`.
 
-## Windows startup installation\n\nRun PowerShell as Administrator from the extracted release directory:\n\n```powershell\nSet-ExecutionPolicy -Scope Process Bypass\n.\\scripts\\install.ps1\n```\n\nThe installer copies the package to `C:\\ProgramData\\FaceSign`, creates a startup scheduled task, and adds a Windows Firewall rule for Domain/Private networks on the configured port. Data is kept in `C:\\ProgramData\\FaceSign\\data`.\n\n## FaceSign management tool
+## Portable use and optional Windows startup registration
 
-The Windows package includes `FaceSignManager.exe`. During installation it is copied to the FaceSign installation directory and a **FaceSign 管理工具** shortcut is added to the Windows Start menu.
+**Portable use is the default.** Extract the full package to any writable folder (for example `D:\\FaceSign`) and double-click `FaceSign.exe`. The program, database, TLS identity, models and logs stay under that same folder.
+
+If FaceSign should run at boot, open `FaceSignManager.exe` and click **安装/注册本目录**. The manager requests administrator rights only for the Windows scheduled task, firewall and certificate operations. It registers the **current extracted directory in place** and does not copy the application to `C:\\ProgramData` or another C-drive installation directory.
+
+The PowerShell installer remains available for diagnostics/automation, but its default target is also the package directory itself.\n\n## FaceSign management tool
+
+The Windows package includes `FaceSignManager.exe`. It runs directly from the extracted folder. When **安装/注册本目录** is used, the same folder is registered as the FaceSign startup location and a **FaceSign 管理工具** shortcut is added to the Windows Start menu.
 
 The manager automatically requests administrator rights because the installed FaceSign task runs as `SYSTEM`. It provides:
 
-- Start, stop and restart FaceSign. Repeated Start/Stop clicks are idempotent: starting an already-running service or stopping an already-stopped service returns immediately instead of re-running Task Scheduler commands. The native Win32 GUI message loop is pinned to its creating OS thread so background work cannot strand the window on a different thread.
+- **安装/注册本目录** without copying program files to another directory.
+- Start, stop and restart the registered FaceSign task. Repeated Start/Stop clicks are idempotent: starting an already-running service or stopping an already-stopped service returns immediately instead of re-running Task Scheduler commands. The native Win32 GUI message loop is pinned to its creating OS thread so background work cannot strand the window on a different thread.
 - **Upgrade FaceSign** directly from the management window: choose the newly extracted release directory, confirm once, and the manager closes itself, runs `scripts\upgrade.ps1`, then reopens after the in-place upgrade finishes. Directory selection and every service/shell operation run off the GUI thread so the management window stays responsive. The database, face data, TLS identity, service arguments and startup state are preserved.
 - Stop the scheduled task first, wait for its owned process to exit, then terminate only remaining `FaceSign.exe` PIDs individually. The manager no longer uses `taskkill /T /IM`, so an FFmpeg/decoder child-process error cannot falsely report that FaceSign itself failed to stop. Older scheduled tasks are also normalized to `MultipleInstances=IgnoreNew` during upgrade.
 - Enable or disable startup without deleting the task.
@@ -65,7 +72,7 @@ Stopping FaceSign does **not** disable startup. Use **关闭开机启动** separ
 
 FaceSign now creates a persistent private root CA the first time it starts. The root CA is valid for 50 years and is preserved across normal upgrades and uninstall/reinstall. Server certificates are renewed automatically from the same root CA before expiry or whenever the server hostname/IP SAN set changes, so clients keep trusting the server without reinstalling the CA.
 
-After Windows installation, the TLS identity is stored under `C:\\ProgramData\\FaceSign\\tls`. The installer restricts that directory to SYSTEM and local Administrators and imports the root CA into the server's LocalMachine trust store.
+After optional Windows startup registration, the TLS identity stays under the selected FaceSign directory's `tls` folder. The installer restricts that directory to SYSTEM and local Administrators and imports the root CA into the server's LocalMachine trust store.
 
 On each Windows browser client, run:
 
@@ -93,7 +100,7 @@ The upgrade stops the running FaceSign process, replaces only program/runtime fi
 For diagnostics:
 
 - `https://127.0.0.1:8443/api/version` shows the running build version after the FaceSign root CA has been trusted.
-- `C:\ProgramData\FaceSign\data\facesign-startup.log` shows the version, PID and listening address.
+- `data\facesign-startup.log` under the FaceSign program directory shows the version, PID and listening address.
 - A startup failure writes `facesign-error.log`.
 
 

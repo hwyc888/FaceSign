@@ -1,5 +1,5 @@
 param(
-  [string]$InstallDir = "$env:ProgramData\FaceSign",
+  [string]$InstallDir = "",
   [string]$Listen = "0.0.0.0:8080",
   [string]$HTTPSListen = "0.0.0.0:8443",
   [string]$TLSHosts = "",
@@ -7,6 +7,12 @@ param(
 )
 $ErrorActionPreference = 'Stop'
 $source = Split-Path -Parent $PSScriptRoot
+if ([string]::IsNullOrWhiteSpace($InstallDir)) {
+  $InstallDir = $source
+}
+$source = [IO.Path]::GetFullPath($source)
+$InstallDir = [IO.Path]::GetFullPath($InstallDir)
+$installInPlace = [string]::Equals($source, $InstallDir, [StringComparison]::OrdinalIgnoreCase)
 
 $ModelCommit = 'de5287c66e9e37e9f804686bf63f5a0974f68f72'
 $ModelBaseUrl = "https://raw.githubusercontent.com/hwyc888/FaceSign/$ModelCommit/models"
@@ -129,25 +135,37 @@ if ($remaining) {
 }
 
 New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
-Copy-Item (Join-Path $source 'FaceSign.exe') $InstallDir -Force
-Copy-Item (Join-Path $source 'FaceSignManager.exe') $InstallDir -Force
-Copy-Item (Join-Path $source 'onnxruntime.dll') $InstallDir -Force
-$sourceFFmpeg = Join-Path $source 'ffmpeg.exe'
-if (Test-Path $sourceFFmpeg -PathType Leaf) {
-  Copy-Item $sourceFFmpeg $InstallDir -Force
-} elseif (Test-Path $installedFFmpeg -PathType Leaf) {
-  Write-Host 'Upgrade package has no ffmpeg.exe; keeping the installed FFmpeg runtime.'
+if ($installInPlace) {
+  foreach ($required in @('FaceSign.exe','FaceSignManager.exe','onnxruntime.dll')) {
+    if (-not (Test-Path (Join-Path $InstallDir $required) -PathType Leaf)) {
+      throw "The current FaceSign directory is incomplete; missing $required"
+    }
+  }
+  if (-not (Test-Path (Join-Path $InstallDir 'ffmpeg.exe') -PathType Leaf)) {
+    throw 'This package has no ffmpeg.exe. Use the full portable package when installing the current directory as a service.'
+  }
+  Write-Host "Installing FaceSign in place; program files stay in: $InstallDir"
 } else {
-  throw 'This package has no ffmpeg.exe and the existing installation has no reusable FFmpeg runtime.'
-}
-$sourceLicenses = Join-Path $source 'licenses'
-if (Test-Path $sourceLicenses -PathType Container) {
-  New-Item -ItemType Directory -Force -Path (Join-Path $InstallDir 'licenses') | Out-Null
-  Copy-Item (Join-Path $sourceLicenses '*') (Join-Path $InstallDir 'licenses') -Recurse -Force
-}
-foreach ($dll in @('msvcp140.dll','msvcp140_1.dll','vcruntime140.dll','vcruntime140_1.dll','libgcc_s_seh-1.dll','libwinpthread-1.dll')) {
-  $p = Join-Path $source $dll
-  if (Test-Path $p) { Copy-Item $p $InstallDir -Force }
+  Copy-Item (Join-Path $source 'FaceSign.exe') $InstallDir -Force
+  Copy-Item (Join-Path $source 'FaceSignManager.exe') $InstallDir -Force
+  Copy-Item (Join-Path $source 'onnxruntime.dll') $InstallDir -Force
+  $sourceFFmpeg = Join-Path $source 'ffmpeg.exe'
+  if (Test-Path $sourceFFmpeg -PathType Leaf) {
+    Copy-Item $sourceFFmpeg $InstallDir -Force
+  } elseif (Test-Path $installedFFmpeg -PathType Leaf) {
+    Write-Host 'Upgrade package has no ffmpeg.exe; keeping the installed FFmpeg runtime.'
+  } else {
+    throw 'This package has no ffmpeg.exe and the existing installation has no reusable FFmpeg runtime.'
+  }
+  $sourceLicenses = Join-Path $source 'licenses'
+  if (Test-Path $sourceLicenses -PathType Container) {
+    New-Item -ItemType Directory -Force -Path (Join-Path $InstallDir 'licenses') | Out-Null
+    Copy-Item (Join-Path $sourceLicenses '*') (Join-Path $InstallDir 'licenses') -Recurse -Force
+  }
+  foreach ($dll in @('msvcp140.dll','msvcp140_1.dll','vcruntime140.dll','vcruntime140_1.dll','libgcc_s_seh-1.dll','libwinpthread-1.dll')) {
+    $p = Join-Path $source $dll
+    if (Test-Path $p) { Copy-Item $p $InstallDir -Force }
+  }
 }
 
 # The installer supports both release variants. Existing valid installed models
@@ -250,11 +268,11 @@ if (-not $versionInfo.version) {
   if (Test-Path $errorLog) {
     throw "FaceSign failed to start: $(Get-Content $errorLog -Raw)"
   }
-  throw 'FaceSign failed to start. Check C:\ProgramData\FaceSign\data\facesign-startup.log and Windows Task Scheduler.'
+  throw "FaceSign failed to start. Check $InstallDir\data\facesign-startup.log and Windows Task Scheduler."
 }
 
 $url = "https://127.0.0.1:$httpsPort/?v=$($versionInfo.version)"
-$operation = if ($isUpgrade) { 'upgraded in place' } else { 'installed' }
+$operation = if ($isUpgrade) { 'upgraded in place' } elseif ($installInPlace) { 'registered in the current directory' } else { 'installed' }
 Write-Host "FaceSign $operation and started."
 Write-Host "Version:       $($versionInfo.version)"
 Write-Host "Models:        face models pinned at $ModelCommit; YOLOX-Nano pinned by SHA-256"

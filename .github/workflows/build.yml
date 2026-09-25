@@ -44,7 +44,7 @@ jobs:
             node --check $_.FullName
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
-          foreach ($script in @('scripts\install.ps1','scripts\upgrade.ps1')) {
+          foreach ($script in @('scripts\install.ps1','scripts\upgrade.ps1','scripts\uninstall.ps1')) {
             $tokens = $null
             $parseErrors = $null
             [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $script).Path, [ref]$tokens, [ref]$parseErrors) | Out-Null
@@ -55,6 +55,10 @@ jobs:
           $taskSettingsSmoke = New-ScheduledTaskSettingsSet -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew
           if ($taskSettingsSmoke.MultipleInstances -ne 'IgnoreNew') {
             throw "Scheduled-task MultipleInstances smoke test failed: $($taskSettingsSmoke.MultipleInstances)"
+          }
+          $installText = Get-Content 'scripts\install.ps1' -Raw
+          if ($installText -match '(?i)ProgramData\\FaceSign') {
+            throw 'Installer must not default to C:\ProgramData\FaceSign; installation must stay in the selected/current directory'
           }
           go test ./...
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -291,6 +295,51 @@ jobs:
           $fullFFmpeg = (Get-FileHash 'dist-full\ffmpeg.exe' -Algorithm SHA256).Hash
           $liteFFmpeg = (Get-FileHash 'dist-lite\ffmpeg.exe' -Algorithm SHA256).Hash
           if ($fullFFmpeg -ne $liteFFmpeg) { throw 'Full and lightweight packages must contain the same ffmpeg.exe' }
+
+      - name: Smoke test full portable package in place
+        shell: pwsh
+        run: |
+          $portableDir = (Resolve-Path 'dist-full').Path
+          $portableData = Join-Path $portableDir 'data'
+          $portableTLS = Join-Path $portableDir 'tls'
+          Remove-Item $portableData,$portableTLS -Recurse -Force -ErrorAction SilentlyContinue
+          Remove-Item (Join-Path $portableDir 'facesign-error.log') -Force -ErrorAction SilentlyContinue
+
+          $process = $null
+          try {
+            $process = Start-Process -FilePath (Join-Path $portableDir 'FaceSign.exe') -ArgumentList @(
+              '--listen','127.0.0.1:18090',
+              '--https-listen','127.0.0.1:18091',
+              '--http-redirect=false',
+              '--open-browser=false'
+            ) -PassThru -WindowStyle Hidden
+
+            $ready = $false
+            for ($i = 0; $i -lt 30; $i++) {
+              try {
+                $health = Invoke-RestMethod -Uri 'http://127.0.0.1:18090/api/health' -TimeoutSec 2
+                if ($health.ok -and $health.device -eq 'cpu') { $ready = $true; break }
+              } catch {
+                Start-Sleep -Milliseconds 500
+              }
+            }
+            if (-not $ready) { throw 'Portable full package did not start directly from its extracted directory' }
+
+            if (-not (Test-Path (Join-Path $portableData 'facesign.db') -PathType Leaf)) {
+              throw 'Portable mode did not create data\facesign.db beside FaceSign.exe'
+            }
+            if (-not (Test-Path (Join-Path $portableData 'facesign-startup.log') -PathType Leaf)) {
+              throw 'Portable mode did not create its startup log beside FaceSign.exe'
+            }
+            if (-not (Test-Path (Join-Path $portableTLS 'facesign-root-ca.crt') -PathType Leaf)) {
+              throw 'Portable mode did not create TLS files beside FaceSign.exe'
+            }
+          } finally {
+            if ($process) { Stop-Process -Id $process.Id -Force -ErrorAction SilentlyContinue }
+            Start-Sleep -Milliseconds 300
+            Remove-Item $portableData,$portableTLS -Recurse -Force -ErrorAction SilentlyContinue
+            Remove-Item (Join-Path $portableDir 'facesign-error.log') -Force -ErrorAction SilentlyContinue
+          }
 
       - name: Smoke test recognition
         shell: pwsh
