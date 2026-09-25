@@ -56,3 +56,14 @@ func TestPersonHeadROIStaysNearUpperBody(t *testing.T) {
 		t.Fatalf("ROI exceeds bounds: %v", roi)
 	}
 }
+
+
+func TestPersonFaceProbeStartsBeforeIdentityQualityGate(t *testing.T) {
+	personBox := []person.Detection{{Rectangle: image.Rect(10, 10, 84, 185), Score: 0.9}}
+	if !anyPersonReadyForFaceProbe(personBox) {
+		t.Fatal("medium-distance person should start high-resolution face probing")
+	}
+	if got := personWaitingStatus(personBox[0].Rectangle); got != "等待靠近" {
+		t.Fatalf("early face probing must not mark the person face-ready: %q", got)
+	}
+}

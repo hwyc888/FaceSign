@@ -1037,3 +1037,32 @@ func TestHikvisionPresetDoesNotMutateCameraEncoding(t *testing.T) {
 		}
 	}
 }
+
+
+func TestRecognitionCadenceProtectsPreviewWithoutAddingInferenceDelay(t *testing.T) {
+	recognitionData, err := assets.ReadFile("assets/js/recognition.js")
+	if err != nil { t.Fatal(err) }
+	recognitionScript := string(recognitionData)
+	for _, want := range []string{
+		"recognitionLastDurationMS",
+		"targetIntervalMS - Math.min(recognitionLastDurationMS",
+		"Math.max(40",
+	} {
+		if !strings.Contains(recognitionScript, want) {
+			t.Fatalf("recognition cadence optimization missing %q", want)
+		}
+	}
+
+	cameraData, err := assets.ReadFile("assets/js/camera.js")
+	if err != nil { t.Fatal(err) }
+	cameraScript := string(cameraData)
+	for _, want := range []string{
+		"fps >= 22",
+		"dropPct <= 1",
+		"healthyVideo ? 2 : 4",
+	} {
+		if !strings.Contains(cameraScript, want) {
+			t.Fatalf("healthy preview recovery missing %q", want)
+		}
+	}
+}

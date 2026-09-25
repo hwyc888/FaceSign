@@ -96,3 +96,19 @@ func TestFaceQualityRewardsLargeSharpFrontalFace(t *testing.T) {
 		t.Fatalf("unexpected quality status: %#v", quality)
 	}
 }
+
+
+func TestUnknownFaceRetriesSoonWithoutBusyLoop(t *testing.T) {
+	tracker := newPersonTracker()
+	now := time.Now()
+	obs := tracker.Observe("camera", []person.Detection{{
+		Rectangle: image.Rect(100, 80, 260, 500), Score: 0.9,
+	}}, now)[0]
+	tracker.RecordFeature("camera", obs.TrackID, 0.62, nil, 0, now)
+	if tracker.NeedFeature("camera", obs.TrackID, 0.62, now.Add(400*time.Millisecond)) {
+		t.Fatal("unknown face retried too soon")
+	}
+	if !tracker.NeedFeature("camera", obs.TrackID, 0.62, now.Add(650*time.Millisecond)) {
+		t.Fatal("unknown face should retry within about 600ms")
+	}
+}

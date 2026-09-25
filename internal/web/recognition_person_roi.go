@@ -11,7 +11,7 @@ import (
 )
 
 const (
-	personFaceProbeEstimatedPixels = 30.0
+	personFaceProbeEstimatedPixels = 28.0
 	personFaceReadyEstimatedPixels = 45.0
 )
 

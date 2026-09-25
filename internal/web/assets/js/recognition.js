@@ -1,3 +1,4 @@
+let recognitionLastDurationMS = 0;
 function renderRecognitionStats(stats = {}) {
   const verified = Math.max(0, Number(stats.verified ?? 0) || 0);
   const unregistered = Math.max(0, Number(stats.unregistered ?? 0) || 0);
@@ -213,8 +214,12 @@ async function recognizeFrame(options = {}) {
     if (!autoTimer && !options.silent) toast(e.message);
     return null;
   } finally {
-    if (completedRecognition && typeof recordRecognitionRealtimeSample === 'function') {
-      recordRecognitionRealtimeSample(performance.now() - performanceStartedAt);
+    const durationMS = performance.now() - performanceStartedAt;
+    if (completedRecognition) {
+      recognitionLastDurationMS = durationMS;
+      if (typeof recordRecognitionRealtimeSample === 'function') {
+        recordRecognitionRealtimeSample(durationMS);
+      }
     }
     recognizing = false;
   }
@@ -227,7 +232,8 @@ function recognitionFrameIntervalMS() {
       : {level: 'normal', maxFPS: 5};
     const configuredFPS = Math.max(1, Math.min(Number(activeCamera.fps || 5), 5));
     const fps = Math.max(1, Math.min(configuredFPS, Number(loadProfile.maxFPS || 5)));
-    return Math.max(200, Math.round(1000 / fps));
+    const targetIntervalMS = Math.max(200, Math.round(1000 / fps));
+    return Math.max(40, Math.round(targetIntervalMS - Math.min(recognitionLastDurationMS, targetIntervalMS - 40)));
   }
   return 120;
 }

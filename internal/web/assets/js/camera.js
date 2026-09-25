@@ -50,8 +50,10 @@ function updateCameraRecognitionLoadLevel(fps, dropPct) {
     return;
   }
   if (desiredRank < currentRank) {
+    const healthyVideo = fps !== null && fps >= 22 && (dropPct === null || dropPct <= 1);
     cameraRecognitionRecoverySamples++;
-    if (cameraRecognitionRecoverySamples >= 4) {
+    const recoverySamplesNeeded = healthyVideo ? 2 : 4;
+    if (cameraRecognitionRecoverySamples >= recoverySamplesNeeded) {
       cameraRecognitionLoadLevel = cameraRecognitionLoadLevel === 'protect' ? 'reduced' : 'normal';
       cameraRecognitionRecoverySamples = 0;
     }

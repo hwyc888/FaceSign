@@ -17,7 +17,7 @@ const (
 	personTrackTTL              = 2 * time.Second
 	minRecognitionFaceQuality   = 0.45
 	bestFaceImprovement         = 0.04
-	unknownFaceRetryInterval    = 850 * time.Millisecond
+	unknownFaceRetryInterval    = 600 * time.Millisecond
 )
 
 type personTrack struct {
