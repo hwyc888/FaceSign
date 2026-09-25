@@ -38,12 +38,6 @@ func (s *Server) cameraWebRTCOffer(w http.ResponseWriter, r *http.Request, camer
 		writeError(w, http.StatusBadRequest, errors.New("WebRTC H.264 预览仅用于 RTSP 网络摄像头"))
 		return
 	}
-	ffmpegPath, err := findFFmpeg()
-	if err != nil {
-		writeError(w, http.StatusServiceUnavailable, fmt.Errorf("WebRTC 实时预览不可用: %w", err))
-		return
-	}
-
 	var offer cameraWebRTCSignal
 	if err := decodeJSON(r, &offer); err != nil {
 		writeError(w, http.StatusBadRequest, err)
@@ -55,17 +49,22 @@ func (s *Server) cameraWebRTCOffer(w http.ResponseWriter, r *http.Request, camer
 	}
 
 	probeCtx, probeCancel := context.WithTimeout(r.Context(), cameraWebRTCProbeTimeout(camera)+4*time.Second)
-	// Preview must stay on the Hikvision main stream (101). If it is HEVC,
-	// transcode that main stream instead of silently switching display to 102.
-	source, err := resolveRTSPSourceForPurpose(probeCtx, camera, false, "preview")
+	// H.264 preview is resolved natively so it can stay RTP end-to-end without
+	// starting FFmpeg. HEVC still uses the existing hardware/software transcode path.
+	source, err := resolveWebRTCRTSPSource(probeCtx, camera)
 	probeCancel()
 	if err != nil {
 		writeError(w, http.StatusServiceUnavailable, fmt.Errorf("WebRTC 实时预览不可用: %w", err))
 		return
 	}
 
-	encoder := webRTCH264Encoder{Mode: "WebRTC H.264直通"}
+	encoder := webRTCH264Encoder{Mode: "WebRTC H.264原码直连"}
 	if source.Codec == "hevc" {
+		ffmpegPath, findErr := findFFmpeg()
+		if findErr != nil {
+			writeError(w, http.StatusServiceUnavailable, fmt.Errorf("WebRTC H.265 转码不可用: %w", findErr))
+			return
+		}
 		encoderCtx, encoderCancel := context.WithTimeout(r.Context(), 10*time.Second)
 		encoder, err = selectWebRTCH264Encoder(encoderCtx, ffmpegPath)
 		encoderCancel()
@@ -85,10 +84,7 @@ func (s *Server) cameraWebRTCOffer(w http.ResponseWriter, r *http.Request, camer
 	}
 
 	videoTrack, err := webrtc.NewTrackLocalStaticRTP(
-		webrtc.RTPCodecCapability{
-			MimeType:  webrtc.MimeTypeH264,
-			ClockRate: 90000,
-		},
+		webRTCH264CodecCapability(source),
 		"video",
 		"facesign-camera",
 	)
@@ -177,11 +173,18 @@ func (s *Server) cameraWebRTCOffer(w http.ResponseWriter, r *http.Request, camer
 			return
 		}
 
-		if err := streamRTSPH264ToWebRTC(streamCtx, camera, videoTrack, source, encoder); err != nil && streamCtx.Err() == nil {
+		var streamErr error
+		if source.Codec == "h264" {
+			streamErr = streamRTSPH264DirectToWebRTC(streamCtx, camera, videoTrack, source)
+		} else {
+			streamErr = streamRTSPH264ToWebRTC(streamCtx, camera, videoTrack, source.resolvedRTSPSource, encoder)
+		}
+		if streamErr != nil && streamCtx.Err() == nil {
 			s.logger.Warn("camera WebRTC H264 stream stopped",
 				"camera_id", camera.ID,
 				"camera", camera.Name,
-				"error", err,
+				"mode", encoder.Mode,
+				"error", streamErr,
 			)
 		}
 	}()
