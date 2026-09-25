@@ -96,7 +96,7 @@ func (s *Server) recognizeImage(w http.ResponseWriter, r *http.Request, img imag
 	}
 
 	loadLevel := normalizeRecognitionLoadLevel(r.Header.Get("X-FaceSign-AI-Load"))
-	personDetections, err := s.personDetectionsForRecognition(sessionID, img, now, loadLevel)
+	personDetections, err := s.personDetectionsForRecognition(sessionID, img, now, loadLevel, false)
 	if err != nil {
 		s.logger.Warn("person detector failed; continuing with face-derived tracks", "error", err)
 		personDetections = nil
@@ -109,7 +109,7 @@ func (s *Server) recognizeNetworkCameraImage(w http.ResponseWriter, r *http.Requ
 	sessionID := recognitionSessionID(r)
 	loadLevel := normalizeRecognitionLoadLevel(r.Header.Get("X-FaceSign-AI-Load"))
 
-	personDetections, err := s.personDetectionsForRecognition(sessionID, personImg, now, loadLevel)
+	personDetections, err := s.personDetectionsForRecognition(sessionID, personImg, now, loadLevel, true)
 	if err != nil {
 		s.logger.Warn("person detector failed; falling back to face-first recognition", "camera_id", camera.ID, "error", err)
 		s.recognizeImage(w, r, personImg)

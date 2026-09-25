@@ -20,7 +20,7 @@ func TestPersonDetectionCacheReusesRecentDetections(t *testing.T) {
 		},
 	}
 
-	got, err := s.personDetectionsForRecognition("session", image.NewRGBA(image.Rect(0, 0, 320, 240)), now.Add(200*time.Millisecond), recognitionLoadNormal)
+	got, err := s.personDetectionsForRecognition("session", image.NewRGBA(image.Rect(0, 0, 320, 240)), now.Add(200*time.Millisecond), recognitionLoadNormal, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -45,7 +45,7 @@ func TestPersonDetectionCacheExpiresAtMaxAge(t *testing.T) {
 			},
 		},
 	}
-	got, err := s.personDetectionsForRecognition("session", image.NewRGBA(image.Rect(0, 0, 320, 240)), now, recognitionLoadNormal)
+	got, err := s.personDetectionsForRecognition("session", image.NewRGBA(image.Rect(0, 0, 320, 240)), now, recognitionLoadNormal, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -67,12 +67,12 @@ func TestPersonDetectionCacheReusesOnlyTwoRecognitionFrames(t *testing.T) {
 	}
 	img := image.NewRGBA(image.Rect(0, 0, 320, 240))
 	for i := 0; i < personDetectionReuseFramesForLoad(recognitionLoadNormal); i++ {
-		got, err := s.personDetectionsForRecognition("session", img, now.Add(time.Duration(i+1)*100*time.Millisecond), recognitionLoadNormal)
+		got, err := s.personDetectionsForRecognition("session", img, now.Add(time.Duration(i+1)*100*time.Millisecond), recognitionLoadNormal, false)
 		if err != nil || len(got) != 1 {
 			t.Fatalf("reuse %d failed: detections=%d err=%v", i+1, len(got), err)
 		}
 	}
-	got, err := s.personDetectionsForRecognition("session", img, now.Add(400*time.Millisecond), recognitionLoadNormal)
+	got, err := s.personDetectionsForRecognition("session", img, now.Add(400*time.Millisecond), recognitionLoadNormal, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,5 +96,36 @@ func TestPersonDetectionReuseAdaptsToVideoLoad(t *testing.T) {
 		if got := personDetectionReuseFramesForLoad(tc.level); got != tc.want {
 			t.Fatalf("load %q reuse=%d want=%d", tc.level, got, tc.want)
 		}
+	}
+}
+
+
+func TestSmallPersonDetectionTilesMagnifyLandscapeTargets(t *testing.T) {
+	bounds := image.Rect(0, 0, 1280, 720)
+	tiles := smallPersonDetectionTiles(bounds)
+	if len(tiles) != 2 {
+		t.Fatalf("tiles=%d want=2", len(tiles))
+	}
+	if tiles[0] != image.Rect(0, 0, 720, 720) || tiles[1] != image.Rect(560, 0, 1280, 720) {
+		t.Fatalf("unexpected landscape tiles: %#v", tiles)
+	}
+	personRect := image.Rect(730, 410, 775, 520)
+	if personRect.Intersect(tiles[1]).Empty() {
+		t.Fatalf("right-side small person must be covered by a magnified tile: person=%v tiles=%v", personRect, tiles)
+	}
+}
+
+func TestMergePersonDetectionsRemovesTileOverlapDuplicate(t *testing.T) {
+	items := []person.Detection{
+		{Rectangle: image.Rect(700, 400, 780, 560), Score: 0.81},
+		{Rectangle: image.Rect(706, 406, 784, 562), Score: 0.72},
+		{Rectangle: image.Rect(100, 100, 160, 260), Score: 0.70},
+	}
+	got := mergePersonDetections(items)
+	if len(got) != 2 {
+		t.Fatalf("merged detections=%d want=2: %#v", len(got), got)
+	}
+	if got[0].Score != 0.81 {
+		t.Fatalf("highest-score duplicate was not preserved: %#v", got)
 	}
 }
