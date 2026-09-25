@@ -1051,7 +1051,8 @@ func TestRecognitionCadenceProtectsPreviewWithoutAddingInferenceDelay(t *testing
 	for _, want := range []string{
 		"recognitionLastDurationMS",
 		"targetIntervalMS - Math.min(recognitionLastDurationMS",
-		"Math.max(40",
+		"const minGapMS = Math.max(80",
+		"recoverableMS",
 	} {
 		if !strings.Contains(recognitionScript, want) {
 			t.Fatalf("recognition cadence optimization missing %q", want)
