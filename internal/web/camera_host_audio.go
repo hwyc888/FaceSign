@@ -45,7 +45,7 @@ func parseDShowAudioDevices(output string) []hostCameraDevice {
 			continue
 		}
 
-		if !strings.HasPrefix(line, """) {
+		if !strings.HasPrefix(line, "\"") {
 			continue
 		}
 		isAudioLine := audioSection || strings.Contains(lower, "(audio")
