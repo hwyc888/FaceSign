@@ -21,6 +21,10 @@ func parseDShowAudioDevices(output string) []hostCameraDevice {
 			line = strings.TrimSpace(line[closeBracket+1:])
 		}
 		lower := strings.ToLower(line)
+
+		// Older/custom FFmpeg builds can print section headings, while current
+		// FFmpeg prints each DirectShow friendly name followed by "(audio)" or
+		// "(video)". Support both forms.
 		if strings.Contains(lower, "directshow audio devices") {
 			audioSection = true
 			last = -1
@@ -31,24 +35,41 @@ func parseDShowAudioDevices(output string) []hostCameraDevice {
 			last = -1
 			continue
 		}
-		if !audioSection { continue }
+
 		if strings.HasPrefix(lower, "alternative name") {
 			if last >= 0 {
-				if id := dshowQuotedValue(line); id != "" { devices[last].ID = id }
+				if id := dshowQuotedValue(line); id != "" {
+					devices[last].ID = id
+				}
 			}
 			continue
 		}
-		if !strings.HasPrefix(line, "\"") { continue }
+
+		if !strings.HasPrefix(line, """) {
+			continue
+		}
+		isAudioLine := audioSection || strings.Contains(lower, "(audio")
+		isVideoLine := strings.Contains(lower, "(video")
+		if !isAudioLine || isVideoLine {
+			last = -1
+			continue
+		}
+
 		name := dshowQuotedValue(line)
-		if name == "" { continue }
+		if name == "" {
+			continue
+		}
 		devices = append(devices, hostCameraDevice{ID: name, Name: name})
 		last = len(devices) - 1
 	}
+
 	seen := make(map[string]bool, len(devices))
 	out := devices[:0]
 	for _, device := range devices {
 		key := strings.ToLower(device.ID)
-		if key == "" || seen[key] { continue }
+		if key == "" || seen[key] {
+			continue
+		}
 		seen[key] = true
 		out = append(out, device)
 	}
