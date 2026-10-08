@@ -18,6 +18,7 @@ type config struct {
 	MatchThreshold     float64
 	DetectionThreshold float64
 	OpenBrowser        bool
+	Background         bool
 }
 
 func loadConfig() (config, error) {
@@ -38,6 +39,7 @@ func loadConfig() (config, error) {
 	flag.Float64Var(&cfg.MatchThreshold, "match-threshold", 0.68, "face match threshold from 0 to 1")
 	flag.Float64Var(&cfg.DetectionThreshold, "detection-threshold", 0.80, "face detection threshold from 0 to 1")
 	flag.BoolVar(&cfg.OpenBrowser, "open-browser", true, "open the local FaceSign page after startup")
+	flag.BoolVar(&cfg.Background, "background", false, "hide the Windows console when running as a registered background task")
 	flag.Parse()
 
 	if cfg.MatchThreshold <= 0 || cfg.MatchThreshold >= 1 {

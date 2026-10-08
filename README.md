@@ -67,7 +67,7 @@ The manager automatically requests administrator rights because startup-task, fi
 - Show the current PID, HTTP/HTTPS listen addresses, running build version and persistent root-CA expiry.
 - Open the startup log and installation directory.
 
-Stopping FaceSign does **not** disable startup. Use **关闭开机启动** separately if FaceSign should also stay stopped after the next reboot. Because host USB cameras require the interactive Windows desktop session, the registered task starts at that user's logon rather than in SYSTEM Session 0; FaceSign therefore starts after that Windows user signs in.
+Stopping FaceSign does **not** disable startup. Use **关闭开机启动** separately if FaceSign should also stay stopped after the next reboot. Because host USB cameras require the interactive Windows desktop session, the registered task starts at that user's logon rather than in SYSTEM Session 0; FaceSign therefore starts after that Windows user signs in. The registered task passes `--background=true`, so the long-running FaceSign server does not leave a black console window on the desktop. Portable double-click mode remains unchanged and may show its console for diagnostics.
 
 ## HTTPS and browser camera access
 

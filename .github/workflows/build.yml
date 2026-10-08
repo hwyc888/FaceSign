@@ -72,6 +72,9 @@ jobs:
           if ($installText -notmatch '(?i)Get-FaceSignInteractiveUser') {
             throw 'Installer must resolve the signed-in Windows user before startup-task registration'
           }
+          if ($installText -notmatch '(?i)--background=true') {
+            throw 'Registered FaceSign task must hide the long-running server console window'
+          }
           go test ./...
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           go vet ./...

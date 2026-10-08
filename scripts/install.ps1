@@ -193,7 +193,7 @@ Remove-Item (Join-Path $InstallDir 'facesign-error.log') -Force -ErrorAction Sil
 $exe = Join-Path $InstallDir 'FaceSign.exe'
 $db = Join-Path $InstallDir 'data\facesign.db'
 $tlsDir = Join-Path $InstallDir 'tls'
-$faceArgs = '--listen {0} --https-listen {1} --http-redirect=true --tls-dir "{2}" --open-browser=false --assets "{3}" --data "{4}"' -f $Listen, $HTTPSListen, $tlsDir, $InstallDir, $db
+$faceArgs = '--listen {0} --https-listen {1} --http-redirect=true --tls-dir "{2}" --open-browser=false --background=true --assets "{3}" --data "{4}"' -f $Listen, $HTTPSListen, $tlsDir, $InstallDir, $db
 if ($TLSHosts) {
   $faceArgs += ' --tls-hosts "{0}"' -f $TLSHosts
 }

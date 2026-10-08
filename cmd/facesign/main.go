@@ -24,6 +24,7 @@ import (
 var version = "dev"
 
 func main() {
+	hideConsoleIfRequested(os.Args[1:])
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{Level: slog.LevelInfo}))
 	if err := run(logger); err != nil {
 		logger.Error("FaceSign stopped", "error", err)
@@ -178,4 +179,17 @@ func newHTTPServer(handler http.Handler) *http.Server {
 		WriteTimeout:      30 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
+}
+
+
+func backgroundRequested(args []string) bool {
+	for _, arg := range args {
+		switch arg {
+		case "--background", "-background", "--background=true", "-background=true":
+			return true
+		case "--background=false", "-background=false":
+			return false
+		}
+	}
+	return false
 }

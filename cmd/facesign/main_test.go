@@ -31,3 +31,24 @@ func TestSecureBrowserURL(t *testing.T) {
 		}
 	}
 }
+
+
+func TestBackgroundRequested(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+		want bool
+	}{
+		{name: "none", args: nil, want: false},
+		{name: "enabled long", args: []string{"--background=true"}, want: true},
+		{name: "enabled flag", args: []string{"--background"}, want: true},
+		{name: "disabled", args: []string{"--background=false"}, want: false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := backgroundRequested(tt.args); got != tt.want {
+				t.Fatalf("backgroundRequested(%v)=%v want %v", tt.args, got, tt.want)
+			}
+		})
+	}
+}
