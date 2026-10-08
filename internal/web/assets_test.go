@@ -746,7 +746,7 @@ func TestCameraAudioIsOptInAndDoesNotReplaceVideoPreview(t *testing.T) {
 	script := string(cameraData)
 	for _, want := range []string{"let cameraAudioEnabled = false", "let cameraAudioVolume = 0.6", "function cameraAudioSupported()", "addTransceiver('audio', {direction: 'recvonly'})", "/api/cameras/${activeCamera.id}/audio-webrtc", "function stopCameraAudio(resetEnabled = true)", "stopCameraAudio(true)", "function startWebRTCPreview(", "function startMJPEGPreviewFallback(",
 		"function findCurrentCameraMicrophone()",
-		"device.groupId === groupId",
+		"device.groupId === refreshed.groupId",
 		"不会自动改用电脑其他麦克风",
 		"activeCamera?.kind === 'browser'",
 		"浏览器仍无法可靠关联这只摄像头自己的麦克风",
