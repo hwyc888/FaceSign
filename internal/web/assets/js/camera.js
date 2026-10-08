@@ -2,6 +2,11 @@ let networkPreviewRetryTimer = null;
 let networkPreviewGeneration = 0;
 let networkPreviewPeer = null;
 let networkPreviewWatchdogTimer = null;
+let cameraAudioPeer = null;
+let cameraAudioGeneration = 0;
+let cameraAudioEnabled = false;
+let cameraAudioVolume = 0.6;
+
 
 let cameraRealtimeStatusEnabled = true;
 let cameraRealtimeStatusFields = {
@@ -378,6 +383,146 @@ function setupCameraFullscreenHandlers() {
 
 setupCameraFullscreenHandlers();
 
+function cameraAudioSupported() {
+  if (!cameraOpen || !activeCamera) return false;
+  if (activeCamera.kind === 'local') return true;
+  return activeCamera.kind === 'network' && String(activeCamera.protocol || '').toLowerCase() === 'rtsp';
+}
+
+function syncCameraAudioControls() {
+  const supported = cameraAudioSupported();
+  document.querySelectorAll('[data-camera-audio-toggle]').forEach(button => {
+    button.disabled = !supported;
+    button.textContent = cameraAudioEnabled ? '声音：开' : '声音：关';
+    button.classList.toggle('active', cameraAudioEnabled);
+    button.title = supported
+      ? '默认关闭；点击后才从摄像头获取声音'
+      : '声音监听仅支持RTSP网络摄像头和FaceSign主机USB摄像头';
+  });
+  document.querySelectorAll('[data-camera-volume]').forEach(input => {
+    input.value = String(Math.round(cameraAudioVolume * 100));
+    input.disabled = !supported || !cameraAudioEnabled;
+  });
+  document.querySelectorAll('[data-camera-volume-value]').forEach(node => {
+    node.textContent = Math.round(cameraAudioVolume * 100) + '%';
+  });
+}
+
+function closeCameraAudioPeer() {
+  const peer = cameraAudioPeer;
+  cameraAudioPeer = null;
+  if (peer) {
+    peer.ontrack = null;
+    peer.onconnectionstatechange = null;
+    try { peer.close(); } catch {}
+  }
+  const player = $('#cameraAudioPlayer');
+  if (player) {
+    player.pause();
+    player.srcObject = null;
+    player.muted = true;
+  }
+}
+
+function stopCameraAudio(resetEnabled = true) {
+  cameraAudioGeneration++;
+  closeCameraAudioPeer();
+  if (resetEnabled) cameraAudioEnabled = false;
+  syncCameraAudioControls();
+}
+
+async function startCameraAudio() {
+  if (!cameraAudioSupported()) throw new Error('当前摄像头不支持远程声音监听');
+  if (!window.RTCPeerConnection) throw new Error('当前浏览器不支持WebRTC声音');
+
+  const generation = ++cameraAudioGeneration;
+  closeCameraAudioPeer();
+  const peer = new RTCPeerConnection();
+  cameraAudioPeer = peer;
+  peer.addTransceiver('audio', {direction: 'recvonly'});
+  const player = $('#cameraAudioPlayer');
+
+  peer.ontrack = event => {
+    if (generation !== cameraAudioGeneration || peer !== cameraAudioPeer || event.track.kind !== 'audio') return;
+    const remote = event.streams?.[0] || new MediaStream([event.track]);
+    if (!player) return;
+    player.srcObject = remote;
+    player.volume = cameraAudioVolume;
+    player.muted = false;
+    player.play().catch(error => {
+      console.warn('camera audio autoplay blocked', error);
+      toast('浏览器阻止了声音自动播放，请关闭声音后再点一次“声音：关/开”');
+    });
+  };
+
+  peer.onconnectionstatechange = () => {
+    if (generation !== cameraAudioGeneration || peer !== cameraAudioPeer) return;
+    if (peer.connectionState === 'failed' || peer.connectionState === 'closed') {
+      cameraAudioEnabled = false;
+      closeCameraAudioPeer();
+      syncCameraAudioControls();
+    }
+  };
+
+  const offer = await peer.createOffer();
+  await peer.setLocalDescription(offer);
+  await waitForICEGatheringComplete(peer);
+  if (generation !== cameraAudioGeneration || peer !== cameraAudioPeer) return '';
+
+  const local = peer.localDescription;
+  if (!local) throw new Error('WebRTC声音offer未生成');
+  const response = await fetch(`/api/cameras/${activeCamera.id}/audio-webrtc`, {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    cache: 'no-store',
+    body: JSON.stringify({type: local.type, sdp: local.sdp})
+  });
+  if (!response.ok) {
+    const data = await response.json().catch(() => ({}));
+    throw new Error(data.error || `声音返回 HTTP ${response.status}`);
+  }
+  const answer = await response.json();
+  await peer.setRemoteDescription(answer);
+  return String(answer.mode || '摄像头声音');
+}
+
+async function toggleCameraAudio() {
+  if (cameraAudioEnabled) {
+    stopCameraAudio(true);
+    toast('摄像头声音已关闭');
+    return;
+  }
+  cameraAudioEnabled = true;
+  syncCameraAudioControls();
+  try {
+    const mode = await startCameraAudio();
+    if (cameraAudioEnabled) toast(`摄像头声音已打开 · ${mode}`);
+  } catch (error) {
+    stopCameraAudio(true);
+    toast('无法打开摄像头声音：' + (error?.message || error));
+  }
+}
+
+function setCameraAudioVolume(percent) {
+  const value = Math.max(0, Math.min(100, Number(percent || 0)));
+  cameraAudioVolume = value / 100;
+  const player = $('#cameraAudioPlayer');
+  if (player) player.volume = cameraAudioVolume;
+  syncCameraAudioControls();
+}
+
+function setupCameraAudioControls() {
+  document.querySelectorAll('[data-camera-audio-toggle]').forEach(button => {
+    button.addEventListener('click', () => toggleCameraAudio());
+  });
+  document.querySelectorAll('[data-camera-volume]').forEach(input => {
+    input.addEventListener('input', () => setCameraAudioVolume(input.value));
+  });
+  syncCameraAudioControls();
+}
+
+setupCameraAudioControls();
+
 function updateCameraControls() {
   const opened = cameraOpen;
   const checkinButton = $('#startCamera');
@@ -392,6 +537,7 @@ function updateCameraControls() {
   const label = selected ? selected.name : '当前访问设备摄像头';
   if ($('#checkinCameraName')) $('#checkinCameraName').textContent = label;
   if ($('#enrollCameraName')) $('#enrollCameraName').textContent = label;
+  syncCameraAudioControls();
 }
 
 async function loadCameraConfigs(force = false) {
@@ -756,6 +902,7 @@ async function startCamera() {
 }
 
 function stopCamera() {
+  stopCameraAudio(true);
   if (stream) {
     stream.getTracks().forEach(track => track.stop());
     stream = null;

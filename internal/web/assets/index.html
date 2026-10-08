@@ -52,6 +52,13 @@
               <button id="recognize" disabled>识别并签到</button>
               <label class="switch"><input id="autoScan" type="checkbox"> 自动识别</label>
               <span class="camera-active-name" id="checkinCameraName">当前访问设备摄像头</span>
+              <div class="camera-audio-controls" aria-label="摄像头声音控制">
+                <button type="button" data-camera-audio-toggle disabled>声音：关</button>
+                <label class="camera-volume-control">音量
+                  <input data-camera-volume type="range" min="0" max="100" step="1" value="60" disabled aria-label="摄像头音量">
+                  <span data-camera-volume-value>60%</span>
+                </label>
+              </div>
             </div>
           </div>
           <div class="card result-card">
@@ -646,6 +653,7 @@
     </div>
   </div>
 
+  <audio id="cameraAudioPlayer" autoplay playsinline hidden></audio>
   <div class="toast" id="toast"></div>
   <script src="/js/core.js"></script>
   <script src="/js/navigation.js"></script>

@@ -142,3 +142,12 @@ The web UI also has a phone/tablet layout: tablet navigation becomes horizontal,
 ### Host USB camera enumeration fallback
 
 FaceSign first enumerates Windows host cameras through FFmpeg DirectShow. If a Windows/FFmpeg combination returns no DirectShow list, FaceSign also checks Windows Plug and Play Camera/Image devices and uses their friendly names as fallback capture candidates. A failed host-USB connection test reports both **FFmpeg DirectShow** and **Windows PnP** status so it is immediately clear whether the camera is missing at the Windows hardware layer or only unavailable to DirectShow.
+
+
+### Opt-in camera audio
+
+Live camera audio is **off by default**. Clicking **声音：关/开** creates a separate audio-only WebRTC connection, so the existing H.264/H.265 preview path, MJPEG fallback and face-recognition cadence are unchanged while sound is off. The volume slider defaults to 60%.
+
+- RTSP network cameras: FaceSign reads the audio track from the same RTSP stream and converts it to WebRTC Opus only after sound is enabled.
+- FaceSign host USB cameras: FaceSign enumerates Windows DirectShow audio inputs only after sound is enabled and prefers an input whose device name best matches the selected USB camera.
+- Current-browser cameras and Camera Agent stay video-only to avoid microphone feedback and to preserve their existing behavior.

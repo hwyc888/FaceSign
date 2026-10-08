@@ -19,8 +19,9 @@ import (
 
 type webRTCRTSPSource struct {
 	resolvedRTSPSource
-	H264 *format.H264
-	H265 *format.H265
+	H264     *format.H264
+	H265     *format.H265
+	HasAudio bool
 }
 
 func webRTCH264CodecCapability(source webRTCRTSPSource) webrtc.RTPCodecCapability {
@@ -127,6 +128,14 @@ func describeWebRTSPCandidate(ctx context.Context, camera store.Camera, candidat
 		return webRTCRTSPSource{}, err
 	}
 
+	hasAudio := false
+	for _, media := range desc.Medias {
+		if media.Type == description.MediaTypeAudio && !media.IsBackChannel {
+			hasAudio = true
+			break
+		}
+	}
+
 	var h264 *format.H264
 	if desc.FindFormat(&h264) != nil {
 		return webRTCRTSPSource{
@@ -136,7 +145,8 @@ func describeWebRTSPCandidate(ctx context.Context, camera store.Camera, candidat
 				Codec:     "h264",
 				Label:     candidate.Label,
 			},
-			H264: h264,
+			H264:     h264,
+			HasAudio: hasAudio,
 		}, nil
 	}
 
@@ -149,7 +159,8 @@ func describeWebRTSPCandidate(ctx context.Context, camera store.Camera, candidat
 				Codec:     "hevc",
 				Label:     candidate.Label,
 			},
-			H265: h265,
+			H265:     h265,
+			HasAudio: hasAudio,
 		}, nil
 	}
 

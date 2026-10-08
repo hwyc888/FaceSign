@@ -304,6 +304,7 @@ jobs:
             $encoders = (& $ffmpeg -hide_banner -encoders 2>&1 | Out-String)
             if ($LASTEXITCODE -ne 0) { throw "$variant ffmpeg.exe could not report encoders" }
             if ($encoders -notmatch '(?m)^\s*V[^\r\n]*\slibopenh264\s') { throw "$variant ffmpeg.exe is missing libopenh264 CPU fallback encoder" }
+            if ($encoders -notmatch '(?m)^\s*A[^\r\n]*\slibopus\s') { throw "$variant ffmpeg.exe is missing libopus audio encoder required for opt-in camera sound" }
 
             $h264Smoke = Join-Path $env:RUNNER_TEMP ("openh264-" + (Split-Path $variant -Leaf) + ".h264")
             & $ffmpeg -hide_banner -loglevel error -f lavfi -i 'color=c=black:s=320x180:r=25' -frames:v 2 -vf 'format=yuv420p' -c:v libopenh264 -b:v 500k -g 25 -bf 0 -f h264 -y $h264Smoke
