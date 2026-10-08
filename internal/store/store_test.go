@@ -570,7 +570,7 @@ func TestCameraManagementAndDefaultSelection(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !local.IsDefault || local.Protocol != "browser" {
+	if !local.IsDefault || local.Protocol != "usb" {
 		t.Fatalf("first camera should become default: %#v", local)
 	}
 

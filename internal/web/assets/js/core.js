@@ -76,3 +76,31 @@ function esc(v) {
     "'": '&#39;'
   }[c]));
 }
+
+
+function decorateResponsiveTables(root = document) {
+  root.querySelectorAll('table').forEach(table => {
+    const labels = Array.from(table.querySelectorAll('thead th')).map(th => th.textContent.trim());
+    if (!labels.length) return;
+    table.querySelectorAll('tbody tr').forEach(row => {
+      Array.from(row.children).forEach((cell, index) => {
+        if (cell.tagName === 'TD' && !cell.dataset.label) {
+          cell.dataset.label = labels[index] || '';
+        }
+      });
+    });
+  });
+}
+
+let responsiveTableDecorationQueued = false;
+const responsiveTableObserver = new MutationObserver(mutations => {
+  if (!mutations.some(mutation => mutation.type === 'childList')) return;
+  if (responsiveTableDecorationQueued) return;
+  responsiveTableDecorationQueued = true;
+  queueMicrotask(() => {
+    responsiveTableDecorationQueued = false;
+    decorateResponsiveTables();
+  });
+});
+responsiveTableObserver.observe(document.body, {childList: true, subtree: true});
+decorateResponsiveTables();

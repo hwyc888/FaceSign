@@ -211,8 +211,8 @@ func TestCameraFrontendSupportsLocalAndNetworkSources(t *testing.T) {
 	}
 	script := string(data)
 	for _, want := range []string{
-		"enumerateDevices",
-		"deviceId",
+		"/api/host-camera-devices",
+		"device.id",
 		"http_snapshot",
 		"mjpeg",
 		"rtsp",
@@ -885,11 +885,11 @@ func TestCameraFrameDimensionsHandlesClosedCamera(t *testing.T) {
 		t.Fatal("cameraFrameDimensions function not found")
 	}
 	frameDimensions := cameraScript[start:end]
-	if !strings.Contains(frameDimensions, "if (activeCamera && activeCamera.kind !== 'local')") {
-		t.Fatal("cameraFrameDimensions must guard activeCamera before reading network camera dimensions")
+	if !strings.Contains(frameDimensions, "if (activeCamera && activeCamera.kind !== 'browser')") {
+		t.Fatal("cameraFrameDimensions must guard activeCamera before reading server-camera dimensions")
 	}
-	if strings.Contains(frameDimensions, "activeCamera?.kind !== 'local'") {
-		t.Fatal("null camera still enters the network dimension branch")
+	if strings.Contains(frameDimensions, "activeCamera?.kind !== 'browser'") {
+		t.Fatal("null camera still enters the server-camera dimension branch")
 	}
 }
 
@@ -1072,6 +1072,57 @@ func TestRecognitionCadenceProtectsPreviewWithoutAddingInferenceDelay(t *testing
 	} {
 		if !strings.Contains(cameraScript, want) {
 			t.Fatalf("healthy preview recovery missing %q", want)
+		}
+	}
+}
+
+
+func TestHostUSBCameraAndMobileCardLayoutAreEmbedded(t *testing.T) {
+	htmlData, err := assets.ReadFile("assets/index.html")
+	if err != nil { t.Fatal(err) }
+	html := string(htmlData)
+	for _, want := range []string{
+		"FaceSign主机 / USB摄像头",
+		"运行FaceSign程序那台电脑的摄像头",
+		"检测FaceSign电脑USB",
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("host USB camera UI missing %q", want)
+		}
+	}
+
+	cameraData, err := assets.ReadFile("assets/js/camera.js")
+	if err != nil { t.Fatal(err) }
+	cameraScript := string(cameraData)
+	if !strings.Contains(cameraScript, "kind: 'browser'") {
+		t.Fatal("browser camera must remain only as the explicit no-config fallback")
+	}
+	if !strings.Contains(cameraScript, "主机USB") {
+		t.Fatal("host USB preview mode is missing")
+	}
+
+	cameraSettingsData, err := assets.ReadFile("assets/js/cameras.js")
+	if err != nil { t.Fatal(err) }
+	cameraSettings := string(cameraSettingsData)
+	for _, want := range []string{"/api/host-camera-devices", "protocol: kind === 'local' ? 'usb'"} {
+		if !strings.Contains(cameraSettings, want) {
+			t.Fatalf("camera settings missing %q", want)
+		}
+	}
+	if strings.Contains(cameraSettings, "navigator.mediaDevices.enumerateDevices") {
+		t.Fatal("saved FaceSign host USB cameras must not enumerate the remote browser device")
+	}
+
+	cssData, err := assets.ReadFile("assets/style.css")
+	if err != nil { t.Fatal(err) }
+	css := string(cssData)
+	for _, want := range []string{
+		"grid-template-columns:repeat(5,minmax(0,1fr))",
+		"content:attr(data-label)",
+		"position:fixed",
+	} {
+		if !strings.Contains(css, want) {
+			t.Fatalf("mobile responsive CSS missing %q", want)
 		}
 	}
 }

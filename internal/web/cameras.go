@@ -77,7 +77,7 @@ func networkCameraFrameInterval(camera store.Camera) time.Duration {
 
 func cameraPreviewFrameInterval(camera store.Camera) time.Duration {
 	fps := camera.FPS
-	if camera.Kind == "network" {
+	if camera.Kind == "network" || camera.Kind == "local" {
 		fps = networkCameraPreviewFPS
 	}
 	if fps < 1 {
@@ -284,11 +284,12 @@ func (s *Server) cameraTest(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	if strings.ToLower(strings.TrimSpace(in.Kind)) != "network" {
+	kind := strings.ToLower(strings.TrimSpace(in.Kind))
+	if kind != "network" && kind != "local" {
 		writeJSON(w, http.StatusOK, cameraTestResult{
 			OK: false,
-			Message: "服务器连接测试用于网络摄像头；本机摄像头请使用浏览器设备测试",
-			Checks: []cameraTestCheck{cameraTestCheckItem("参数检查", "error", "请选择“网络摄像头（服务器直连）”")},
+			Message: "服务器连接测试仅用于FaceSign主机USB或服务器直连网络摄像头",
+			Checks: []cameraTestCheck{cameraTestCheckItem("参数检查", "error", "请选择FaceSign主机USB或网络摄像头")},
 		})
 		return
 	}
@@ -323,25 +324,46 @@ func (s *Server) cameraTest(w http.ResponseWriter, r *http.Request) {
 			modeLabel := "MJPEG"
 			if source == "rtsp" {
 				modeLabel = "RTSP"
+			} else if source == "usb" {
+				modeLabel = "FaceSign主机USB"
+			}
+			checks := []cameraTestCheck{
+				cameraTestCheckItem("参数检查", "ok", "参数格式有效"),
+				cameraTestCheckItem("连续流主通道", "ok", modeLabel+" 已持续输出视频帧"),
+				cameraTestCheckItem("共享帧池", "ok", fmt.Sprintf("已收到 %d×%d 实时帧；远程电脑/手机与识别共用FaceSign主机画面", width, height)),
+			}
+			if source != "usb" {
+				checks = append(checks, cameraTestCheckItem("HTTP抓图回退", "ok", "已保留为连续流断开时的备用通道"))
 			}
 			writeJSON(w, http.StatusOK, cameraTestResult{
 				OK: true,
-				Message: modeLabel + " 连续流连接成功，预览将使用连续流；人脸识别从共享帧池低帧率取样",
+				Message: modeLabel + " 连续流连接成功，远程访问将显示FaceSign电脑上的摄像头，而不是访问设备自身摄像头",
 				ElapsedMS: time.Since(started).Milliseconds(),
 				Width: width,
 				Height: height,
 				PrimaryMode: source,
 				PreviewBase64: base64.StdEncoding.EncodeToString(frame),
-				Checks: []cameraTestCheck{
-					cameraTestCheckItem("参数检查", "ok", "参数格式有效"),
-					cameraTestCheckItem("连续流主通道", "ok", modeLabel+" 已持续输出视频帧"),
-					cameraTestCheckItem("共享帧池", "ok", fmt.Sprintf("已收到 %d×%d 实时帧；预览和识别共用同一帧池", width, height)),
-					cameraTestCheckItem("HTTP抓图回退", "ok", "已保留为连续流断开时的备用通道"),
-				},
+				Checks: checks,
 			})
 			return
 		}
 		primaryErr = err
+	}
+	if camera.Kind == "local" {
+		message := "FaceSign主机USB摄像头连接失败"
+		if primaryErr != nil {
+			message += "：" + primaryErr.Error()
+		}
+		writeJSON(w, http.StatusOK, cameraTestResult{
+			OK: false,
+			Message: message,
+			ElapsedMS: time.Since(started).Milliseconds(),
+			Checks: []cameraTestCheck{
+				cameraTestCheckItem("参数检查", "ok", "参数格式有效"),
+				cameraTestCheckItem("主机USB设备", "error", message),
+			},
+		})
+		return
 	}
 
 	frame, width, height, detectedAuth, err := fetchNetworkCameraFrameWithAuth(r.Context(), camera)
@@ -590,10 +612,14 @@ func (s *Server) cameraAction(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) cameraSourceFrame(ctx context.Context, item store.Camera) ([]byte, int, int, int, error) {
 	switch item.Kind {
-	case "network":
+	case "network", "local":
 		frame, width, height, _, err := s.networkCameraFrame(ctx, item)
 		if err != nil {
-			return nil, 0, 0, http.StatusBadGateway, fmt.Errorf("读取网络摄像头失败: %w", err)
+			label := "网络摄像头"
+			if item.Kind == "local" {
+				label = "FaceSign主机USB摄像头"
+			}
+			return nil, 0, 0, http.StatusBadGateway, fmt.Errorf("读取%s失败: %w", label, err)
 		}
 		return frame, width, height, http.StatusOK, nil
 	case "agent":
@@ -603,12 +629,12 @@ func (s *Server) cameraSourceFrame(ctx context.Context, item store.Camera) ([]by
 		}
 		return frame, width, height, http.StatusOK, nil
 	default:
-		return nil, 0, 0, http.StatusBadRequest, errors.New("本机摄像头画面由浏览器直接读取")
+		return nil, 0, 0, http.StatusBadRequest, errors.New("当前摄像头类型没有服务器端画面")
 	}
 }
 
 func (s *Server) cameraPreviewSourceFrame(ctx context.Context, item store.Camera) ([]byte, int, int, int, error) {
-	if item.Kind == "network" {
+	if item.Kind == "network" || item.Kind == "local" {
 		frame, width, height, _, err := s.networkCameraPreviewFrame(ctx, item)
 		if err != nil {
 			return nil, 0, 0, http.StatusBadGateway, fmt.Errorf("读取网络摄像头失败: %w", err)
@@ -634,7 +660,7 @@ func (s *Server) cameraStream(w http.ResponseWriter, r *http.Request, item store
 
 	var continuous *networkCameraStream
 	var continuousSequence uint64
-	if item.Kind == "network" {
+	if item.Kind == "network" || item.Kind == "local" {
 		continuous = s.ensureNetworkCameraPreviewStream(item)
 		if continuous != nil {
 			if pooled, ok := continuous.current(0); ok {

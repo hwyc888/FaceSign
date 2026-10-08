@@ -401,3 +401,104 @@ pre{background:#0b1220;color:#d8e2f3;border-radius:12px;padding:16px;overflow:au
 .camera-simple-summary strong{color:#173b70}
 .camera-simple-summary span{font-size:12px;color:#667085;line-height:1.5}
 .camera-simple-summary button{flex:0 0 auto}
+
+
+/* Tablet + phone responsive shell. Mobile uses card rows and a bottom navigation bar. */
+@media(max-width:900px){
+  .shell{display:block}
+  .sidebar{
+    position:sticky;
+    top:0;
+    inset:auto;
+    z-index:120;
+    width:100%;
+    height:auto;
+    padding:10px 14px;
+    display:flex;
+    align-items:center;
+    gap:14px;
+    box-shadow:0 6px 18px rgba(16,24,40,.12)
+  }
+  .brand{font-size:20px;white-space:nowrap}
+  .brand-sub{display:none}
+  .sidebar nav{display:flex;gap:7px;overflow-x:auto;flex:1;scrollbar-width:none}
+  .sidebar nav::-webkit-scrollbar{display:none}
+  .nav{width:auto;height:auto;flex:0 0 auto;margin:0;padding:9px 12px;font-size:13px;text-align:center;white-space:nowrap}
+  .nav:after{content:none}
+  .main{margin-left:0;width:100%;padding:16px}
+  .grid.two{grid-template-columns:1fr}
+  .topbar{align-items:flex-start}
+  .card{border-radius:15px}
+}
+
+@media(max-width:640px){
+  body{background:#eef2f7}
+  .shell{padding-bottom:76px}
+  .sidebar{
+    position:fixed;
+    top:auto;
+    bottom:0;
+    left:0;
+    right:0;
+    height:calc(68px + env(safe-area-inset-bottom));
+    padding:7px 8px calc(7px + env(safe-area-inset-bottom));
+    border-top:1px solid #27344c;
+    box-shadow:0 -8px 24px rgba(16,24,40,.16)
+  }
+  .brand,.brand-sub{display:none}
+  .sidebar nav{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:5px;width:100%;overflow:visible}
+  .nav{min-width:0;width:100%;padding:8px 3px;border-radius:10px;font-size:11px;line-height:1.2;overflow:hidden;text-overflow:ellipsis}
+  .main{padding:10px}
+  .topbar{
+    display:grid;
+    grid-template-columns:minmax(0,1fr) auto;
+    gap:8px;
+    align-items:start;
+    margin-bottom:10px;
+    padding:13px 14px;
+    background:#fff;
+    border:1px solid #e2e8f0;
+    border-radius:14px;
+    box-shadow:0 5px 16px rgba(16,24,40,.04)
+  }
+  .topbar h1{font-size:20px;margin-bottom:3px}
+  .topbar p{font-size:12px;line-height:1.45}
+  .pill{padding:7px 9px;font-size:11px}
+  .card{padding:13px;border-radius:14px;margin-bottom:10px;box-shadow:0 5px 16px rgba(16,24,40,.045)}
+  .camera-card{padding:10px}
+  .video-wrap,.enroll-video-wrap{border-radius:11px}
+  .actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .actions button{width:100%;min-height:42px}
+  .actions .switch,.actions .camera-active-name{grid-column:1/-1}
+  .camera-active-name{max-width:none;text-align:center}
+  .recognition-counts{grid-template-columns:repeat(2,minmax(0,1fr));gap:7px}
+  .recognition-count{padding:10px}
+  .recognition-count strong{font-size:25px}
+  .result{min-height:100px;padding:13px}
+  .result .name{font-size:24px}
+  .card-head{gap:8px}
+  .card-head h2{font-size:17px}
+  button,input,select{min-height:42px}
+  .form,.camera-form,.class-add-form,.seat-layout-form,.seat-editor-settings,.photo-import-toolbar{grid-template-columns:1fr!important}
+  .camera-form-actions,.modal-actions{display:grid;grid-template-columns:1fr}
+  .camera-form-actions button,.modal-actions button{width:100%}
+  .modal-backdrop{padding:10px}
+  .modal{width:min(100%,560px);max-height:calc(100vh - 20px);overflow:auto;border-radius:16px}
+  .table-wrap,.camera-table-wrap,.class-table-wrap,.photo-import-table-wrap{overflow:visible;max-height:none;border:0}
+  table,tbody,tr,td{display:block;width:100%}
+  thead{display:none}
+  tbody{display:grid;gap:10px}
+  tbody tr{border:1px solid #e0e6ef;border-radius:13px;background:#fff;padding:6px 11px;box-shadow:0 4px 14px rgba(16,24,40,.04)}
+  tbody td{border-bottom:1px solid #eef2f6;padding:9px 0;display:grid;grid-template-columns:minmax(78px,34%) minmax(0,1fr);gap:10px;align-items:start;overflow-wrap:anywhere}
+  tbody td:last-child{border-bottom:0}
+  tbody td:before{content:attr(data-label);color:#667085;font-size:12px;font-weight:750}
+  tbody td[colspan]{display:block;text-align:center;color:#667085}
+  tbody td[colspan]:before{content:none}
+  .camera-row-actions,.class-order-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr))}
+  .camera-row-actions button,.class-order-actions button{width:100%}
+  .camera-source-cell{max-width:none;white-space:normal}
+  .seat-class-filter{min-width:0;width:100%}
+  .seat-board{margin-left:-4px;margin-right:-4px}
+  pre{white-space:pre-wrap;overflow-wrap:anywhere}
+  .toast{left:10px;right:10px;bottom:calc(82px + env(safe-area-inset-bottom));text-align:center}
+}

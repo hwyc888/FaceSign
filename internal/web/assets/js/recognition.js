@@ -180,7 +180,7 @@ async function recognizeFrame(options = {}) {
     const loadProfile = typeof cameraRecognitionLoadProfile === 'function'
       ? cameraRecognitionLoadProfile()
       : {level: 'normal', maxFPS: 5, minGapMS: 100};
-    if (activeCamera && activeCamera.kind !== 'local') {
+    if (activeCamera && activeCamera.kind !== 'browser') {
       r = await api(`/api/cameras/${activeCamera.id}/recognize`, {
         method: 'POST',
         headers: {
@@ -226,7 +226,7 @@ async function recognizeFrame(options = {}) {
 }
 
 function recognitionFrameIntervalMS() {
-  if (activeCamera && activeCamera.kind !== 'local') {
+  if (activeCamera && activeCamera.kind !== 'browser') {
     const loadProfile = typeof cameraRecognitionLoadProfile === 'function'
       ? cameraRecognitionLoadProfile()
       : {level: 'normal', maxFPS: 5, minGapMS: 100};

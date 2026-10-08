@@ -74,7 +74,7 @@ func normalizeCameraInput(in CameraInput) (CameraInput, error) {
 
 	switch in.Kind {
 	case "local":
-		in.Protocol = "browser"
+		in.Protocol = "usb"
 		in.StreamURL = ""
 		in.SnapshotURL = ""
 		in.Username = ""
@@ -165,7 +165,7 @@ func normalizeCameraInput(in CameraInput) (CameraInput, error) {
 			return CameraInput{}, errors.New("客户端代理帧率必须在1到10之间")
 		}
 	default:
-		return CameraInput{}, errors.New("摄像头类型只支持本机、服务器直连网络摄像头或客户端代理")
+		return CameraInput{}, errors.New("摄像头类型只支持FaceSign主机USB、服务器直连网络摄像头或客户端代理")
 	}
 	return in, nil
 }

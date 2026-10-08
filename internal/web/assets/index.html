@@ -51,7 +51,7 @@
               <button class="primary" id="startCamera">打开摄像头</button>
               <button id="recognize" disabled>识别并签到</button>
               <label class="switch"><input id="autoScan" type="checkbox"> 自动识别</label>
-              <span class="camera-active-name" id="checkinCameraName">浏览器默认摄像头</span>
+              <span class="camera-active-name" id="checkinCameraName">当前访问设备摄像头</span>
             </div>
           </div>
           <div class="card result-card">
@@ -136,7 +136,7 @@
                 <button id="toggleEnrollCamera" type="button">打开摄像头</button>
                 <button class="primary capture-primary" id="captureEnrollment" type="button" disabled>拍照并录入</button>
                 <button id="cancelSupplement" class="hidden" type="button">退出补充模式</button>
-                <span class="camera-active-name" id="enrollCameraName">浏览器默认摄像头</span>
+                <span class="camera-active-name" id="enrollCameraName">当前访问设备摄像头</span>
               </div>
 
               <div class="capture-status neutral" id="enrollStatus">
@@ -346,9 +346,9 @@
           <div class="card-head">
             <div>
               <h2>摄像头管理</h2>
-              <p class="muted compact">可添加本机/USB、服务器直连网络摄像头，或教室客户端 Camera Agent。中央服务器部署在云端时，推荐用 Camera Agent 读取教室内网摄像头。</p>
+              <p class="muted compact">“FaceSign主机 / USB”始终读取运行FaceSign这台电脑上的USB摄像头，因此手机或其他电脑访问时看到的仍是主机摄像头，不会改用手机摄像头。也支持服务器直连网络摄像头或 Camera Agent。</p>
             </div>
-            <button id="refreshLocalCameras" type="button">检测本机摄像头</button>
+            <button id="refreshLocalCameras" type="button">检测FaceSign电脑USB</button>
           </div>
 
           <form id="cameraForm" class="camera-form">
@@ -359,13 +359,14 @@
             </label>
             <label>类型
               <select id="cameraKind">
-                <option value="local">本机 / USB 摄像头</option>
+                <option value="local">FaceSign主机 / USB摄像头</option>
                 <option value="network">网络摄像头（服务器直连）</option>
                 <option value="agent">客户端 Camera Agent</option>
               </select>
             </label>
-            <label data-camera-local>本机设备
-              <select id="cameraDevice"><option value="">系统默认摄像头</option></select>
+            <label data-camera-local>FaceSign电脑USB设备
+              <select id="cameraDevice"><option value="">自动选择FaceSign主机第一个USB摄像头</option></select>
+              <small>这里列出的是运行FaceSign程序那台电脑的摄像头，不是当前手机/浏览器的摄像头。</small>
             </label>
             <label data-camera-network class="hidden">常用品牌 / 参数预设
               <select id="cameraPreset">

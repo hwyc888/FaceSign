@@ -303,8 +303,10 @@ async function updateCameraRealtimeStatus() {
     const recognitionState = recognizingNow ? (recognition.fps >= 2 ? 'good' : recognition.fps > 0 ? 'warn' : 'bad') : '';
 
     let networkText = '网络：--';
-    if (cameraRealtimeMode === 'USB/本机') {
-      networkText = '网络：本机';
+    if (cameraRealtimeMode === '当前设备摄像头') {
+      networkText = '网络：当前设备';
+    } else if (cameraRealtimeMode.includes('主机USB')) {
+      networkText = '网络：FaceSign主机';
     } else if (cameraRealtimeMode.includes('MJPEG')) {
       networkText = '网络：HTTP流';
     } else if (packetLossPct !== null || jitterMS !== null) {
@@ -387,7 +389,7 @@ function updateCameraControls() {
 
   const configuredDefault = camerasCache.find(camera => camera.is_default) || null;
   const selected = activeCamera || configuredDefault;
-  const label = selected ? selected.name : '浏览器默认摄像头';
+  const label = selected ? selected.name : '当前访问设备摄像头';
   if ($('#checkinCameraName')) $('#checkinCameraName').textContent = label;
   if ($('#enrollCameraName')) $('#enrollCameraName').textContent = label;
 }
@@ -408,8 +410,8 @@ async function preferredCamera() {
   }
   return camerasCache.find(camera => camera.is_default) || {
     id: 0,
-    name: '浏览器默认摄像头',
-    kind: 'local',
+    name: '当前访问设备摄像头',
+    kind: 'browser',
     device_id: '',
     protocol: 'browser',
     width: 1280,
@@ -505,7 +507,7 @@ function waitForICEGatheringComplete(peer, timeoutMS = 4000) {
 }
 
 function startMJPEGPreviewFallback(generation, image, video, reason = '') {
-  if (generation !== networkPreviewGeneration || !cameraOpen || !activeCamera || activeCamera.kind === 'local') {
+  if (generation !== networkPreviewGeneration || !cameraOpen || !activeCamera || activeCamera.kind === 'browser') {
     return;
   }
 
@@ -517,10 +519,13 @@ function startMJPEGPreviewFallback(generation, image, video, reason = '') {
     video.classList.add('hidden');
   }
   image.classList.remove('hidden');
-  startCameraRealtimeVideoMonitor(null, reason ? 'MJPEG回退' : 'MJPEG', reason);
+  const previewMode = activeCamera?.kind === 'local'
+    ? (reason ? '主机USB回退' : '主机USB')
+    : (reason ? 'MJPEG回退' : 'MJPEG');
+  startCameraRealtimeVideoMonitor(null, previewMode, reason);
 
   const reconnect = () => {
-    if (generation !== networkPreviewGeneration || !cameraOpen || !activeCamera || activeCamera.kind === 'local') {
+    if (generation !== networkPreviewGeneration || !cameraOpen || !activeCamera || activeCamera.kind === 'browser') {
       return;
     }
     image.src = `/api/cameras/${activeCamera.id}/stream?t=${Date.now()}`;
@@ -627,7 +632,7 @@ async function startWebRTCPreview(generation, image, video, forceH264 = false) {
 }
 
 function startNetworkPreview() {
-  if (!cameraOpen || !activeCamera || activeCamera.kind === 'local') return;
+  if (!cameraOpen || !activeCamera || activeCamera.kind === 'browser') return;
   const image = activeNetworkCameraImage();
   const video = activeNetworkCameraVideo();
   if (!image || !video) return;
@@ -672,7 +677,7 @@ function localVideoConstraints(camera) {
 
 async function startCamera() {
   if (cameraOpen) {
-    if (activeCamera?.kind !== 'local') {
+    if (activeCamera?.kind !== 'browser') {
       switchCameraViews(true);
       startNetworkPreview();
     } else {
@@ -686,7 +691,7 @@ async function startCamera() {
     resetRecognitionSession();
     activeCamera = await preferredCamera();
 
-    if (activeCamera.kind !== 'local') {
+    if (activeCamera.kind !== 'browser') {
       stream = null;
       const isRTSPNetwork = activeCamera.kind === 'network' &&
         String(activeCamera.protocol || '').toLowerCase() === 'rtsp';
@@ -700,14 +705,14 @@ async function startCamera() {
       switchCameraViews(false);
       try {
         if (!window.isSecureContext) {
-          throw new Error('远程浏览器调用本机摄像头需要 HTTPS 安全连接；请使用 FaceSign 的 https:// 地址，并先安装 FaceSign 根证书');
+          throw new Error('当前访问设备摄像头需要 HTTPS 安全连接；请使用 FaceSign 的 https:// 地址，并先安装 FaceSign 根证书');
         }
         stream = await navigator.mediaDevices.getUserMedia(localVideoConstraints(activeCamera));
       } catch (e) {
         if (activeCamera.device_id && (e.name === 'NotFoundError' || e.name === 'OverconstrainedError')) {
           const fallback = {...activeCamera, device_id: ''};
           stream = await navigator.mediaDevices.getUserMedia(localVideoConstraints(fallback));
-          toast('默认本机摄像头未找到，已临时使用系统默认摄像头');
+          toast('当前访问设备的已选摄像头未找到，已临时使用系统默认摄像头');
         } else {
           throw e;
         }
@@ -792,11 +797,11 @@ async function attachCameraViews() {
     await video.play();
   }
   const activeVideo = $('#page-students')?.classList.contains('active') ? $('#enrollCamera') : $('#camera');
-  startCameraRealtimeVideoMonitor(activeVideo, 'USB/本机');
+  startCameraRealtimeVideoMonitor(activeVideo, '当前设备摄像头');
 }
 
 function cameraFrameDimensions(selector = '#camera') {
-  if (activeCamera && activeCamera.kind !== 'local') {
+  if (activeCamera && activeCamera.kind !== 'browser') {
     const webrtcVideo = selector === '#enrollCamera' ? $('#enrollCameraNetworkWebRTC') : $('#cameraNetworkWebRTC');
     if (webrtcVideo && !webrtcVideo.classList.contains('hidden') && webrtcVideo.videoWidth && webrtcVideo.videoHeight) {
       return {width: webrtcVideo.videoWidth, height: webrtcVideo.videoHeight};
@@ -816,11 +821,11 @@ function cameraFrameDimensions(selector = '#camera') {
 
 async function capture(selector = '#camera') {
   if (!cameraOpen) throw new Error('请先打开摄像头');
-  if (activeCamera?.kind !== 'local') {
+  if (activeCamera?.kind !== 'browser') {
     return await fetchCameraFrameBlob(activeCamera.id);
   }
 
-  if (!stream) throw new Error('本机摄像头画面尚未准备好');
+  if (!stream) throw new Error('当前访问设备摄像头画面尚未准备好');
   const video = $(selector);
   const canvas = $('#canvas');
   if (!video || !video.videoWidth || !video.videoHeight) {

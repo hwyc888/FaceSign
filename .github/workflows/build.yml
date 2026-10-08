@@ -282,6 +282,10 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "$variant ffmpeg.exe could not report RTSP demuxer options" }
             if ($rtspHelp -notmatch '(?m)^\s*-timeout\s+') { throw "$variant ffmpeg.exe does not support the RTSP -timeout option" }
 
+            $devices = (& $ffmpeg -hide_banner -devices 2>&1 | Out-String)
+            if ($LASTEXITCODE -ne 0) { throw "$variant ffmpeg.exe could not report input devices" }
+            if ($devices -notmatch '(?im)\bdshow\b') { throw "$variant ffmpeg.exe is missing Windows DirectShow USB camera input" }
+
             $encoders = (& $ffmpeg -hide_banner -encoders 2>&1 | Out-String)
             if ($LASTEXITCODE -ne 0) { throw "$variant ffmpeg.exe could not report encoders" }
             if ($encoders -notmatch '(?m)^\s*V[^\r\n]*\slibopenh264\s') { throw "$variant ffmpeg.exe is missing libopenh264 CPU fallback encoder" }

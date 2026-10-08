@@ -128,7 +128,7 @@ function cameraFormPayload() {
     name: $('#cameraName').value.trim() || '连接测试',
     kind,
     device_id: kind === 'local' ? $('#cameraDevice').value : '',
-    protocol: kind === 'local' ? 'browser' : $('#cameraProtocol').value,
+    protocol: kind === 'local' ? 'usb' : $('#cameraProtocol').value,
     stream_url: kind === 'network' ? $('#cameraStreamURL').value.trim() : '',
     snapshot_url: kind === 'network' ? $('#cameraSnapshotURL').value.trim() : '',
     username: kind === 'network' ? $('#cameraUsername').value.trim() : '',
@@ -244,29 +244,13 @@ async function testCurrentCameraConfig() {
 
   try {
     if (kind === 'local') {
-      if (!window.isSecureContext) {
-        throw new Error('本机摄像头测试需要 HTTPS 安全连接');
-      }
-      const camera = {
-        width: Number($('#cameraWidth').value || 1280),
-        height: Number($('#cameraHeight').value || 720),
-        fps: Number($('#cameraFPS').value || 30),
-        device_id: $('#cameraDevice').value
-      };
-      const started = performance.now();
-      const testStream = await navigator.mediaDevices.getUserMedia(localVideoConstraints(camera));
-      const settings = testStream.getVideoTracks()[0]?.getSettings?.() || {};
-      testStream.getTracks().forEach(track => track.stop());
-      renderCameraConnectionTest({
-        ok: true,
-        message: `本机摄像头可用：${settings.width || camera.width}×${settings.height || camera.height}，${Math.round(settings.frameRate || camera.fps)} FPS`,
-        elapsed_ms: Math.round(performance.now() - started),
-        checks: [
-          {name: '浏览器权限', status: 'ok', message: '摄像头权限正常'},
-          {name: '设备连接', status: 'ok', message: '视频设备可以打开'}
-        ]
+      const result = await api('/api/cameras/test', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(cameraFormPayload())
       });
-      toast('摄像头测试成功');
+      renderCameraConnectionTest(result);
+      toast(result.ok ? 'FaceSign主机USB摄像头测试成功' : '主机USB摄像头测试失败：' + result.message);
       return;
     }
 
@@ -306,7 +290,7 @@ async function testCurrentCameraConfig() {
 }
 
 function cameraTypeLabel(camera) {
-  if (camera.kind === 'local') return '本机 / USB';
+  if (camera.kind === 'local') return 'FaceSign主机 / USB';
   if (camera.kind === 'agent') return '客户端 Camera Agent';
   if (camera.protocol === 'http_snapshot') return '网络 / HTTP抓图';
   if (camera.protocol === 'mjpeg') return '网络 / MJPEG';
@@ -316,9 +300,9 @@ function cameraTypeLabel(camera) {
 
 function cameraSourceLabel(camera) {
   if (camera.kind === 'local') {
-    if (!camera.device_id) return '浏览器系统默认设备';
-    const found = localCameraDevices.find(device => device.deviceId === camera.device_id);
-    return found?.label || ('设备 ID ' + camera.device_id.slice(0, 12) + '…');
+    if (!camera.device_id) return 'FaceSign主机第一个可用USB摄像头';
+    const found = localCameraDevices.find(device => device.id === camera.device_id);
+    return found?.name || camera.device_id;
   }
   if (camera.kind === 'agent') return camera.agent_id || '-';
   return cameraNetworkDisplay(camera);
@@ -328,7 +312,7 @@ function renderCameraRows() {
   const body = $('#camerasBody');
   if (!body) return;
   if (!camerasCache.length) {
-    body.innerHTML = '<tr><td colspan="6" class="muted">尚未添加摄像头；当前仍可使用浏览器默认摄像头。</td></tr>';
+    body.innerHTML = '<tr><td colspan="6" class="muted">尚未添加摄像头；当前访问设备仍可临时使用自己的摄像头。若要让手机/其他电脑看到FaceSign电脑USB摄像头，请添加“FaceSign主机 / USB摄像头”。</td></tr>';
     return;
   }
   body.innerHTML = camerasCache.map(camera => `
@@ -365,38 +349,24 @@ async function loadCameras() {
   return camerasCache;
 }
 
-async function refreshLocalCameraDevices(requestPermission = false) {
-  if (!navigator.mediaDevices?.enumerateDevices) {
-    throw new Error('当前浏览器不支持摄像头设备枚举');
-  }
-  let temporary = null;
-  if (requestPermission && !cameraOpen) {
-    try {
-      temporary = await navigator.mediaDevices.getUserMedia({video: true, audio: false});
-    } catch (e) {
-      throw new Error('无法读取本机摄像头列表：' + e.message);
-    }
-  }
-  try {
-    const devices = await navigator.mediaDevices.enumerateDevices();
-    localCameraDevices = devices.filter(device => device.kind === 'videoinput');
-    renderLocalCameraDeviceOptions();
-    renderCameraRows();
-    if (requestPermission) toast(`检测到 ${localCameraDevices.length} 个本机摄像头`);
-  } finally {
-    if (temporary) temporary.getTracks().forEach(track => track.stop());
-  }
+async function refreshLocalCameraDevices(showToast = false) {
+  const devices = await api('/api/host-camera-devices');
+  localCameraDevices = Array.isArray(devices) ? devices : [];
+  renderLocalCameraDeviceOptions();
+  renderCameraRows();
+  if (showToast) toast(`FaceSign电脑检测到 ${localCameraDevices.length} 个USB摄像头`);
+  return localCameraDevices;
 }
 
 function renderLocalCameraDeviceOptions(selected = $('#cameraDevice')?.value || '') {
   const select = $('#cameraDevice');
   if (!select) return;
   const saved = selected;
-  select.innerHTML = '<option value="">系统默认摄像头</option>' + localCameraDevices.map((device, index) =>
-    `<option value="${esc(device.deviceId)}">${esc(device.label || ('摄像头 ' + (index + 1)))}</option>`
+  select.innerHTML = '<option value="">自动选择FaceSign主机第一个USB摄像头</option>' + localCameraDevices.map((device, index) =>
+    `<option value="${esc(device.id)}">${esc(device.name || ('主机摄像头 ' + (index + 1)))}</option>`
   ).join('');
-  if (saved && !localCameraDevices.some(device => device.deviceId === saved)) {
-    select.insertAdjacentHTML('beforeend', `<option value="${esc(saved)}">已保存的设备（当前未检测到）</option>`);
+  if (saved && !localCameraDevices.some(device => device.id === saved)) {
+    select.insertAdjacentHTML('beforeend', `<option value="${esc(saved)}">旧设备标识（未匹配，运行时会自动回退主机第一个USB摄像头）</option>`);
   }
   select.value = saved;
 }
@@ -530,15 +500,17 @@ async function testCamera(id) {
     }
     $('#cameraTestChecks').innerHTML = '';
     if (camera.kind === 'local') {
-      const testStream = await navigator.mediaDevices.getUserMedia(localVideoConstraints(camera));
-      const settings = testStream.getVideoTracks()[0]?.getSettings?.() || {};
-      testStream.getTracks().forEach(track => track.stop());
+      const blob = await fetchCameraFrameBlob(camera.id);
+      if (cameraTestPreviewURL) URL.revokeObjectURL(cameraTestPreviewURL);
+      cameraTestPreviewURL = URL.createObjectURL(blob);
+      $('#cameraTestPreview').src = cameraTestPreviewURL;
+      $('#cameraTestPreview').classList.remove('hidden');
       renderCameraConnectionTest({
         ok: true,
-        message: `本机摄像头连接成功：${settings.width || camera.width}×${settings.height || camera.height}，${Math.round(settings.frameRate || camera.fps)} FPS`,
+        message: `FaceSign主机USB摄像头“${camera.name}”连接成功，远程访问将读取主机画面。`,
         checks: [
-          {name: '浏览器权限', status: 'ok', message: '摄像头权限正常'},
-          {name: '设备连接', status: 'ok', message: '视频设备可以打开'}
+          {name: '主机设备', status: 'ok', message: 'FaceSign电脑USB摄像头可以打开'},
+          {name: '服务器取帧', status: 'ok', message: '成功读取实时画面'}
         ]
       });
     } else {
@@ -682,3 +654,4 @@ $('#cameraForm').addEventListener('submit', async event => {
 });
 
 resetCameraForm();
+refreshLocalCameraDevices(false).catch(error => console.warn('host USB camera enumeration failed', error));

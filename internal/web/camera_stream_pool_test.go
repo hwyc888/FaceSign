@@ -323,3 +323,25 @@ func TestIdleRecognitionStreamCanBeReleased(t *testing.T) {
 		t.Fatal("idle recognition stream cancel function was not called")
 	}
 }
+
+
+func TestLocalCameraUsesSharedUSBContinuousMode(t *testing.T) {
+	camera := store.Camera{
+		ID: 7,
+		Kind: "local",
+		Protocol: "browser",
+		DeviceID: "old-browser-device-id",
+		Width: 1280,
+		Height: 720,
+		FPS: 30,
+	}
+	if got := networkCameraContinuousMode(camera); got != "usb" {
+		t.Fatalf("local camera continuous mode=%q want usb", got)
+	}
+	key := networkCameraStreamKey(camera, "host-usb")
+	for _, want := range []string{"local", "old-browser-device-id", "1280", "720", "30"} {
+		if !strings.Contains(key, want) {
+			t.Fatalf("host USB stream key missing %q: %q", want, key)
+		}
+	}
+}

@@ -232,6 +232,9 @@ func (stream *networkCameraStream) waitNext(ctx context.Context, afterSequence u
 	}
 }
 func networkCameraContinuousMode(camera store.Camera) string {
+	if camera.Kind == "local" {
+		return "usb"
+	}
 	if camera.Kind != "network" {
 		return ""
 	}
@@ -253,8 +256,13 @@ func networkCameraContinuousMode(camera store.Camera) string {
 func networkCameraStreamKey(camera store.Camera, purpose string) string {
 	return strings.Join([]string{
 		purpose,
+		camera.Kind,
 		camera.Protocol,
+		camera.DeviceID,
 		camera.StreamURL,
+		strconv.Itoa(camera.Width),
+		strconv.Itoa(camera.Height),
+		strconv.Itoa(camera.FPS),
 		camera.Username,
 		camera.Password,
 		camera.AuthMode,
@@ -276,10 +284,15 @@ func (s *Server) ensureNetworkCameraStreamForPurpose(camera store.Camera, purpos
 		return nil
 	}
 
+	// Windows USB cameras are often exclusive-open. Preview and recognition
+	// therefore share exactly one DirectShow capture for each FaceSign host camera.
+	if camera.Kind == "local" {
+		purpose = "host-usb"
+	}
 	key := networkCameraStreamKey(camera, purpose)
 	s.networkCameraStreamMu.Lock()
 	target := s.networkCameraStreams
-	if purpose == "preview" {
+	if purpose == "preview" || purpose == "host-usb" {
 		target = s.networkCameraPreviewStreams
 		if target == nil {
 			target = make(map[int64]*networkCameraStream)
@@ -447,6 +460,8 @@ func (s *Server) runNetworkCameraStream(ctx context.Context, stream *networkCame
 			err = s.consumeRTSPCameraStream(ctx, stream)
 		case "mjpeg":
 			err = s.consumeMJPEGCameraStream(ctx, stream)
+		case "usb":
+			err = s.consumeHostCameraStream(ctx, stream)
 		default:
 			err = errors.New("没有可用的连续流配置")
 		}
@@ -764,10 +779,15 @@ func (s *Server) probeNetworkCameraPrimaryFrame(ctx context.Context, camera stor
 	done := make(chan error, 1)
 	go func() {
 		var err error
-		if mode == "rtsp" {
+		switch mode {
+		case "rtsp":
 			err = s.consumeRTSPCameraStream(probeCtx, stream)
-		} else {
+		case "mjpeg":
 			err = s.consumeMJPEGCameraStream(probeCtx, stream)
+		case "usb":
+			err = s.consumeHostCameraStream(probeCtx, stream)
+		default:
+			err = errors.New("当前配置没有可测试的连续流")
 		}
 		stream.setError(err)
 		done <- err
