@@ -1160,7 +1160,15 @@ func TestBrowserAndHostUSBCamerasCanBothBeConfigured(t *testing.T) {
 	settingsData, err := assets.ReadFile("assets/js/cameras.js")
 	if err != nil { t.Fatal(err) }
 	settingsScript := string(settingsData)
-	for _, want := range []string{"kind === 'browser'", "cameraBrowserFacing", "当前访问设备摄像头测试成功"} {
+	for _, want := range []string{
+		"kind === 'browser'",
+		"cameraBrowserFacing",
+		"当前访问设备摄像头测试成功",
+		"cameraOpen && activeCamera?.kind === 'browser'",
+		"stream?.getVideoTracks?.()[0]",
+		"const opened = await openBrowserCameraStream(camera)",
+		"FaceSign正在使用当前摄像头，连接正常",
+	} {
 		if !strings.Contains(settingsScript, want) {
 			t.Fatalf("browser camera settings missing %q", want)
 		}

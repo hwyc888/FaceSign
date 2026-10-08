@@ -257,16 +257,27 @@ async function testCurrentCameraConfig() {
         device_id: $('#cameraBrowserFacing').value
       };
       const started = performance.now();
-      const testStream = await navigator.mediaDevices.getUserMedia(localVideoConstraints(camera));
-      const settings = testStream.getVideoTracks()[0]?.getSettings?.() || {};
-      testStream.getTracks().forEach(track => track.stop());
+      const activeVideoTrack = cameraOpen && activeCamera?.kind === 'browser'
+        ? stream?.getVideoTracks?.()[0]
+        : null;
+      let testStream = null;
+      let videoTrack = activeVideoTrack || null;
+      if (!videoTrack || videoTrack.readyState !== 'live') {
+        const opened = await openBrowserCameraStream(camera);
+        testStream = opened.stream;
+        videoTrack = testStream.getVideoTracks()[0] || null;
+      }
+      if (!videoTrack) throw new Error('当前访问设备摄像头没有可用的视频轨');
+      const settings = videoTrack.getSettings?.() || {};
+      if (testStream) testStream.getTracks().forEach(track => track.stop());
+      const reused = Boolean(activeVideoTrack && activeVideoTrack.readyState === 'live');
       renderCameraConnectionTest({
         ok: true,
         message: `当前设备摄像头可用：${settings.width || camera.width}×${settings.height || camera.height}`,
         elapsed_ms: Math.round(performance.now() - started),
         checks: [
           {name: '浏览器权限', status: 'ok', message: '当前手机/平板/电脑摄像头权限正常'},
-          {name: '设备连接', status: 'ok', message: '当前访问设备摄像头可以打开'}
+          {name: '设备连接', status: 'ok', message: reused ? 'FaceSign正在使用当前摄像头，连接正常' : '当前访问设备摄像头可以打开'}
         ]
       });
       toast('当前访问设备摄像头测试成功');
