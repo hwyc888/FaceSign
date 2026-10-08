@@ -162,3 +162,8 @@ The sound control now means **the microphone that belongs to the selected camera
 - RTSP camera: sound still comes from the audio track embedded in that camera's RTSP stream.
 
 Audio remains off by default and enabling/disabling it does not change the existing video or face-recognition path.
+
+
+### Browser camera microphone permission and pairing
+
+For the **current-device/browser camera**, clicking the sound button now first requests microphone permission, immediately releases that temporary track, and then re-enumerates devices. Browsers may hide microphone labels and grouping metadata until microphone access has been granted. FaceSign then requests an audio source with the camera's exact `groupId` when supported. On Windows USB composite cameras that expose separate group IDs, a strict unique camera/microphone name match is used as a fallback. FaceSign still refuses to silently substitute an unrelated Realtek/system microphone.

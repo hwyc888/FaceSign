@@ -436,7 +436,38 @@ function stopCameraAudio(resetEnabled = true) {
   syncCameraAudioControls();
 }
 
-async function findCurrentCameraMicrophone() {
+function normalizedCameraAudioTokens(label) {
+  const ignore = new Set([
+    'audio', 'camera', 'device', 'hd', 'integrated', 'mic', 'microphone',
+    'pc', 'usb', 'uvc', 'video', 'webcam'
+  ]);
+  return String(label || '')
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ')
+    .trim()
+    .split(/\s+/)
+    .filter(token => token.length >= 3 && !ignore.has(token));
+}
+
+function cameraMicrophoneLabelScore(videoLabel, audioLabel) {
+  const videoTokens = normalizedCameraAudioTokens(videoLabel);
+  const audioTokens = new Set(normalizedCameraAudioTokens(audioLabel));
+  let score = 0;
+  for (const token of videoTokens) {
+    if (audioTokens.has(token)) score += token.length;
+  }
+  return score;
+}
+
+async function unlockMicrophoneDeviceMetadata() {
+  const permissionStream = await navigator.mediaDevices.getUserMedia({
+    video: false,
+    audio: true
+  });
+  permissionStream.getTracks().forEach(track => track.stop());
+}
+
+async function currentCameraDeviceContext() {
   if (!stream) throw new Error('当前摄像头视频尚未打开');
   if (!navigator.mediaDevices?.enumerateDevices) throw new Error('当前浏览器不支持设备关联检测');
 
@@ -449,34 +480,85 @@ async function findCurrentCameraMicrophone() {
     ((settings.deviceId && device.deviceId === settings.deviceId) ||
       (videoTrack.label && device.label === videoTrack.label))
   );
-  const groupId = String(videoDevice?.groupId || settings.groupId || '').trim();
-  if (!groupId) {
-    throw new Error('浏览器没有提供该摄像头的设备组信息，无法安全判断哪个麦克风属于这只摄像头');
+  return {
+    videoTrack,
+    settings,
+    devices,
+    videoDevice,
+    groupId: String(settings.groupId || videoDevice?.groupId || '').trim()
+  };
+}
+
+async function openCurrentCameraMicrophone() {
+  await unlockMicrophoneDeviceMetadata();
+  const context = await currentCameraDeviceContext();
+  const supported = navigator.mediaDevices.getSupportedConstraints?.() || {};
+
+  if (context.groupId && supported.groupId) {
+    try {
+      const grouped = await navigator.mediaDevices.getUserMedia({
+        video: false,
+        audio: {groupId: {exact: context.groupId}}
+      });
+      const audioTrack = grouped.getAudioTracks()[0];
+      if (audioTrack) return {stream: grouped, label: audioTrack.label || '同设备麦克风'};
+      grouped.getTracks().forEach(track => track.stop());
+    } catch (error) {
+      if (!['OverconstrainedError', 'NotFoundError'].includes(error?.name)) throw error;
+    }
   }
 
-  const microphone = devices.find(device =>
-    device.kind === 'audioinput' &&
-    device.groupId === groupId
-  );
-  if (!microphone) {
-    throw new Error('没有找到与当前摄像头属于同一硬件设备的麦克风；不会自动改用电脑其他麦克风');
+  const refreshed = await currentCameraDeviceContext();
+  const groupedMic = refreshed.groupId
+    ? refreshed.devices.find(device => device.kind === 'audioinput' && device.groupId === refreshed.groupId)
+    : null;
+  if (groupedMic?.deviceId) {
+    const grouped = await navigator.mediaDevices.getUserMedia({
+      video: false,
+      audio: {deviceId: {exact: groupedMic.deviceId}}
+    });
+    return {stream: grouped, label: groupedMic.label || '同设备麦克风'};
   }
-  return microphone;
+
+  const audioInputs = refreshed.devices.filter(device => device.kind === 'audioinput' && device.deviceId);
+  const scored = audioInputs
+    .map(device => ({
+      device,
+      score: cameraMicrophoneLabelScore(refreshed.videoTrack.label || refreshed.videoDevice?.label, device.label)
+    }))
+    .filter(item => item.score > 0)
+    .sort((a, b) => b.score - a.score);
+
+  if (scored.length && (scored.length === 1 || scored[0].score > scored[1].score)) {
+    const selected = scored[0].device;
+    const matched = await navigator.mediaDevices.getUserMedia({
+      video: false,
+      audio: {deviceId: {exact: selected.deviceId}}
+    });
+    return {stream: matched, label: selected.label || '摄像头麦克风'};
+  }
+
+  const visibleNames = audioInputs
+    .map(device => String(device.label || '').trim())
+    .filter(Boolean)
+    .slice(0, 6);
+  const suffix = visibleNames.length ? '；当前可见麦克风：' + visibleNames.join('、') : '';
+  throw new Error('已获得麦克风权限，但浏览器仍无法可靠关联这只摄像头自己的麦克风' + suffix);
+}
+
+async function findCurrentCameraMicrophone() {
+  const opened = await openCurrentCameraMicrophone();
+  cameraAudioLocalStream = opened.stream;
+  return opened;
 }
 
 async function startCurrentCameraMicrophone() {
   // Request audio only after the user explicitly clicks "声音：关/开".
   // The camera video stream is left untouched, so recognition/rendering behavior stays unchanged.
   const microphone = await findCurrentCameraMicrophone();
-  const audioStream = await navigator.mediaDevices.getUserMedia({
-    video: false,
-    audio: {deviceId: {exact: microphone.deviceId}}
-  });
-  cameraAudioLocalStream = audioStream;
-
   const player = $('#cameraAudioPlayer');
   if (!player) throw new Error('声音播放器未初始化');
-  player.srcObject = audioStream;
+  player.srcObject = microphone.stream;
   player.volume = cameraAudioVolume;
   player.muted = false;
   await player.play();
