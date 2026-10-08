@@ -1042,6 +1042,55 @@ function localVideoConstraints(camera) {
   return {video, audio: false};
 }
 
+function browserCameraOpenErrorIsRetryable(error) {
+  const name = String(error?.name || '');
+  const message = String(error?.message || '').toLowerCase();
+  return ['NotFoundError', 'OverconstrainedError', 'NotReadableError', 'AbortError'].includes(name) ||
+    message.includes('requested device not found') ||
+    message.includes('could not start video source') ||
+    message.includes('device in use');
+}
+
+async function openBrowserCameraStream(camera) {
+  if (!navigator.mediaDevices?.getUserMedia) {
+    throw new Error('当前浏览器不支持摄像头访问');
+  }
+
+  // A previous opt-in microphone stream can keep some USB composite camera
+  // drivers busy. Always release audio before reacquiring browser video.
+  stopCameraAudio(true);
+  if (stream) {
+    stream.getTracks().forEach(track => track.stop());
+    stream = null;
+  }
+
+  const attempts = [localVideoConstraints(camera)];
+  const device = String(camera.device_id || '').trim();
+  if (device && device !== 'user' && device !== 'environment') {
+    attempts.push(localVideoConstraints({...camera, device_id: ''}));
+  }
+  attempts.push({video: true, audio: false});
+
+  let lastError = null;
+  for (let index = 0; index < attempts.length; index++) {
+    try {
+      const opened = await navigator.mediaDevices.getUserMedia(attempts[index]);
+      return {stream: opened, fallback: index > 0};
+    } catch (error) {
+      lastError = error;
+      if (!browserCameraOpenErrorIsRetryable(error)) throw error;
+      try {
+        await navigator.mediaDevices.enumerateDevices?.();
+      } catch {}
+      if (index + 1 < attempts.length) {
+        await new Promise(resolve => setTimeout(resolve, 120));
+      }
+    }
+  }
+
+  throw lastError || new Error('当前浏览器没有可用摄像头');
+}
+
 async function startCamera() {
   if (cameraOpen) {
     if (activeCamera?.kind !== 'browser') {
@@ -1070,19 +1119,13 @@ async function startCamera() {
       startNetworkPreview();
     } else {
       switchCameraViews(false);
-      try {
-        if (!window.isSecureContext) {
-          throw new Error('当前访问设备摄像头需要 HTTPS 安全连接；请使用 FaceSign 的 https:// 地址，并先安装 FaceSign 根证书');
-        }
-        stream = await navigator.mediaDevices.getUserMedia(localVideoConstraints(activeCamera));
-      } catch (e) {
-        if (activeCamera.device_id && (e.name === 'NotFoundError' || e.name === 'OverconstrainedError')) {
-          const fallback = {...activeCamera, device_id: ''};
-          stream = await navigator.mediaDevices.getUserMedia(localVideoConstraints(fallback));
-          toast('当前访问设备的已选摄像头未找到，已临时使用系统默认摄像头');
-        } else {
-          throw e;
-        }
+      if (!window.isSecureContext) {
+        throw new Error('当前访问设备摄像头需要 HTTPS 安全连接；请使用 FaceSign 的 https:// 地址，并先安装 FaceSign 根证书');
+      }
+      const opened = await openBrowserCameraStream(activeCamera);
+      stream = opened.stream;
+      if (opened.fallback) {
+        toast('当前访问设备的原摄像头暂不可用，已自动切换到浏览器可用摄像头');
       }
       cameraOpen = true;
       await attachCameraViews();

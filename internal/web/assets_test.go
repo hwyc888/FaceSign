@@ -733,6 +733,28 @@ func TestNetworkCameraUsesWebRTCH264H265WithMJPEGFallbackAndDirectRecognition(t 
 	}
 }
 
+func TestBrowserCameraOpenRecoversWithoutEnablingAudio(t *testing.T) {
+	cameraData, err := assets.ReadFile("assets/js/camera.js")
+	if err != nil { t.Fatal(err) }
+	script := string(cameraData)
+	for _, want := range []string{
+		"function browserCameraOpenErrorIsRetryable(",
+		"function openBrowserCameraStream(",
+		"stopCameraAudio(true)",
+		"attempts.push({video: true, audio: false})",
+		"'NotReadableError'",
+		"'AbortError'",
+		"message.includes('requested device not found')",
+		"await new Promise(resolve => setTimeout(resolve, 120))",
+		"const opened = await openBrowserCameraStream(activeCamera)",
+		"return {video, audio: false}",
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("browser camera recovery missing %q", want)
+		}
+	}
+}
+
 func TestCameraAudioIsOptInAndDoesNotReplaceVideoPreview(t *testing.T) {
 	htmlData, err := assets.ReadFile("assets/index.html")
 	if err != nil { t.Fatal(err) }
