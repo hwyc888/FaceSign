@@ -8,7 +8,6 @@ import (
 	"io"
 	"net/http"
 	"os/exec"
-	"regexp"
 	"runtime"
 	"strings"
 	"time"
@@ -21,17 +20,29 @@ type hostCameraDevice struct {
 	Name string `json:"name"`
 }
 
-var (
-	dshowVideoDeviceLine = regexp.MustCompile(`"([^"]+)"\s+\(video\)`)
-	dshowAltDeviceLine   = regexp.MustCompile(`Alternative name\s+"([^"]+)"`)
-)
+func dshowQuotedValue(line string) string {
+	start := strings.IndexByte(line, '"')
+	if start < 0 {
+		return ""
+	}
+	rest := line[start+1:]
+	end := strings.IndexByte(rest, '"')
+	if end < 0 {
+		return ""
+	}
+	return strings.TrimSpace(rest[:end])
+}
 
 func parseDShowVideoDevices(output string) []hostCameraDevice {
 	lines := strings.Split(strings.ReplaceAll(output, "\r\n", "\n"), "\n")
 	devices := make([]hostCameraDevice, 0, 4)
 	videoSection := false
 	last := -1
-	for _, line := range lines {
+	for _, rawLine := range lines {
+		line := strings.TrimSpace(rawLine)
+		if closeBracket := strings.IndexByte(line, ']'); closeBracket >= 0 {
+			line = strings.TrimSpace(line[closeBracket+1:])
+		}
 		lower := strings.ToLower(line)
 		if strings.Contains(lower, "directshow video devices") {
 			videoSection = true
@@ -46,20 +57,26 @@ func parseDShowVideoDevices(output string) []hostCameraDevice {
 		if !videoSection {
 			continue
 		}
-		if match := dshowVideoDeviceLine.FindStringSubmatch(line); len(match) == 2 {
-			name := strings.TrimSpace(match[1])
-			if name == "" {
-				continue
+		if strings.HasPrefix(lower, "alternative name") {
+			if last >= 0 {
+				if id := dshowQuotedValue(line); id != "" {
+					devices[last].ID = id
+				}
 			}
-			devices = append(devices, hostCameraDevice{ID: name, Name: name})
-			last = len(devices) - 1
 			continue
 		}
-		if match := dshowAltDeviceLine.FindStringSubmatch(line); len(match) == 2 && last >= 0 {
-			if id := strings.TrimSpace(match[1]); id != "" {
-				devices[last].ID = id
-			}
+		if !strings.HasPrefix(line, """) {
+			continue
 		}
+		// FFmpeg output differs by build/version: some builds append "(video)"
+		// after the friendly name, while others print only the quoted name.
+		// The section heading already identifies these as video devices.
+		name := dshowQuotedValue(line)
+		if name == "" {
+			continue
+		}
+		devices = append(devices, hostCameraDevice{ID: name, Name: name})
+		last = len(devices) - 1
 	}
 	seen := make(map[string]bool, len(devices))
 	out := devices[:0]
@@ -97,9 +114,13 @@ func listHostCameraDevices(ctx context.Context) ([]hostCameraDevice, error) {
 		return nil, ctx.Err()
 	}
 	if runErr != nil {
-		return nil, errors.New("FaceSign电脑未检测到可用的USB摄像头；请确认摄像头已连接、Windows隐私设置允许桌面应用访问摄像头；如果本机能用但远程访问检测不到，请用新版 FaceSignManager.exe 重新执行“安装/注册本目录”，把旧 SYSTEM 后台任务迁移到当前登录用户会话")
+		lowerOutput := strings.ToLower(string(output))
+		if strings.Contains(lowerOutput, "directshow video devices") {
+			return nil, errors.New("FFmpeg 已进入 DirectShow 视频设备枚举，但没有返回任何摄像头条目；请关闭可能占用摄像头的软件，并检查 Windows 摄像头驱动与“允许桌面应用访问摄像头”权限")
+		}
+		return nil, errors.New("FaceSign电脑无法枚举DirectShow摄像头；请确认USB摄像头已连接、Windows隐私设置允许桌面应用访问摄像头，并用新版 FaceSignManager.exe 重新执行“安装/注册本目录”")
 	}
-	return nil, errors.New("FaceSign电脑未检测到可用的USB摄像头；请用 FaceSignManager.exe 重新执行“安装/注册本目录”并确保当前Windows用户保持登录")
+	return nil, errors.New("FaceSign电脑未检测到可用的USB摄像头；请检查摄像头驱动和Windows摄像头权限")
 }
 
 func resolveHostCameraDevice(ctx context.Context, configured string) (hostCameraDevice, bool, error) {
