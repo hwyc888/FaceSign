@@ -109,14 +109,30 @@ func hostAudioMatchScore(videoName, audioName string) int {
 
 func selectHostAudioDevice(ctx context.Context, camera store.Camera) (hostCameraDevice, error) {
 	devices, err := listHostAudioDevices(ctx)
-	if err != nil { return hostCameraDevice{}, err }
-	if len(devices) == 1 { return devices[0], nil }
-	videoName := ""
-	if video, _, resolveErr := resolveHostCameraDevice(ctx, camera.DeviceID); resolveErr == nil { videoName = video.Name }
-	best := devices[0]
-	bestScore := hostAudioMatchScore(videoName, best.Name)
-	for _, device := range devices[1:] {
-		if score := hostAudioMatchScore(videoName, device.Name); score > bestScore { best = device; bestScore = score }
+	if err != nil {
+		return hostCameraDevice{}, err
+	}
+
+	video, _, err := resolveHostCameraDevice(ctx, camera.DeviceID)
+	if err != nil {
+		return hostCameraDevice{}, errors.New("无法确认当前USB摄像头，不能安全匹配它自己的麦克风")
+	}
+	videoName := strings.TrimSpace(video.Name)
+	if videoName == "" {
+		return hostCameraDevice{}, errors.New("当前USB摄像头没有可用于匹配麦克风的设备名称")
+	}
+
+	best := hostCameraDevice{}
+	bestScore := 0
+	for _, device := range devices {
+		score := hostAudioMatchScore(videoName, device.Name)
+		if score > bestScore {
+			best = device
+			bestScore = score
+		}
+	}
+	if bestScore <= 0 {
+		return hostCameraDevice{}, errors.New("没有找到与当前USB摄像头匹配的麦克风；FaceSign不会自动改用Realtek或其他电脑麦克风")
 	}
 	return best, nil
 }

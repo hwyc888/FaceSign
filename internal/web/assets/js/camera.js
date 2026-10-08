@@ -3,6 +3,7 @@ let networkPreviewGeneration = 0;
 let networkPreviewPeer = null;
 let networkPreviewWatchdogTimer = null;
 let cameraAudioPeer = null;
+let cameraAudioLocalStream = null;
 let cameraAudioGeneration = 0;
 let cameraAudioEnabled = false;
 let cameraAudioVolume = 0.6;
@@ -385,7 +386,7 @@ setupCameraFullscreenHandlers();
 
 function cameraAudioSupported() {
   if (!cameraOpen || !activeCamera) return false;
-  if (activeCamera.kind === 'local') return true;
+  if (activeCamera.kind === 'browser' || activeCamera.kind === 'local') return true;
   return activeCamera.kind === 'network' && String(activeCamera.protocol || '').toLowerCase() === 'rtsp';
 }
 
@@ -397,7 +398,7 @@ function syncCameraAudioControls() {
     button.classList.toggle('active', cameraAudioEnabled);
     button.title = supported
       ? '默认关闭；点击后才从摄像头获取声音'
-      : '声音监听仅支持RTSP网络摄像头和FaceSign主机USB摄像头';
+      : '声音监听支持当前摄像头配套麦克风、FaceSign主机USB摄像头麦克风和RTSP摄像头音轨';
   });
   document.querySelectorAll('[data-camera-volume]').forEach(input => {
     input.value = String(Math.round(cameraAudioVolume * 100));
@@ -416,6 +417,10 @@ function closeCameraAudioPeer() {
     peer.onconnectionstatechange = null;
     try { peer.close(); } catch {}
   }
+  if (cameraAudioLocalStream) {
+    cameraAudioLocalStream.getTracks().forEach(track => track.stop());
+    cameraAudioLocalStream = null;
+  }
   const player = $('#cameraAudioPlayer');
   if (player) {
     player.pause();
@@ -431,12 +436,65 @@ function stopCameraAudio(resetEnabled = true) {
   syncCameraAudioControls();
 }
 
+async function findCurrentCameraMicrophone() {
+  if (!stream) throw new Error('当前摄像头视频尚未打开');
+  if (!navigator.mediaDevices?.enumerateDevices) throw new Error('当前浏览器不支持设备关联检测');
+
+  const videoTrack = stream.getVideoTracks()[0];
+  if (!videoTrack) throw new Error('当前摄像头没有可用的视频轨');
+  const settings = videoTrack.getSettings?.() || {};
+  const devices = await navigator.mediaDevices.enumerateDevices();
+  const videoDevice = devices.find(device =>
+    device.kind === 'videoinput' &&
+    ((settings.deviceId && device.deviceId === settings.deviceId) ||
+      (videoTrack.label && device.label === videoTrack.label))
+  );
+  const groupId = String(videoDevice?.groupId || settings.groupId || '').trim();
+  if (!groupId) {
+    throw new Error('浏览器没有提供该摄像头的设备组信息，无法安全判断哪个麦克风属于这只摄像头');
+  }
+
+  const microphone = devices.find(device =>
+    device.kind === 'audioinput' &&
+    device.groupId === groupId
+  );
+  if (!microphone) {
+    throw new Error('没有找到与当前摄像头属于同一硬件设备的麦克风；不会自动改用电脑其他麦克风');
+  }
+  return microphone;
+}
+
+async function startCurrentCameraMicrophone() {
+  // Request audio only after the user explicitly clicks "声音：关/开".
+  // The camera video stream is left untouched, so recognition/rendering behavior stays unchanged.
+  const microphone = await findCurrentCameraMicrophone();
+  const audioStream = await navigator.mediaDevices.getUserMedia({
+    video: false,
+    audio: {deviceId: {exact: microphone.deviceId}}
+  });
+  cameraAudioLocalStream = audioStream;
+
+  const player = $('#cameraAudioPlayer');
+  if (!player) throw new Error('声音播放器未初始化');
+  player.srcObject = audioStream;
+  player.volume = cameraAudioVolume;
+  player.muted = false;
+  await player.play();
+  return '摄像头麦克风：' + (microphone.label || '同设备麦克风');
+}
+
 async function startCameraAudio() {
-  if (!cameraAudioSupported()) throw new Error('当前摄像头不支持远程声音监听');
-  if (!window.RTCPeerConnection) throw new Error('当前浏览器不支持WebRTC声音');
+  if (!cameraAudioSupported()) throw new Error('当前摄像头不支持声音监听');
 
   const generation = ++cameraAudioGeneration;
   closeCameraAudioPeer();
+
+  if (activeCamera?.kind === 'browser') {
+    if (!navigator.mediaDevices?.getUserMedia) throw new Error('当前浏览器不支持摄像头麦克风');
+    return await startCurrentCameraMicrophone();
+  }
+
+  if (!window.RTCPeerConnection) throw new Error('当前浏览器不支持WebRTC声音');
   const peer = new RTCPeerConnection();
   cameraAudioPeer = peer;
   peer.addTransceiver('audio', {direction: 'recvonly'});

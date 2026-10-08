@@ -46,3 +46,13 @@ func TestHostAudioMatchScorePrefersMatchingUSBDevice(t *testing.T) {
 		t.Fatalf("expected matching USB audio score %d > unrelated score %d", usb, realtek)
 	}
 }
+
+
+func TestHostAudioMatchScoreRejectsUnrelatedSystemMicrophone(t *testing.T) {
+	if score := hostAudioMatchScore("Logitech C270", "Microphone (Realtek Audio)"); score != 0 {
+		t.Fatalf("unrelated system microphone score=%d want 0", score)
+	}
+	if score := hostAudioMatchScore("USB2.0 Camera", "Microphone (USB Audio Device)"); score <= 0 {
+		t.Fatalf("generic USB camera microphone should still match, score=%d", score)
+	}
+}

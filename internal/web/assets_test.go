@@ -744,7 +744,11 @@ func TestCameraAudioIsOptInAndDoesNotReplaceVideoPreview(t *testing.T) {
 	cameraData, err := assets.ReadFile("assets/js/camera.js")
 	if err != nil { t.Fatal(err) }
 	script := string(cameraData)
-	for _, want := range []string{"let cameraAudioEnabled = false", "let cameraAudioVolume = 0.6", "function cameraAudioSupported()", "addTransceiver('audio', {direction: 'recvonly'})", "/api/cameras/${activeCamera.id}/audio-webrtc", "function stopCameraAudio(resetEnabled = true)", "stopCameraAudio(true)", "function startWebRTCPreview(", "function startMJPEGPreviewFallback("} {
+	for _, want := range []string{"let cameraAudioEnabled = false", "let cameraAudioVolume = 0.6", "function cameraAudioSupported()", "addTransceiver('audio', {direction: 'recvonly'})", "/api/cameras/${activeCamera.id}/audio-webrtc", "function stopCameraAudio(resetEnabled = true)", "stopCameraAudio(true)", "function startWebRTCPreview(", "function startMJPEGPreviewFallback(",
+		"function findCurrentCameraMicrophone()",
+		"device.groupId === groupId",
+		"不会自动改用电脑其他麦克风",
+		"activeCamera?.kind === 'browser'"} {
 		if !strings.Contains(script, want) { t.Fatalf("camera audio opt-in logic missing %q", want) }
 	}
 

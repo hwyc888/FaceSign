@@ -151,3 +151,14 @@ Live camera audio is **off by default**. Clicking **声音：关/开** creates a
 - RTSP network cameras: FaceSign reads the audio track from the same RTSP stream and converts it to WebRTC Opus only after sound is enabled.
 - FaceSign host USB cameras: FaceSign enumerates Windows DirectShow audio inputs only after sound is enabled and prefers an input whose device name best matches the selected USB camera.
 - Current-browser cameras and Camera Agent stay video-only to avoid microphone feedback and to preserve their existing behavior.
+
+
+### Camera microphone association
+
+The sound control now means **the microphone that belongs to the selected camera**, not an arbitrary PC recording input.
+
+- Current-browser camera: after the user enables sound, FaceSign uses the browser's MediaDeviceInfo `groupId` to find an `audioinput` in the same physical device group as the active `videoinput`. If no same-group microphone exists, sound stays off and FaceSign does not fall back to another microphone.
+- FaceSign host USB camera: the server only accepts a DirectShow audio input that positively matches the selected USB camera name/device tokens. An unrelated Realtek/laptop microphone is no longer selected as a fallback.
+- RTSP camera: sound still comes from the audio track embedded in that camera's RTSP stream.
+
+Audio remains off by default and enabling/disabling it does not change the existing video or face-recognition path.
