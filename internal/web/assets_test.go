@@ -750,7 +750,10 @@ func TestCameraAudioIsOptInAndDoesNotReplaceVideoPreview(t *testing.T) {
 		"activeCamera?.kind === 'browser'",
 		"浏览器仍无法可靠关联这只摄像头自己的麦克风",
 		"cameraMicrophoneLabelScore",
-		"audio: {groupId: {exact: context.groupId}}",
+		"function cameraAudioDeviceErrorIsRetryable(",
+		"function openEnumeratedCameraMicrophone(",
+		"audio: {deviceId: {ideal: requestedID}}",
+		"message.includes('requested device not found')",
 		"audio: true",
 		"function unlockMicrophoneDeviceMetadata()"} {
 		if !strings.Contains(script, want) { t.Fatalf("camera audio opt-in logic missing %q", want) }

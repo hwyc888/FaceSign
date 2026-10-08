@@ -456,6 +456,9 @@ function cameraMicrophoneLabelScore(videoLabel, audioLabel) {
   for (const token of videoTokens) {
     if (audioTokens.has(token)) score += token.length;
   }
+  const videoLower = String(videoLabel || '').toLowerCase();
+  const audioLower = String(audioLabel || '').toLowerCase();
+  if (videoLower.includes('usb') && audioLower.includes('usb')) score += 2;
   return score;
 }
 
@@ -489,59 +492,131 @@ async function currentCameraDeviceContext() {
   };
 }
 
-async function openCurrentCameraMicrophone() {
-  await unlockMicrophoneDeviceMetadata();
-  const context = await currentCameraDeviceContext();
-  const supported = navigator.mediaDevices.getSupportedConstraints?.() || {};
+function cameraAudioDeviceErrorIsRetryable(error) {
+  const name = String(error?.name || '');
+  const message = String(error?.message || '').toLowerCase();
+  return ['NotFoundError', 'OverconstrainedError', 'NotReadableError', 'AbortError'].includes(name) ||
+    message.includes('requested device not found');
+}
 
-  if (context.groupId && supported.groupId) {
+async function openEnumeratedCameraMicrophone(device) {
+  const requestedID = String(device?.deviceId || '').trim();
+  if (!requestedID) throw new Error('目标摄像头麦克风没有可用的设备ID');
+
+  const attempts = [
+    {strict: true, audio: {deviceId: {exact: requestedID}}},
+    {strict: false, audio: {deviceId: {ideal: requestedID}}}
+  ];
+  let lastError = null;
+
+  for (const attempt of attempts) {
     try {
-      const grouped = await navigator.mediaDevices.getUserMedia({
+      const opened = await navigator.mediaDevices.getUserMedia({
         video: false,
-        audio: {groupId: {exact: context.groupId}}
+        audio: attempt.audio
       });
-      const audioTrack = grouped.getAudioTracks()[0];
-      if (audioTrack) return {stream: grouped, label: audioTrack.label || '同设备麦克风'};
-      grouped.getTracks().forEach(track => track.stop());
+      const track = opened.getAudioTracks()[0];
+      if (!track) {
+        opened.getTracks().forEach(item => item.stop());
+        continue;
+      }
+
+      if (!attempt.strict) {
+        const settings = track.getSettings?.() || {};
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const actual = devices.find(item =>
+          item.kind === 'audioinput' &&
+          settings.deviceId &&
+          item.deviceId === settings.deviceId
+        );
+        const sameDevice = Boolean(settings.deviceId && settings.deviceId === requestedID);
+        const sameGroup = Boolean(device.groupId &&
+          (settings.groupId === device.groupId || actual?.groupId === device.groupId));
+        const sameLabel = Boolean(device.label && track.label &&
+          normalizedHostDeviceNameForBrowser(device.label) === normalizedHostDeviceNameForBrowser(track.label));
+
+        if (!sameDevice && !sameGroup && !sameLabel) {
+          opened.getTracks().forEach(item => item.stop());
+          continue;
+        }
+      }
+
+      return opened;
     } catch (error) {
-      if (!['OverconstrainedError', 'NotFoundError'].includes(error?.name)) throw error;
+      lastError = error;
+      if (!cameraAudioDeviceErrorIsRetryable(error)) throw error;
     }
   }
 
+  throw lastError || new Error('目标摄像头麦克风当前无法打开');
+}
+
+function normalizedHostDeviceNameForBrowser(name) {
+  return String(name || '').toLowerCase().replace(/\s+/g, ' ').trim();
+}
+
+async function openCurrentCameraMicrophone() {
+  await unlockMicrophoneDeviceMetadata();
   const refreshed = await currentCameraDeviceContext();
-  const groupedMic = refreshed.groupId
-    ? refreshed.devices.find(device => device.kind === 'audioinput' && device.groupId === refreshed.groupId)
-    : null;
-  if (groupedMic?.deviceId) {
-    const grouped = await navigator.mediaDevices.getUserMedia({
-      video: false,
-      audio: {deviceId: {exact: groupedMic.deviceId}}
-    });
-    return {stream: grouped, label: groupedMic.label || '同设备麦克风'};
+  const audioInputs = refreshed.devices.filter(device =>
+    device.kind === 'audioinput' && device.deviceId
+  );
+  const candidates = [];
+
+  if (refreshed.groupId) {
+    for (const device of audioInputs) {
+      if (device.groupId === refreshed.groupId) candidates.push(device);
+    }
   }
 
-  const audioInputs = refreshed.devices.filter(device => device.kind === 'audioinput' && device.deviceId);
   const scored = audioInputs
     .map(device => ({
       device,
-      score: cameraMicrophoneLabelScore(refreshed.videoTrack.label || refreshed.videoDevice?.label, device.label)
+      score: cameraMicrophoneLabelScore(
+        refreshed.videoTrack.label || refreshed.videoDevice?.label,
+        device.label
+      )
     }))
     .filter(item => item.score > 0)
     .sort((a, b) => b.score - a.score);
 
   if (scored.length && (scored.length === 1 || scored[0].score > scored[1].score)) {
     const selected = scored[0].device;
-    const matched = await navigator.mediaDevices.getUserMedia({
-      video: false,
-      audio: {deviceId: {exact: selected.deviceId}}
-    });
-    return {stream: matched, label: selected.label || '摄像头麦克风'};
+    if (!candidates.some(device => device.deviceId === selected.deviceId)) {
+      candidates.push(selected);
+    }
+  }
+
+  let lastError = null;
+  for (const candidate of candidates) {
+    try {
+      const opened = await openEnumeratedCameraMicrophone(candidate);
+      return {stream: opened, label: candidate.label || '摄像头麦克风'};
+    } catch (error) {
+      lastError = error;
+      if (!cameraAudioDeviceErrorIsRetryable(error)) throw error;
+    }
   }
 
   const visibleNames = audioInputs
     .map(device => String(device.label || '').trim())
     .filter(Boolean)
     .slice(0, 6);
+
+  if (candidates.length && lastError) {
+    const candidateNames = candidates
+      .map(device => String(device.label || '').trim())
+      .filter(Boolean)
+      .join('、');
+    const detail = String(lastError?.message || lastError || '设备不可用');
+    throw new Error(
+      '已检测到摄像头麦克风' +
+      (candidateNames ? '（' + candidateNames + '）' : '') +
+      '，但浏览器当前无法打开它：' + detail +
+      '。请确认Windows声音输入中该麦克风已启用，并允许桌面应用/浏览器访问麦克风'
+    );
+  }
+
   const suffix = visibleNames.length ? '；当前可见麦克风：' + visibleNames.join('、') : '';
   throw new Error('已获得麦克风权限，但浏览器仍无法可靠关联这只摄像头自己的麦克风' + suffix);
 }
