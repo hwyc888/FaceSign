@@ -65,7 +65,7 @@ func parseDShowVideoDevices(output string) []hostCameraDevice {
 			}
 			continue
 		}
-		if !strings.HasPrefix(line, """) {
+		if !strings.HasPrefix(line, "\"") {
 			continue
 		}
 		// FFmpeg output differs by build/version: some builds append "(video)"
