@@ -416,8 +416,8 @@ function updateCameraFormVisibility() {
   const custom = network && $('#cameraPreset')?.value === 'custom';
   const showAdvanced = network && (custom || cameraAdvancedOpen);
 
-  $('[data-camera-browser]').forEach(el => el.classList.toggle('hidden', !browser));
-  $('[data-camera-local]').forEach(el => el.classList.toggle('hidden', !local));
+  $$('[data-camera-browser]').forEach(el => el.classList.toggle('hidden', !browser));
+  $$('[data-camera-local]').forEach(el => el.classList.toggle('hidden', !local));
   $$('[data-camera-network]').forEach(el => el.classList.toggle('hidden', !network));
   $$('[data-camera-agent]').forEach(el => el.classList.toggle('hidden', !agent));
   $$('[data-camera-advanced]').forEach(el => el.classList.toggle('hidden', !showAdvanced));
