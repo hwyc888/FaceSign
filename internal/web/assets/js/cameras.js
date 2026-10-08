@@ -127,8 +127,12 @@ function cameraFormPayload() {
     camera_id: editingCameraID || 0,
     name: $('#cameraName').value.trim() || '连接测试',
     kind,
-    device_id: kind === 'local' ? $('#cameraDevice').value : '',
-    protocol: kind === 'local' ? 'usb' : $('#cameraProtocol').value,
+    device_id: kind === 'local'
+      ? $('#cameraDevice').value
+      : kind === 'browser'
+        ? $('#cameraBrowserFacing').value
+        : '',
+    protocol: kind === 'local' ? 'usb' : kind === 'browser' ? 'browser' : $('#cameraProtocol').value,
     stream_url: kind === 'network' ? $('#cameraStreamURL').value.trim() : '',
     snapshot_url: kind === 'network' ? $('#cameraSnapshotURL').value.trim() : '',
     username: kind === 'network' ? $('#cameraUsername').value.trim() : '',
@@ -243,6 +247,32 @@ async function testCurrentCameraConfig() {
   $('#cameraTestChecks').innerHTML = '';
 
   try {
+    if (kind === 'browser') {
+      if (!window.isSecureContext) throw new Error('当前访问设备摄像头需要 HTTPS 安全连接');
+      const camera = {
+        kind: 'browser',
+        width: Number($('#cameraWidth').value || 1280),
+        height: Number($('#cameraHeight').value || 720),
+        fps: Number($('#cameraFPS').value || 30),
+        device_id: $('#cameraBrowserFacing').value
+      };
+      const started = performance.now();
+      const testStream = await navigator.mediaDevices.getUserMedia(localVideoConstraints(camera));
+      const settings = testStream.getVideoTracks()[0]?.getSettings?.() || {};
+      testStream.getTracks().forEach(track => track.stop());
+      renderCameraConnectionTest({
+        ok: true,
+        message: `当前设备摄像头可用：${settings.width || camera.width}×${settings.height || camera.height}`,
+        elapsed_ms: Math.round(performance.now() - started),
+        checks: [
+          {name: '浏览器权限', status: 'ok', message: '当前手机/平板/电脑摄像头权限正常'},
+          {name: '设备连接', status: 'ok', message: '当前访问设备摄像头可以打开'}
+        ]
+      });
+      toast('当前访问设备摄像头测试成功');
+      return;
+    }
+
     if (kind === 'local') {
       const result = await api('/api/cameras/test', {
         method: 'POST',
@@ -290,6 +320,7 @@ async function testCurrentCameraConfig() {
 }
 
 function cameraTypeLabel(camera) {
+  if (camera.kind === 'browser') return '当前访问设备摄像头';
   if (camera.kind === 'local') return 'FaceSign主机 / USB';
   if (camera.kind === 'agent') return '客户端 Camera Agent';
   if (camera.protocol === 'http_snapshot') return '网络 / HTTP抓图';
@@ -299,6 +330,11 @@ function cameraTypeLabel(camera) {
 }
 
 function cameraSourceLabel(camera) {
+  if (camera.kind === 'browser') {
+    if (camera.device_id === 'environment') return '后置摄像头优先';
+    if (camera.device_id === 'user') return '前置摄像头优先';
+    return '当前设备系统默认摄像头';
+  }
   if (camera.kind === 'local') {
     if (!camera.device_id) return 'FaceSign主机第一个可用USB摄像头';
     const found = localCameraDevices.find(device => device.id === camera.device_id);
@@ -373,13 +409,15 @@ function renderLocalCameraDeviceOptions(selected = $('#cameraDevice')?.value || 
 
 function updateCameraFormVisibility() {
   const kind = $('#cameraKind').value;
+  const browser = kind === 'browser';
   const local = kind === 'local';
   const network = kind === 'network';
   const agent = kind === 'agent';
   const custom = network && $('#cameraPreset')?.value === 'custom';
   const showAdvanced = network && (custom || cameraAdvancedOpen);
 
-  $$('[data-camera-local]').forEach(el => el.classList.toggle('hidden', !local));
+  $('[data-camera-browser]').forEach(el => el.classList.toggle('hidden', !browser));
+  $('[data-camera-local]').forEach(el => el.classList.toggle('hidden', !local));
   $$('[data-camera-network]').forEach(el => el.classList.toggle('hidden', !network));
   $$('[data-camera-agent]').forEach(el => el.classList.toggle('hidden', !agent));
   $$('[data-camera-advanced]').forEach(el => el.classList.toggle('hidden', !showAdvanced));
@@ -403,7 +441,8 @@ function resetCameraForm() {
   editingCameraID = 0;
   $('#cameraForm').reset();
   $('#cameraEditID').value = '';
-  $('#cameraKind').value = 'local';
+  $('#cameraKind').value = 'browser';
+  $('#cameraBrowserFacing').value = 'user';
   $('#cameraPreset').value = 'hikvision';
   $('#cameraIP').value = '';
   cameraAdvancedOpen = false;
@@ -433,7 +472,8 @@ function editCamera(id) {
   $('#cameraEditID').value = String(id);
   $('#cameraName').value = camera.name;
   $('#cameraKind').value = camera.kind;
-  renderLocalCameraDeviceOptions(camera.device_id || '');
+  renderLocalCameraDeviceOptions(camera.kind === 'local' ? (camera.device_id || '') : '');
+  $('#cameraBrowserFacing').value = camera.kind === 'browser' ? (camera.device_id || 'user') : 'user';
   const presetID = camera.kind === 'network' ? cameraPresetFromCamera(camera) : 'hikvision';
   $('#cameraPreset').value = presetID;
   $('#cameraIP').value = camera.kind === 'network' ? cameraIPFromCamera(camera) : '';
@@ -499,7 +539,20 @@ async function testCamera(id) {
       headline.className = 'camera-test-headline testing';
     }
     $('#cameraTestChecks').innerHTML = '';
-    if (camera.kind === 'local') {
+    if (camera.kind === 'browser') {
+      if (!window.isSecureContext) throw new Error('当前访问设备摄像头需要 HTTPS 安全连接');
+      const testStream = await navigator.mediaDevices.getUserMedia(localVideoConstraints(camera));
+      const settings = testStream.getVideoTracks()[0]?.getSettings?.() || {};
+      testStream.getTracks().forEach(track => track.stop());
+      renderCameraConnectionTest({
+        ok: true,
+        message: `当前访问设备摄像头“${camera.name}”连接成功：${settings.width || camera.width}×${settings.height || camera.height}`,
+        checks: [
+          {name: '浏览器权限', status: 'ok', message: '当前设备摄像头权限正常'},
+          {name: '设备连接', status: 'ok', message: '当前手机/平板/电脑摄像头可以打开'}
+        ]
+      });
+    } else if (camera.kind === 'local') {
       const blob = await fetchCameraFrameBlob(camera.id);
       if (cameraTestPreviewURL) URL.revokeObjectURL(cameraTestPreviewURL);
       cameraTestPreviewURL = URL.createObjectURL(blob);
@@ -551,6 +604,7 @@ $('#cameraKind').addEventListener('change', () => {
   }
   if ($('#cameraKind').value === 'agent' && !editingCameraID) $('#cameraFPS').value = '2';
   if ($('#cameraKind').value === 'local' && !editingCameraID) $('#cameraFPS').value = '30';
+  if ($('#cameraKind').value === 'browser' && !editingCameraID) $('#cameraFPS').value = '30';
   updateCameraFormVisibility();
 });
 

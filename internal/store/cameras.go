@@ -89,6 +89,27 @@ func normalizeCameraInput(in CameraInput) (CameraInput, error) {
 		if in.FPS < 1 || in.FPS > 60 {
 			return CameraInput{}, errors.New("本机摄像头帧率必须在1到60之间")
 		}
+	case "browser":
+		in.Protocol = "browser"
+		in.StreamURL = ""
+		in.SnapshotURL = ""
+		in.Username = ""
+		in.Password = ""
+		in.AuthMode = "none"
+		in.AgentID = ""
+		in.AgentSecretHash = ""
+		in.TLSInsecure = false
+		switch in.DeviceID {
+		case "", "user", "environment":
+		default:
+			return CameraInput{}, errors.New("当前访问设备摄像头方向只支持自动、前置或后置")
+		}
+		if in.FPS == 0 {
+			in.FPS = 30
+		}
+		if in.FPS < 1 || in.FPS > 60 {
+			return CameraInput{}, errors.New("当前访问设备摄像头帧率必须在1到60之间")
+		}
 	case "network":
 		in.AgentID = ""
 		in.AgentSecretHash = ""
@@ -165,7 +186,7 @@ func normalizeCameraInput(in CameraInput) (CameraInput, error) {
 			return CameraInput{}, errors.New("客户端代理帧率必须在1到10之间")
 		}
 	default:
-		return CameraInput{}, errors.New("摄像头类型只支持FaceSign主机USB、服务器直连网络摄像头或客户端代理")
+		return CameraInput{}, errors.New("摄像头类型只支持当前访问设备、FaceSign主机USB、服务器直连网络摄像头或客户端代理")
 	}
 	return in, nil
 }

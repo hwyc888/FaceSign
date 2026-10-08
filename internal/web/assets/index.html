@@ -346,7 +346,7 @@
           <div class="card-head">
             <div>
               <h2>摄像头管理</h2>
-              <p class="muted compact">“FaceSign主机 / USB”始终读取运行FaceSign这台电脑上的USB摄像头，因此手机或其他电脑访问时看到的仍是主机摄像头，不会改用手机摄像头。也支持服务器直连网络摄像头或 Camera Agent。</p>
+              <p class="muted compact">可以自由选择“当前访问设备摄像头”或“FaceSign主机 / USB”。前者在手机上调用手机摄像头，在电脑上调用该电脑浏览器摄像头；后者始终读取运行FaceSign程序那台电脑的USB摄像头。也支持服务器直连网络摄像头或 Camera Agent。</p>
             </div>
             <button id="refreshLocalCameras" type="button">检测FaceSign电脑USB</button>
           </div>
@@ -359,12 +359,21 @@
             </label>
             <label>类型
               <select id="cameraKind">
+                <option value="browser">当前访问设备摄像头（手机/平板/本机浏览器）</option>
                 <option value="local">FaceSign主机 / USB摄像头</option>
                 <option value="network">网络摄像头（服务器直连）</option>
                 <option value="agent">客户端 Camera Agent</option>
               </select>
             </label>
-            <label data-camera-local>FaceSign电脑USB设备
+            <label data-camera-browser>当前设备摄像头方向
+              <select id="cameraBrowserFacing">
+                <option value="user">前置摄像头优先（推荐刷脸）</option>
+                <option value="environment">后置摄像头优先</option>
+                <option value="">系统默认摄像头</option>
+              </select>
+              <small>此模式使用正在访问网页的设备摄像头。手机打开时就是手机摄像头；电脑打开时就是该电脑的浏览器摄像头。</small>
+            </label>
+            <label data-camera-local class="hidden">FaceSign电脑USB设备
               <select id="cameraDevice"><option value="">自动选择FaceSign主机第一个USB摄像头</option></select>
               <small>这里列出的是运行FaceSign程序那台电脑的摄像头，不是当前手机/浏览器的摄像头。</small>
             </label>

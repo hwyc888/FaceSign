@@ -670,8 +670,14 @@ function localVideoConstraints(camera) {
     height: {ideal: Number(camera.height || 720)},
     frameRate: {ideal: Number(camera.fps || 30)}
   };
-  if (camera.device_id) video.deviceId = {exact: camera.device_id};
-  else video.facingMode = 'user';
+  const device = String(camera.device_id || '').trim();
+  if (camera.kind === 'browser' && (device === 'user' || device === 'environment')) {
+    video.facingMode = {ideal: device};
+  } else if (device) {
+    video.deviceId = {exact: device};
+  } else {
+    video.facingMode = {ideal: 'user'};
+  }
   return {video, audio: false};
 }
 

@@ -1077,6 +1077,41 @@ func TestRecognitionCadenceProtectsPreviewWithoutAddingInferenceDelay(t *testing
 }
 
 
+func TestBrowserAndHostUSBCamerasCanBothBeConfigured(t *testing.T) {
+	htmlData, err := assets.ReadFile("assets/index.html")
+	if err != nil { t.Fatal(err) }
+	html := string(htmlData)
+	for _, want := range []string{
+		`<option value="browser">当前访问设备摄像头（手机/平板/本机浏览器）</option>`,
+		`id="cameraBrowserFacing"`,
+		"前置摄像头优先",
+		"后置摄像头优先",
+		"手机打开时就是手机摄像头",
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("browser camera option missing %q", want)
+		}
+	}
+
+	cameraData, err := assets.ReadFile("assets/js/camera.js")
+	if err != nil { t.Fatal(err) }
+	cameraScript := string(cameraData)
+	for _, want := range []string{"camera.kind === 'browser'", "video.facingMode = {ideal: device}", "navigator.mediaDevices.getUserMedia"} {
+		if !strings.Contains(cameraScript, want) {
+			t.Fatalf("browser camera runtime missing %q", want)
+		}
+	}
+
+	settingsData, err := assets.ReadFile("assets/js/cameras.js")
+	if err != nil { t.Fatal(err) }
+	settingsScript := string(settingsData)
+	for _, want := range []string{"kind === 'browser'", "cameraBrowserFacing", "当前访问设备摄像头测试成功"} {
+		if !strings.Contains(settingsScript, want) {
+			t.Fatalf("browser camera settings missing %q", want)
+		}
+	}
+}
+
 func TestHostUSBCameraAndMobileCardLayoutAreEmbedded(t *testing.T) {
 	htmlData, err := assets.ReadFile("assets/index.html")
 	if err != nil { t.Fatal(err) }

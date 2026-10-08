@@ -551,6 +551,38 @@ func TestClassAttendanceColumnsMigrate(t *testing.T) {
 }
 
 
+func TestBrowserCameraCanBeSavedAsDefault(t *testing.T) {
+	s, err := Open(filepath.Join(t.TempDir(), "browser-camera.db"))
+	if err != nil { t.Fatal(err) }
+	defer s.Close()
+	ctx := context.Background()
+
+	camera, err := s.CreateCamera(ctx, CameraInput{
+		Name: "手机前置摄像头",
+		Kind: "browser",
+		DeviceID: "user",
+		Width: 1280,
+		Height: 720,
+		FPS: 30,
+		IsDefault: true,
+	})
+	if err != nil { t.Fatal(err) }
+	if camera.Kind != "browser" || camera.Protocol != "browser" || camera.DeviceID != "user" || !camera.IsDefault {
+		t.Fatalf("unexpected browser camera: %#v", camera)
+	}
+
+	if _, err := s.CreateCamera(ctx, CameraInput{
+		Name: "错误浏览器摄像头",
+		Kind: "browser",
+		DeviceID: "not-a-facing-mode",
+		Width: 1280,
+		Height: 720,
+		FPS: 30,
+	}); err == nil {
+		t.Fatal("invalid browser facing mode should fail")
+	}
+}
+
 func TestCameraManagementAndDefaultSelection(t *testing.T) {
 	s, err := Open(filepath.Join(t.TempDir(), "cameras.db"))
 	if err != nil {
