@@ -64,6 +64,28 @@ func TestParseDShowVideoDevicesMixedOutputFormats(t *testing.T) {
 	}
 }
 
+func TestParsePnPCameraLines(t *testing.T) {
+	output := "Integrated Camera\tUSB\\VID_13D3&PID_56BA\\1\r\nUSB Camera\tUSB\\VID_046D&PID_0825\\2\r\n"
+	devices := parsePnPCameraLines(output)
+	if len(devices) != 2 {
+		t.Fatalf("got %d devices: %#v", len(devices), devices)
+	}
+	if devices[0].ID != "Integrated Camera" || devices[0].Name != "Integrated Camera" {
+		t.Fatalf("unexpected first device: %#v", devices[0])
+	}
+	if devices[1].ID != "USB Camera" {
+		t.Fatalf("unexpected second device: %#v", devices[1])
+	}
+}
+
+func TestParsePnPCameraLinesIgnoresBrokenAndDuplicateRows(t *testing.T) {
+	output := "broken\nUSB Camera\tUSB\\VID_1\nUSB Camera\tUSB\\VID_1\n"
+	devices := parsePnPCameraLines(output)
+	if len(devices) != 1 {
+		t.Fatalf("got %d devices: %#v", len(devices), devices)
+	}
+}
+
 func TestHostCameraFFmpegArgsUseDirectShowAndSelectedDevice(t *testing.T) {
 	args := hostCameraFFmpegArgs(store.Camera{Width: 1280, Height: 720, FPS: 30}, "@device_pnp_test")
 	joined := strings.Join(args, " ")

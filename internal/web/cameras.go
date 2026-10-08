@@ -354,14 +354,19 @@ func (s *Server) cameraTest(w http.ResponseWriter, r *http.Request) {
 		if primaryErr != nil {
 			message += "：" + primaryErr.Error()
 		}
+		diagnosticCtx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
+		diagnosticChecks := hostCameraDiagnosticChecks(diagnosticCtx)
+		cancel()
+		checks := []cameraTestCheck{
+			cameraTestCheckItem("参数检查", "ok", "参数格式有效"),
+			cameraTestCheckItem("主机USB设备", "error", message),
+		}
+		checks = append(checks, diagnosticChecks...)
 		writeJSON(w, http.StatusOK, cameraTestResult{
 			OK: false,
 			Message: message,
 			ElapsedMS: time.Since(started).Milliseconds(),
-			Checks: []cameraTestCheck{
-				cameraTestCheckItem("参数检查", "ok", "参数格式有效"),
-				cameraTestCheckItem("主机USB设备", "error", message),
-			},
+			Checks: checks,
 		})
 		return
 	}

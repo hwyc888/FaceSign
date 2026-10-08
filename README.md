@@ -137,3 +137,8 @@ This fixes the old browser-local behavior where opening FaceSign from a phone ca
 The host USB path uses the bundled FFmpeg DirectShow input and one shared capture process for preview and recognition, because many Windows webcams cannot be opened twice at the same time. Windows webcams are session-scoped, so the optional startup task is registered for the currently signed-in desktop user instead of SYSTEM/Session 0. If an older installation still reports no host USB camera, open the new `FaceSignManager.exe` and run **安装/注册本目录** once to migrate the old task. Also confirm the USB camera is connected and Windows Privacy & security -> Camera allows desktop applications to access the camera.
 
 The web UI also has a phone/tablet layout: tablet navigation becomes horizontal, phone navigation moves to the bottom, forms stack to one column, and data tables render as labeled cards on narrow screens.
+
+
+### Host USB camera enumeration fallback
+
+FaceSign first enumerates Windows host cameras through FFmpeg DirectShow. If a Windows/FFmpeg combination returns no DirectShow list, FaceSign also checks Windows Plug and Play Camera/Image devices and uses their friendly names as fallback capture candidates. A failed host-USB connection test reports both **FFmpeg DirectShow** and **Windows PnP** status so it is immediately clear whether the camera is missing at the Windows hardware layer or only unavailable to DirectShow.

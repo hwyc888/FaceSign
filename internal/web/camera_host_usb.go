@@ -91,6 +91,112 @@ func parseDShowVideoDevices(output string) []hostCameraDevice {
 	return out
 }
 
+func listDShowCameraDevices(ctx context.Context, ffmpegPath string) ([]hostCameraDevice, string, error) {
+	var lastOutput string
+	var lastErr error
+	for _, input := range []string{"dummy", "0"} {
+		cmd := exec.CommandContext(ctx, ffmpegPath,
+			"-hide_banner",
+			"-list_devices", "true",
+			"-f", "dshow",
+			"-i", input,
+		)
+		output, err := cmd.CombinedOutput()
+		lastOutput = string(output)
+		lastErr = err
+		if devices := parseDShowVideoDevices(lastOutput); len(devices) > 0 {
+			return devices, lastOutput, nil
+		}
+		if ctx.Err() != nil {
+			return nil, lastOutput, ctx.Err()
+		}
+	}
+	return nil, lastOutput, lastErr
+}
+
+func parsePnPCameraLines(output string) []hostCameraDevice {
+	lines := strings.Split(strings.ReplaceAll(output, "\r\n", "\n"), "\n")
+	devices := make([]hostCameraDevice, 0, 4)
+	seen := map[string]bool{}
+	for _, line := range lines {
+		parts := strings.Split(line, "\t")
+		if len(parts) < 2 {
+			continue
+		}
+		name := strings.TrimSpace(parts[0])
+		instanceID := strings.TrimSpace(parts[1])
+		if name == "" {
+			continue
+		}
+		key := strings.ToLower(name + "\x00" + instanceID)
+		if seen[key] {
+			continue
+		}
+		seen[key] = true
+		devices = append(devices, hostCameraDevice{ID: name, Name: name})
+	}
+	return devices
+}
+
+func listWindowsPnPCameras(ctx context.Context) ([]hostCameraDevice, string, error) {
+	if runtime.GOOS != "windows" {
+		return nil, "", errors.New("PnP camera enumeration is only available on Windows")
+	}
+	script := "$items = Get-PnpDevice -PresentOnly -ErrorAction SilentlyContinue | " +
+		"Where-Object { ($_.Class -eq 'Camera' -or $_.Class -eq 'Image') -and $_.Status -eq 'OK' }; " +
+		"$items | ForEach-Object { [Console]::WriteLine([string]::Concat($_.FriendlyName,[char]9,$_.InstanceId)) }"
+	cmd := exec.CommandContext(ctx,
+		"powershell.exe",
+		"-NoProfile",
+		"-NonInteractive",
+		"-ExecutionPolicy", "Bypass",
+		"-Command", script,
+	)
+	output, err := cmd.CombinedOutput()
+	text := string(output)
+	return parsePnPCameraLines(text), text, err
+}
+
+func deviceNames(devices []hostCameraDevice) string {
+	names := make([]string, 0, len(devices))
+	for _, device := range devices {
+		name := strings.TrimSpace(device.Name)
+		if name != "" {
+			names = append(names, name)
+		}
+	}
+	return strings.Join(names, "、")
+}
+
+func hostCameraDiagnosticChecks(ctx context.Context) []cameraTestCheck {
+	checks := make([]cameraTestCheck, 0, 2)
+	ffmpegPath, ffmpegErr := findFFmpeg()
+	if ffmpegErr != nil {
+		checks = append(checks, cameraTestCheckItem("FFmpeg DirectShow", "error", "未找到可用 FFmpeg："+ffmpegErr.Error()))
+	} else {
+		dshowDevices, _, dshowErr := listDShowCameraDevices(ctx, ffmpegPath)
+		switch {
+		case len(dshowDevices) > 0:
+			checks = append(checks, cameraTestCheckItem("FFmpeg DirectShow", "ok", "已检测到："+deviceNames(dshowDevices)))
+		case dshowErr != nil:
+			checks = append(checks, cameraTestCheckItem("FFmpeg DirectShow", "error", "未枚举到视频设备："+dshowErr.Error()))
+		default:
+			checks = append(checks, cameraTestCheckItem("FFmpeg DirectShow", "error", "命令已执行，但没有返回视频设备"))
+		}
+	}
+
+	pnpDevices, _, pnpErr := listWindowsPnPCameras(ctx)
+	switch {
+	case len(pnpDevices) > 0:
+		checks = append(checks, cameraTestCheckItem("Windows PnP", "ok", "Windows硬件层已检测到："+deviceNames(pnpDevices)))
+	case pnpErr != nil:
+		checks = append(checks, cameraTestCheckItem("Windows PnP", "error", "无法读取Windows摄像头设备："+pnpErr.Error()))
+	default:
+		checks = append(checks, cameraTestCheckItem("Windows PnP", "error", "Windows也没有检测到 Camera/Image 类摄像头"))
+	}
+	return checks
+}
+
 func listHostCameraDevices(ctx context.Context) ([]hostCameraDevice, error) {
 	if runtime.GOOS != "windows" {
 		return nil, errors.New("FaceSign主机USB摄像头当前仅支持Windows")
@@ -99,28 +205,31 @@ func listHostCameraDevices(ctx context.Context) ([]hostCameraDevice, error) {
 	if err != nil {
 		return nil, err
 	}
-	cmd := exec.CommandContext(ctx, ffmpegPath,
-		"-hide_banner",
-		"-list_devices", "true",
-		"-f", "dshow",
-		"-i", "dummy",
-	)
-	output, runErr := cmd.CombinedOutput()
-	devices := parseDShowVideoDevices(string(output))
-	if len(devices) > 0 {
-		return devices, nil
+
+	dshowDevices, dshowOutput, dshowErr := listDShowCameraDevices(ctx, ffmpegPath)
+	if len(dshowDevices) > 0 {
+		return dshowDevices, nil
 	}
 	if ctx.Err() != nil {
 		return nil, ctx.Err()
 	}
-	if runErr != nil {
-		lowerOutput := strings.ToLower(string(output))
-		if strings.Contains(lowerOutput, "directshow video devices") {
-			return nil, errors.New("FFmpeg 已进入 DirectShow 视频设备枚举，但没有返回任何摄像头条目；请关闭可能占用摄像头的软件，并检查 Windows 摄像头驱动与“允许桌面应用访问摄像头”权限")
-		}
-		return nil, errors.New("FaceSign电脑无法枚举DirectShow摄像头；请确认USB摄像头已连接、Windows隐私设置允许桌面应用访问摄像头，并用新版 FaceSignManager.exe 重新执行“安装/注册本目录”")
+
+	pnpDevices, _, pnpErr := listWindowsPnPCameras(ctx)
+	if len(pnpDevices) > 0 {
+		return pnpDevices, nil
 	}
-	return nil, errors.New("FaceSign电脑未检测到可用的USB摄像头；请检查摄像头驱动和Windows摄像头权限")
+
+	lowerOutput := strings.ToLower(dshowOutput)
+	switch {
+	case pnpErr == nil && strings.Contains(lowerOutput, "directshow video devices"):
+		return nil, errors.New("FFmpeg进入了DirectShow设备枚举，但Windows PnP和FFmpeg都没有返回摄像头；请先在设备管理器确认摄像头处于正常状态")
+	case pnpErr == nil:
+		return nil, errors.New("Windows PnP和FFmpeg DirectShow都未检测到摄像头；请检查USB连接、摄像头驱动和Windows摄像头权限")
+	case dshowErr != nil:
+		return nil, fmt.Errorf("无法枚举FaceSign主机USB摄像头：DirectShow=%v；Windows PnP=%v", dshowErr, pnpErr)
+	default:
+		return nil, fmt.Errorf("无法枚举FaceSign主机USB摄像头：Windows PnP=%v", pnpErr)
+	}
 }
 
 func resolveHostCameraDevice(ctx context.Context, configured string) (hostCameraDevice, bool, error) {
