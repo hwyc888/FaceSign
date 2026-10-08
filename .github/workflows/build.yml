@@ -60,6 +60,18 @@ jobs:
           if ($installText -match '(?i)ProgramData\\FaceSign') {
             throw 'Installer must not default to C:\ProgramData\FaceSign; installation must stay in the selected/current directory'
           }
+          if ($installText -match "(?i)-UserId\s+'SYSTEM'") {
+            throw 'Installer must not register FaceSign as SYSTEM because Session 0 cannot reliably access USB cameras'
+          }
+          if ($installText -notmatch '(?i)New-ScheduledTaskTrigger\s+-AtLogOn') {
+            throw 'Installer must register FaceSign with an AtLogOn trigger for the interactive desktop user'
+          }
+          if ($installText -notmatch '(?i)-LogonType\s+Interactive') {
+            throw 'Installer must use an interactive scheduled-task principal for host USB camera access'
+          }
+          if ($installText -notmatch '(?i)Get-FaceSignInteractiveUser') {
+            throw 'Installer must resolve the signed-in Windows user before startup-task registration'
+          }
           go test ./...
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           go vet ./...

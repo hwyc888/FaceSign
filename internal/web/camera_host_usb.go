@@ -97,9 +97,9 @@ func listHostCameraDevices(ctx context.Context) ([]hostCameraDevice, error) {
 		return nil, ctx.Err()
 	}
 	if runErr != nil {
-		return nil, errors.New("FaceSign电脑未检测到可用的USB摄像头；请确认摄像头已连接，并在Windows隐私设置中允许桌面应用访问摄像头")
+		return nil, errors.New("FaceSign电脑未检测到可用的USB摄像头；请确认摄像头已连接、Windows隐私设置允许桌面应用访问摄像头；如果本机能用但远程访问检测不到，请用新版 FaceSignManager.exe 重新执行“安装/注册本目录”，把旧 SYSTEM 后台任务迁移到当前登录用户会话")
 	}
-	return nil, errors.New("FaceSign电脑未检测到可用的USB摄像头")
+	return nil, errors.New("FaceSign电脑未检测到可用的USB摄像头；请用 FaceSignManager.exe 重新执行“安装/注册本目录”并确保当前Windows用户保持登录")
 }
 
 func resolveHostCameraDevice(ctx context.Context, configured string) (hostCameraDevice, bool, error) {

@@ -56,7 +56,7 @@ The PowerShell installer remains available for diagnostics/automation, but its d
 
 The Windows package includes `FaceSignManager.exe`. It runs directly from the extracted folder. When **安装/注册本目录** is used, the same folder is registered as the FaceSign startup location and a **FaceSign 管理工具** shortcut is added to the Windows Start menu.
 
-The manager automatically requests administrator rights because the installed FaceSign task runs as `SYSTEM`. It provides:
+The manager automatically requests administrator rights because startup-task, firewall and machine-certificate changes require elevation. The FaceSign startup task itself now runs as the **currently signed-in Windows user** with an interactive logon token so Windows DirectShow/USB cameras remain visible. It provides:
 
 - **安装/注册本目录** without copying program files to another directory.
 - Start, stop and restart the registered FaceSign task. Repeated Start/Stop clicks are idempotent: starting an already-running service or stopping an already-stopped service returns immediately instead of re-running Task Scheduler commands. The native Win32 GUI message loop is pinned to its creating OS thread so background work cannot strand the window on a different thread.
@@ -67,7 +67,7 @@ The manager automatically requests administrator rights because the installed Fa
 - Show the current PID, HTTP/HTTPS listen addresses, running build version and persistent root-CA expiry.
 - Open the startup log and installation directory.
 
-Stopping FaceSign does **not** disable startup. Use **关闭开机启动** separately if FaceSign should also stay stopped after the next reboot.
+Stopping FaceSign does **not** disable startup. Use **关闭开机启动** separately if FaceSign should also stay stopped after the next reboot. Because host USB cameras require the interactive Windows desktop session, the registered task starts at that user's logon rather than in SYSTEM Session 0; FaceSign therefore starts after that Windows user signs in.
 
 ## HTTPS and browser camera access
 
@@ -87,14 +87,14 @@ If the server is accessed through an extra DNS name or a NAT/public IP not assig
 
 ## Upgrading an existing Windows installation
 
-Normal upgrades no longer reinstall or recreate the FaceSign scheduled task. From the newly extracted release package, run this as Administrator:
+Normal upgrades preserve FaceSign data and service arguments while refreshing the scheduled task for the currently signed-in Windows user. From the newly extracted release package, run this as Administrator:
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass
 .\scripts\upgrade.ps1
 ```
 
-The upgrade stops the running FaceSign process, replaces only program/runtime files, and then starts the new build. It preserves the existing scheduled task, its custom HTTP/HTTPS/TLS-host arguments, the current startup-enabled/disabled state, the SQLite database, TLS identity and cached models.
+The upgrade stops the running FaceSign process, replaces only program/runtime files, recreates the startup task as an interactive current-user logon task, and then starts the new build. It preserves custom HTTP/HTTPS/TLS-host arguments, the current startup-enabled/disabled state, the SQLite database, TLS identity and cached models.
 
 `scripts\install.ps1` is now upgrade-aware too: if an existing FaceSign task and installation are detected, rerunning it performs the same in-place update instead of unregistering and recreating the task. Explicitly passing `-Listen`, `-HTTPSListen` or `-TLSHosts` still updates those service arguments when that is intentional.
 
@@ -134,6 +134,6 @@ Camera Management treats **FaceSign主机 / USB摄像头** as a server-side came
 
 This fixes the old browser-local behavior where opening FaceSign from a phone caused `getUserMedia()` to open the phone camera. The browser camera remains only as the temporary fallback when no saved camera exists. Once a host USB camera is saved as the default, desktops, tablets and phones all use the same FaceSign-host camera.
 
-The host USB path uses the bundled FFmpeg DirectShow input and one shared capture process for preview and recognition, because many Windows webcams cannot be opened twice at the same time. If no camera is detected, confirm the USB camera is connected and Windows Privacy & security -> Camera allows desktop applications to access the camera.
+The host USB path uses the bundled FFmpeg DirectShow input and one shared capture process for preview and recognition, because many Windows webcams cannot be opened twice at the same time. Windows webcams are session-scoped, so the optional startup task is registered for the currently signed-in desktop user instead of SYSTEM/Session 0. If an older installation still reports no host USB camera, open the new `FaceSignManager.exe` and run **安装/注册本目录** once to migrate the old task. Also confirm the USB camera is connected and Windows Privacy & security -> Camera allows desktop applications to access the camera.
 
 The web UI also has a phone/tablet layout: tablet navigation becomes horizontal, phone navigation moves to the bottom, forms stack to one column, and data tables render as labeled cards on narrow screens.

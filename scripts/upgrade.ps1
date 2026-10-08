@@ -26,5 +26,5 @@ if (-not (Test-Path $installer -PathType Leaf)) {
 }
 
 Write-Host "Upgrading FaceSign in place: $InstallDir"
-Write-Host 'The scheduled task, database, TLS identity, models and existing service arguments will be preserved.'
+Write-Host 'The database, TLS identity, models and service arguments will be preserved. The startup task will be refreshed for the current signed-in Windows user so USB cameras remain available.'
 & $installer -InstallDir $InstallDir -OpenBrowser:$OpenBrowser

@@ -14,6 +14,20 @@ $source = [IO.Path]::GetFullPath($source)
 $InstallDir = [IO.Path]::GetFullPath($InstallDir)
 $installInPlace = [string]::Equals($source, $InstallDir, [StringComparison]::OrdinalIgnoreCase)
 
+function Get-FaceSignInteractiveUser {
+  $userName = [string](Get-CimInstance Win32_ComputerSystem -ErrorAction SilentlyContinue).UserName
+  if ([string]::IsNullOrWhiteSpace($userName)) {
+    $userName = [Security.Principal.WindowsIdentity]::GetCurrent().Name
+  }
+  if ([string]::IsNullOrWhiteSpace($userName) -or $userName -match '(?i)\\SYSTEM$') {
+    throw 'FaceSign USB camera startup registration requires a signed-in Windows desktop user. Sign in to Windows and run FaceSignManager.exe -> 安装/注册本目录 again.'
+  }
+  return $userName
+}
+
+$interactiveUser = Get-FaceSignInteractiveUser
+$interactiveUserSid = [Security.Principal.NTAccount]::new($interactiveUser).Translate([Security.Principal.SecurityIdentifier]).Value
+
 $ModelCommit = 'de5287c66e9e37e9f804686bf63f5a0974f68f72'
 $ModelBaseUrl = "https://raw.githubusercontent.com/hwyc888/FaceSign/$ModelCommit/models"
 $Models = @(
@@ -184,29 +198,18 @@ if ($TLSHosts) {
   $faceArgs += ' --tls-hosts "{0}"' -f $TLSHosts
 }
 $existingTask = Get-ScheduledTask -TaskName 'FaceSign' -ErrorAction SilentlyContinue
-$configurationExplicit = $PSBoundParameters.ContainsKey('Listen') -or
-  $PSBoundParameters.ContainsKey('HTTPSListen') -or
-  $PSBoundParameters.ContainsKey('TLSHosts')
 $settings = New-ScheduledTaskSettingsSet -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew
+$action = New-ScheduledTaskAction -Execute $exe -Argument $faceArgs
 
+# Windows USB/DirectShow cameras belong to the signed-in desktop session.
+# SYSTEM Session 0 cannot reliably enumerate them, so install/upgrade always
+# migrates the startup task to the current interactive Windows user.
+$trigger = New-ScheduledTaskTrigger -AtLogOn -User $interactiveUser
+$principal = New-ScheduledTaskPrincipal -UserId $interactiveUser -LogonType Interactive -RunLevel Highest
 if ($existingTask) {
-  # Older installations may have retained a different multiple-instance policy.
-  # Normalize it during every install/upgrade so repeated Start clicks can never
-  # create parallel FaceSign service instances.
-  Set-ScheduledTask -TaskName 'FaceSign' -Settings $settings | Out-Null
-  $existingAction = @($existingTask.Actions)[0]
-  $existingExecute = [Environment]::ExpandEnvironmentVariables(([string]$existingAction.Execute).Trim('"'))
-  $executeChanged = -not [string]::Equals($existingExecute, $exe, [System.StringComparison]::OrdinalIgnoreCase)
-  if ($configurationExplicit -or $executeChanged) {
-    $action = New-ScheduledTaskAction -Execute $exe -Argument $faceArgs
-    Set-ScheduledTask -TaskName 'FaceSign' -Action $action | Out-Null
-  }
-} else {
-  $action = New-ScheduledTaskAction -Execute $exe -Argument $faceArgs
-  $trigger = New-ScheduledTaskTrigger -AtStartup
-  $principal = New-ScheduledTaskPrincipal -UserId 'SYSTEM' -LogonType ServiceAccount -RunLevel Highest
-  Register-ScheduledTask -TaskName 'FaceSign' -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
+  Unregister-ScheduledTask -TaskName 'FaceSign' -Confirm:$false
 }
+Register-ScheduledTask -TaskName 'FaceSign' -Action $action -Trigger $trigger -Principal $principal -Settings $settings -Force | Out-Null
 
 $port = ($Listen -split ':')[-1]
 $httpsPort = ($HTTPSListen -split ':')[-1]
@@ -248,7 +251,7 @@ if (-not $rootReady) {
   throw 'FaceSign root CA was not generated or could not be downloaded from the HTTP bootstrap endpoint.'
 }
 
-& icacls.exe $tlsDir /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' | Out-Null
+& icacls.exe $tlsDir /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' "*$($interactiveUserSid):(OI)(CI)F" | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'Failed to protect the FaceSign TLS directory ACL.' }
 
 $rootCertificate = Import-Certificate -FilePath $rootCAPath -CertStoreLocation 'Cert:\LocalMachine\Root'
@@ -273,7 +276,7 @@ if (-not $versionInfo.version) {
 
 $url = "https://127.0.0.1:$httpsPort/?v=$($versionInfo.version)"
 $operation = if ($isUpgrade) { 'upgraded in place' } elseif ($installInPlace) { 'registered in the current directory' } else { 'installed' }
-Write-Host "FaceSign $operation and started."
+Write-Host "FaceSign $operation and started for interactive user: $interactiveUser"
 Write-Host "Version:       $($versionInfo.version)"
 Write-Host "Models:        face models pinned at $ModelCommit; YOLOX-Nano pinned by SHA-256"
 Write-Host "Root CA:       $rootCAPath"
