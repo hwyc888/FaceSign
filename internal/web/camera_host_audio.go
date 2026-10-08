@@ -219,6 +219,7 @@ func matchHostAudioDeviceByPnPContainer(videoName string, audioDevices []hostCam
 			if audioKey != "" && audioKey == normalizedHostDeviceName(paired.Name) {
 				return audio, true
 			}
+		}
 	}
 
 	best := hostCameraDevice{}
