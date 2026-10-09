@@ -518,7 +518,7 @@ function editCamera(id) {
 async function setDefaultCamera(id) {
   try {
     await api(`/api/cameras/${id}/default`, {method: 'POST'});
-    if (cameraOpen) stopCamera();
+    if (cameraOpen) await stopCamera();
     await loadCameras();
     toast('默认摄像头已切换');
   } catch (e) {
@@ -530,7 +530,7 @@ async function deleteCamera(id) {
   const camera = camerasCache.find(item => item.id === id);
   if (!camera || !confirm(`确定删除摄像头“${camera.name}”吗？`)) return;
   try {
-    if (activeCamera?.id === id && cameraOpen) stopCamera();
+    if (activeCamera?.id === id && cameraOpen) await stopCamera();
     await api(`/api/cameras/${id}`, {method: 'DELETE'});
     await loadCameras();
     if (editingCameraID === id) resetCameraForm();
@@ -564,7 +564,16 @@ async function testCamera(id) {
         ]
       });
     } else if (camera.kind === 'local') {
-      const blob = await fetchCameraFrameBlob(camera.id);
+      let blob;
+      try {
+        blob = await fetchCameraFrameBlob(camera.id);
+      } finally {
+        try {
+          await api(`/api/cameras/${camera.id}/release`, {method: 'POST'});
+        } catch (releaseError) {
+          console.warn('release tested host USB camera failed', releaseError);
+        }
+      }
       if (cameraTestPreviewURL) URL.revokeObjectURL(cameraTestPreviewURL);
       cameraTestPreviewURL = URL.createObjectURL(blob);
       $('#cameraTestPreview').src = cameraTestPreviewURL;
@@ -710,7 +719,7 @@ $('#cameraForm').addEventListener('submit', async event => {
       });
       toast('摄像头已添加');
     }
-    if (cameraOpen) stopCamera();
+    if (cameraOpen) await stopCamera();
     resetCameraForm();
     await loadCameras();
   } catch (e) {

@@ -2,6 +2,7 @@ package web
 
 import (
 	"bytes"
+	"errors"
 	"context"
 	"fmt"
 	"image"
@@ -343,5 +344,33 @@ func TestLocalCameraUsesSharedUSBContinuousMode(t *testing.T) {
 		if !strings.Contains(key, want) {
 			t.Fatalf("host USB stream key missing %q: %q", want, key)
 		}
+	}
+}
+
+
+func TestStopNetworkCameraStreamMarksStoppedAndCancels(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	stream := newNetworkCameraStreamForPurpose(store.Camera{ID: 501, Kind: "local"}, "usb-release", "host-usb")
+	stream.cancel = cancel
+	s := &Server{networkCameraPreviewStreams: map[int64]*networkCameraStream{501: stream}}
+
+	s.stopNetworkCameraStream(501)
+
+	if !stream.isStopped() {
+		t.Fatal("released host USB stream must be marked stopped")
+	}
+	if s.networkCameraPreviewStreams[501] != nil {
+		t.Fatal("released host USB stream remained in preview pool")
+	}
+	select {
+	case <-ctx.Done():
+	default:
+		t.Fatal("released host USB stream context was not cancelled")
+	}
+
+	waitCtx, waitCancel := context.WithTimeout(context.Background(), time.Second)
+	defer waitCancel()
+	if _, err := stream.waitNext(waitCtx, 0, time.Second); !errors.Is(err, context.Canceled) {
+		t.Fatalf("stopped stream waiter error=%v want context.Canceled", err)
 	}
 }

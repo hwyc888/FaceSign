@@ -1159,7 +1159,13 @@ async function startCamera() {
   }
 }
 
-function stopCamera() {
+async function releaseServerCameraCapture(camera) {
+  if (!camera || camera.kind === 'browser' || !Number(camera.id || 0)) return;
+  await api(`/api/cameras/${camera.id}/release`, {method: 'POST'});
+}
+
+async function stopCamera() {
+  const cameraToRelease = activeCamera;
   stopCameraAudio(true);
   if (stream) {
     stream.getTracks().forEach(track => track.stop());
@@ -1189,11 +1195,21 @@ function stopCamera() {
   if (typeof setEnrollmentStatus === 'function') {
     setEnrollmentStatus('摄像头已关闭', '点击“打开摄像头”后再进行人脸采集。', 'neutral');
   }
-  toast('摄像头已关闭');
+
+  let releaseError = null;
+  try {
+    await releaseServerCameraCapture(cameraToRelease);
+  } catch (error) {
+    releaseError = error;
+    console.warn('release server camera capture failed', error);
+  }
+  toast(releaseError
+    ? '摄像头画面已关闭，但服务器释放设备失败：' + (releaseError?.message || releaseError)
+    : '摄像头已关闭并释放设备');
 }
 
 async function toggleCamera() {
-  if (cameraOpen) stopCamera();
+  if (cameraOpen) await stopCamera();
   else await startCamera();
 }
 

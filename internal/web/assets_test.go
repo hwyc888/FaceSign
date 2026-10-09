@@ -1224,3 +1224,36 @@ func TestHostUSBCameraAndMobileCardLayoutAreEmbedded(t *testing.T) {
 		}
 	}
 }
+
+
+func TestClosingCameraReleasesServerCapture(t *testing.T) {
+	cameraData, err := assets.ReadFile("assets/js/camera.js")
+	if err != nil { t.Fatal(err) }
+	cameraScript := string(cameraData)
+	for _, want := range []string{
+		"async function releaseServerCameraCapture(camera)",
+		"/api/cameras/",
+		"/release",
+		"async function stopCamera()",
+		"if (cameraOpen) await stopCamera()",
+		"摄像头已关闭并释放设备",
+	} {
+		if !strings.Contains(cameraScript, want) {
+			t.Fatalf("camera hard-release flow missing %q", want)
+		}
+	}
+
+	settingsData, err := assets.ReadFile("assets/js/cameras.js")
+	if err != nil { t.Fatal(err) }
+	settingsScript := string(settingsData)
+	for _, want := range []string{
+		"if (cameraOpen) await stopCamera()",
+		"if (activeCamera?.id === id && cameraOpen) await stopCamera()",
+		"/release",
+		"release tested host USB camera failed",
+	} {
+		if !strings.Contains(settingsScript, want) {
+			t.Fatalf("camera settings release flow missing %q", want)
+		}
+	}
+}

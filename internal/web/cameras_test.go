@@ -711,3 +711,43 @@ func TestCameraActionHasNoHikvisionCodecMutationEndpoint(t *testing.T) {
 		t.Fatalf("Hikvision codec mutation endpoint must stay disabled, got status %d", rec.Code)
 	}
 }
+
+
+func TestCameraReleaseActionStopsServerCapture(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "camera-release.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	camera, err := st.CreateCamera(context.Background(), store.CameraInput{
+		Name: "Host USB", Kind: "local", Protocol: "usb",
+		Width: 1280, Height: 720, FPS: 30, TimeoutMS: 2000,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(context.Background())
+	capture := newNetworkCameraStreamForPurpose(camera, "release-api", "host-usb")
+	capture.cancel = cancel
+	s := &Server{
+		store: st,
+		logger: slog.Default(),
+		networkCameraPreviewStreams: map[int64]*networkCameraStream{camera.ID: capture},
+	}
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/cameras/%d/release", camera.ID), nil)
+	s.cameraAction(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("release status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	if !capture.isStopped() || s.networkCameraPreviewStreams[camera.ID] != nil {
+		t.Fatal("release endpoint did not remove and stop host USB capture")
+	}
+	select {
+	case <-ctx.Done():
+	default:
+		t.Fatal("release endpoint did not cancel host USB capture context")
+	}
+}
