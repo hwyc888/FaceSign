@@ -259,11 +259,13 @@ async function recognizeBurst() {
   manualRecognitionBurst = true;
   const startedAt = performance.now();
   let maxFrames = 6;
+  let decisionTimeoutMS = 6000;
   try {
-    for (let i = 0; i < maxFrames && performance.now() - startedAt < 2100; i++) {
+    for (let i = 0; i < maxFrames && performance.now() - startedAt < decisionTimeoutMS; i++) {
       const result = await recognizeFrame({silent: true});
       if (!result) break;
       maxFrames = Math.max(3, Number(result.liveness_max_frames || maxFrames));
+      decisionTimeoutMS = Math.max(1000, Number(result.liveness_timeout_ms || decisionTimeoutMS));
       const faces = Array.isArray(result.faces) ? result.faces : [];
       const qualityThreshold = Number(result.face_quality_threshold || 0.45);
       const terminalFaces = faces.length && faces.every(face =>
@@ -278,7 +280,7 @@ async function recognizeBurst() {
       if (terminalFaces && !waitingPerson) {
         break;
       }
-      if (i + 1 < maxFrames && performance.now() - startedAt < 1980) {
+      if (i + 1 < maxFrames && performance.now() - startedAt < decisionTimeoutMS - recognitionFrameIntervalMS()) {
         await new Promise(resolve => setTimeout(resolve, recognitionFrameIntervalMS()));
       }
     }

@@ -77,7 +77,7 @@ func TestRecognitionTrackerTimesOutAfterDecisionWindowAndResets(t *testing.T) {
 	var decision trackDecision
 	for i, offset := range []time.Duration{0, 2100 * time.Millisecond, 4200 * time.Millisecond, livenessDecisionTimeout + 50*time.Millisecond} {
 		decision = tracker.Observe("camera-timeout", []recognitionObservation{{
-			Student: student, Similarity: 0.91, LiveScore: 0.55,
+			Student: student, Similarity: 0.91, LiveScore: 0.48,
 		}}, now.Add(offset))[0]
 		if i < 3 && decision.TimedOut {
 			t.Fatalf("track timed out too early at observation %d: %#v", i+1, decision)
@@ -102,7 +102,7 @@ func TestRecognitionTrackerStopsUncertainTrackAtMaxFrames(t *testing.T) {
 	var decision trackDecision
 	for i := 0; i < livenessMaxFrames; i++ {
 		decision = tracker.Observe("camera-max", []recognitionObservation{{
-			Student: student, Similarity: 0.90, LiveScore: 0.62,
+			Student: student, Similarity: 0.90, LiveScore: 0.48,
 		}}, now.Add(time.Duration(i)*150*time.Millisecond))[0]
 	}
 	if !decision.TimedOut || decision.Frames != livenessMaxFrames || decision.Verified || decision.Rejected {
@@ -174,5 +174,42 @@ func TestRecognitionTrackerReevaluatesRejectedAndVerifiedTracks(t *testing.T) {
 	}
 	if decision.Verified || !decision.Rejected {
 		t.Fatalf("verification stayed latched despite spoof evidence: %#v", decision)
+	}
+}
+
+func TestRecognitionTrackerBalancedLivenessEvidence(t *testing.T) {
+	testCases := []struct {
+		name     string
+		scores   []float64
+		verified bool
+		rejected bool
+	}{
+		{name: "moderate live frames", scores: []float64{0.58, 0.57, 0.56, 0.59}, verified: true},
+		{name: "one poor frame", scores: []float64{0.32, 0.65, 0.64, 0.66}, verified: true},
+		{name: "three clear live frames", scores: []float64{0.76, 0.77, 0.78}, verified: true},
+		{name: "consistent spoof evidence", scores: []float64{0.25, 0.30, 0.28}, rejected: true},
+		{name: "two spoof frames cannot be masked by high scores", scores: []float64{0.20, 0.95, 0.95, 0.20}},
+		{name: "uncertain scores stay unverified", scores: []float64{0.48, 0.48, 0.48, 0.48, 0.48, 0.48}},
+	}
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			tracker := newRecognitionTracker()
+			now := time.Now()
+			var decision trackDecision
+			for frameIndex, score := range testCase.scores {
+				decision = tracker.Observe("balanced", []recognitionObservation{{
+					Student: store.Student{ID: 1}, PersonTrackID: "person-1", LiveScore: score,
+				}}, now.Add(time.Duration(frameIndex)*200*time.Millisecond))[0]
+				if frameIndex < livenessFastFrames-1 && decision.Verified {
+					t.Fatal("must not verify from fewer than three frames")
+				}
+			}
+			if decision.Verified != testCase.verified || decision.Rejected != testCase.rejected {
+				t.Fatalf("unexpected liveness decision: %#v", decision)
+			}
+			if !testCase.verified && decision.NeedsAttendance {
+				t.Fatal("unverified evidence must not write attendance")
+			}
+		})
 	}
 }

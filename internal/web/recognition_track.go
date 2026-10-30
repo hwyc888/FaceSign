@@ -9,13 +9,14 @@ import (
 )
 
 const (
-	livenessTrackTTL          = 3 * time.Second
-	livenessFastFrames        = 3
-	livenessMinFrames         = 4
-	livenessMaxFrames         = 6
-	livenessFrameThreshold    = 0.60
-	livenessFastPassThreshold = 0.80
-	livenessPassThreshold     = 0.68
+	livenessTrackTTL   = 3 * time.Second
+	livenessFastFrames = 3
+	livenessMinFrames  = 4
+	livenessMaxFrames  = 6
+	// Favor usable live frames while retaining a separate, unchanged spoof cutoff.
+	livenessFrameThreshold    = 0.50
+	livenessFastPassThreshold = 0.75
+	livenessPassThreshold     = 0.55
 	livenessSpoofThreshold    = 0.40
 	livenessDecisionTimeout   = 6 * time.Second
 )
@@ -136,7 +137,7 @@ func (t *recognitionTracker) Observe(sessionID string, observations []recognitio
 				track.Verified = true
 			case len(track.Scores) >= livenessMinFrames &&
 				average >= livenessPassThreshold &&
-				liveVotes >= livenessMinFrames-1:
+				liveVotes >= len(track.Scores)-1 && spoofVotes <= 1:
 				track.Verified = true
 			case (now.Sub(track.FirstSeen) >= livenessDecisionTimeout && len(track.Scores) >= livenessMinFrames) || len(track.Scores) >= livenessMaxFrames:
 				timedOut = true

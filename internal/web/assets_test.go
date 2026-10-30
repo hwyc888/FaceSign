@@ -407,7 +407,8 @@ func TestRecognitionClientUsesFastLivenessCadence(t *testing.T) {
 	}
 	script := string(data)
 	for _, want := range []string{
-		"performance.now() - startedAt < 2100",
+		"performance.now() - startedAt < decisionTimeoutMS",
+		"result.liveness_timeout_ms",
 		"result.liveness_max_frames",
 		"face.liveness_timed_out",
 		"function recognitionFrameIntervalMS()",
