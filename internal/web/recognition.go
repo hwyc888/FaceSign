@@ -291,89 +291,31 @@ func (s *Server) recognizePreparedImage(
 		}
 	}
 
-	observations := make([]recognitionObservation, 0, len(selected))
-	observationDetectionIndexes := make([]int, 0, len(selected))
+	verifiedCount := 0
+	pendingCount := 0
+	timeoutCount := 0
+	spoofCount := 0
+	matchedCount := len(selected)
+	verifiedStudentIDs := make([]int64, 0, len(selected))
 	for _, match := range selected {
 		result := &results[match.DetectionIndex]
 		result.Matched = true
 		student := match.Student
 		result.Student = &student
 		result.Similarity = match.Similarity
-		result.Status = "活体验证中"
-
-		if pIndex, ok := personIndex[result.TrackID]; ok {
-			personResults[pIndex].Student = &student
-			personResults[pIndex].Similarity = match.Similarity
-			personResults[pIndex].BestFaceQuality = result.BestQuality
-			personResults[pIndex].Status = "活体验证中"
-		}
-
-		score, err := s.liveness.Score(img, detections[match.DetectionIndex].Rectangle)
+		// Attendance is identity-based; liveness inference must not block check-in.
+		record, created, err := s.store.MarkAttendance(r.Context(), student, match.Similarity, now)
 		if err != nil {
-			result.Status = "活体检测失败"
-			result.LivenessStatus = "活体检测失败"
-			if pIndex, ok := personIndex[result.TrackID]; ok {
-				personResults[pIndex].Status = "活体检测失败"
-			}
-			s.logger.Warn("passive liveness inference failed", "student_id", match.Student.ID, "error", err)
-			continue
+			writeError(w, http.StatusInternalServerError, err)
+			return
 		}
-		result.LivenessScore = score
-		observations = append(observations, recognitionObservation{
-			PersonTrackID: result.TrackID,
-			Student:       match.Student,
-			Similarity:    match.Similarity,
-			LiveScore:     score,
-		})
-		observationDetectionIndexes = append(observationDetectionIndexes, match.DetectionIndex)
-	}
-
-	decisions := s.tracker.Observe(sessionID, observations, now)
-	verifiedCount := 0
-	pendingCount := 0
-	timeoutCount := 0
-	spoofCount := 0
-	matchedCount := 0
-	verifiedStudentIDs := make([]int64, 0, len(decisions))
-	for i, decision := range decisions {
-		detectionIndex := observationDetectionIndexes[i]
-		result := &results[detectionIndex]
-		matchedCount++
-		result.LivenessTrackID = decision.TrackID
-		result.LivenessScore = decision.LiveScore
-		result.LivenessStatus = decision.LivenessStatus
-		result.LivenessFrames = decision.Frames
-		result.RequiredFrames = decision.RequiredFrames
-		result.LivenessTimedOut = decision.TimedOut
-
-		switch {
-		case decision.Rejected:
-			result.Status = "疑似照片/屏幕"
-			spoofCount++
-		case decision.Verified:
-			result.Recognized = true
-			result.Status = "签到通过"
-			verifiedCount++
-			if result.Student != nil {
-				verifiedStudentIDs = append(verifiedStudentIDs, result.Student.ID)
-			}
-			if decision.NeedsAttendance {
-				record, created, err := s.store.MarkAttendance(r.Context(), *result.Student, result.Similarity, now)
-				if err != nil {
-					writeError(w, http.StatusInternalServerError, err)
-					return
-				}
-				result.Attendance = &record
-				result.FirstCheckinToday = created
-				s.tracker.Commit(sessionID, decision.TrackID)
-			}
-		case decision.TimedOut:
-			result.Status = decision.LivenessStatus
-			timeoutCount++
-		default:
-			result.Status = decision.LivenessStatus
-			pendingCount++
-		}
+		result.Recognized = true
+		result.Status = "签到通过"
+		result.LivenessStatus = "未启用，不影响签到"
+		result.Attendance = &record
+		result.FirstCheckinToday = created
+		verifiedCount++
+		verifiedStudentIDs = append(verifiedStudentIDs, student.ID)
 
 		if pIndex, ok := personIndex[result.TrackID]; ok {
 			personResults[pIndex].Status = result.Status
@@ -407,6 +349,7 @@ func (s *Server) recognizePreparedImage(
 	}
 
 	response := map[string]any{
+		"liveness_required":       false,
 		"faces":                   results,
 		"frame_width":             img.Bounds().Dx(),
 		"frame_height":            img.Bounds().Dy(),

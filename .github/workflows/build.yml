@@ -486,9 +486,8 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw 'Imported photo recognition failed' }
             $importRecognize = $importRecognizeRaw | ConvertFrom-Json
             if (-not $importRecognize.matched -or $importRecognize.student.student_no -ne 'SMOKE002') { throw 'Imported face sample identity did not match correctly' }
-            if ($importRecognize.recognized) { throw 'Single recognition frame must not bypass multi-frame liveness voting' }
-            if (-not $importRecognize.liveness_status) { throw 'Passive liveness status was not returned' }
-            Write-Host "Passive liveness score (import smoke): $($importRecognize.liveness_score) status=$($importRecognize.liveness_status)"
+            if (-not $importRecognize.recognized -or -not $importRecognize.attendance) { throw 'Matched identity must immediately create attendance' }
+            if ($importRecognize.liveness_required -ne $false) { throw 'Liveness must not gate attendance' }
 
             $sameSampleStatus = & curl.exe -sS -o NUL -w "%{http_code}" -F "file=@$photo" -F "label=左侧" "http://127.0.0.1:18082/api/students/$($student.id)/faces"
             if ($sameSampleStatus -ne '409') { throw "Near-identical supplemental sample should be rejected with 409, got $sameSampleStatus" }
@@ -497,15 +496,19 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw 'Recognition smoke test failed' }
             $recognize = $recognizeRaw | ConvertFrom-Json
             if (-not $recognize.matched -or $recognize.student.student_no -ne 'SMOKE001') { throw 'Recognition identity did not match enrolled student' }
-            if ($recognize.recognized) { throw 'One frame unexpectedly created an attendance decision' }
-            if ($recognize.liveness_frames -ne 1) { throw "Expected first liveness frame, got $($recognize.liveness_frames)" }
+            if (-not $recognize.recognized -or -not $recognize.first_checkin_today -or -not $recognize.attendance) { throw 'First matched frame must check in the enrolled student' }
+            if ($recognize.liveness_required -ne $false) { throw 'Attendance must not require liveness' }
+            $repeatRaw = & curl.exe -fsS -H 'X-FaceSign-Session: smoke-amy' -F "file=@$photo" 'http://127.0.0.1:18082/api/recognize'
+            if ($LASTEXITCODE -ne 0) { throw 'Repeated check-in failed' }
+            $repeat = $repeatRaw | ConvertFrom-Json
+            if (-not $repeat.recognized -or $repeat.first_checkin_today -or $repeat.attendance.id -ne $recognize.attendance.id -or $repeat.attendance.recognition_count -ne 2) { throw 'Repeated recognition must update the existing daily attendance record' }
 
             Invoke-RestMethod -Method Put -Uri "http://127.0.0.1:18082/api/students/$($student.id)" -ContentType 'application/json' -Body '{"seat_no":1}' | Out-Null
             $absentStudent = Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:18082/api/students' -ContentType 'application/json' -Body '{"student_no":"SMOKE003","name":"Absent","class_name":"Test-Renamed"}'
             Invoke-RestMethod -Method Put -Uri "http://127.0.0.1:18082/api/students/$($absentStudent.id)" -ContentType 'application/json' -Body '{"seat_no":2}' | Out-Null
             $today = Get-Date -Format 'yyyy-MM-dd'
             $seatBoard = Invoke-RestMethod -Uri "http://127.0.0.1:18082/api/attendance/seats?day=$today&class_name=Test-Renamed" -TimeoutSec 3
-            if ($seatBoard.total -ne 2 -or $seatBoard.signed -ne 0 -or $seatBoard.unsigned -ne 2) { throw 'Single-frame recognition must not mark attendance before liveness vote' }
+            if ($seatBoard.total -ne 2 -or $seatBoard.signed -ne 1 -or $seatBoard.unsigned -ne 1) { throw 'Recognized student must appear as signed on the seat board' }
             if ($seatBoard.class.seat_rows -ne 2 -or $seatBoard.class.seats_per_row -ne 3 -or $seatBoard.class.late_after -ne '08:05' -or $seatBoard.class.deadline -ne '23:59') { throw 'Seat layout/rule smoke test failed' }
 
             $swap = Invoke-RestMethod -Method Post -Uri "http://127.0.0.1:18082/api/classes/$($classOne.id)/seats" -ContentType 'application/json' -Body (@{ student_id = $student.id; target_seat_no = 2 } | ConvertTo-Json)
@@ -548,7 +551,7 @@ jobs:
             if ($groupRecognize.matched_count -lt 1) { throw 'Expected at least one enrolled identity match in group recognition' }
             if ($groupRecognize.unregistered_count -lt 1) { throw 'Expected at least one unregistered face in group recognition' }
             $knownResult = $groupRecognize.faces | Where-Object { $_.matched -and $_.student.student_no -eq 'SMOKE001' } | Select-Object -First 1
-            if (-not $knownResult -or -not $knownResult.liveness_status) { throw 'Enrolled student was not tracked with liveness in group recognition' }
+            if (-not $knownResult -or -not $knownResult.recognized -or -not $knownResult.attendance) { throw 'Enrolled student must check in during multi-person recognition' }
             $unknownResult = $groupRecognize.faces | Where-Object { -not $_.matched -and $_.status -eq '未录入' } | Select-Object -First 1
             if (-not $unknownResult) { throw 'Unregistered face was not reported as 未录入' }
           } finally {

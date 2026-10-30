@@ -41,7 +41,7 @@ function renderRecognition(r) {
     return;
   }
 
-  const summary = `人体跟踪 ${r.tracked_person_count || persons.length} 人，检测人脸 ${r.detected_count || faces.length} 张，等待靠近/露脸/清晰 ${r.waiting_face_count || 0} 人，签到通过 ${r.verified_count || 0} 人，验证中 ${r.pending_count || 0} 人，需重新对准 ${r.timeout_count || 0} 人，疑似照片/屏幕 ${r.spoof_count || 0} 人，未录入 ${r.unregistered_count || 0} 人`;
+  const summary = `人体跟踪 ${r.tracked_person_count || persons.length} 人，检测人脸 ${r.detected_count || faces.length} 张，等待靠近/露脸/清晰 ${r.waiting_face_count || 0} 人，签到通过 ${r.verified_count || 0} 人，未录入 ${r.unregistered_count || 0} 人 · 人脸匹配签到，活体不作为门槛`;
 
   const faceHTML = faces.map((f, i) => {
     const quality = Number(f.quality_score || 0);
@@ -52,7 +52,7 @@ function renderRecognition(r) {
         : '';
       return `<div class="face-result known">
         <div class="face-title">${esc(f.student.name)} · ${f.first_checkin_today ? '签到成功' : '今日已签到'}</div>
-        <div class="face-meta">${esc(f.student.student_no)} | ${esc(f.student.class_name || '-')} | 身份 ${(f.similarity * 100).toFixed(1)}% | 活体 ${(Number(f.liveness_score || 0) * 100).toFixed(1)}% | ${qualityText}${attendanceMeta}</div>
+        <div class="face-meta">${esc(f.student.student_no)} | ${esc(f.student.class_name || '-')} | 身份 ${(f.similarity * 100).toFixed(1)}% | ${qualityText}${attendanceMeta}</div>
       </div>`;
     }
     if (f.matched && f.student && f.status === '疑似照片/屏幕') {
