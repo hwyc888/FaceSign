@@ -69,3 +69,26 @@ test('new frames replace old expiry and empty scenes clear immediately', () => {
   harness.context.drawFaceOverlay([], []);
   assert.equal(harness.timers.size, 0);
 });
+
+test('disabling automatic recognition immediately clears boxes and expiry', async () => {
+  const harness = createHarness();
+  harness.context.drawFaceOverlay([], [{track_id: 'P1', box: {x: 10, y: 20, width: 100, height: 200}}]);
+  const clearCount = harness.clearCount();
+  await harness.context.setAutoRecognitionEnabled(false);
+  assert.equal(harness.clearCount(), clearCount + 1);
+  assert.equal(harness.timers.size, 0);
+});
+
+test('a late response cannot redraw boxes after automatic recognition stops', async () => {
+  const harness = createHarness();
+  let resolveResponse;
+  harness.context.api = () => new Promise(resolve => { resolveResponse = resolve; });
+  let renderCount = 0;
+  harness.context.renderRecognition = () => { renderCount++; };
+  const pendingRequest = harness.context.recognizeFrame({silent: true});
+  harness.context.stopAutoRecognition();
+  resolveResponse({faces: [{recognized: true}], persons: []});
+  assert.equal(await pendingRequest, null);
+  assert.equal(renderCount, 0);
+  assert.equal(harness.timers.size, 0);
+});

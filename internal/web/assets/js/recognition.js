@@ -1,5 +1,6 @@
 let recognitionLastDurationMS = 0;
 let recognitionOverlayExpiryTimer = null;
+let recognitionDisplayGeneration = 0;
 function renderRecognitionStats(stats = {}) {
   const verified = Math.max(0, Number(stats.verified ?? 0) || 0);
   const unregistered = Math.max(0, Number(stats.unregistered ?? 0) || 0);
@@ -182,6 +183,7 @@ async function recognizeFrame(options = {}) {
   recognizing = true;
   const requestCamera = activeCamera;
   const requestSessionID = recognitionSessionID;
+  const requestDisplayGeneration = recognitionDisplayGeneration;
   const performanceStartedAt = performance.now();
   let completedRecognition = false;
   try {
@@ -211,7 +213,8 @@ async function recognizeFrame(options = {}) {
       });
     }
     if (r?.skipped && r?.busy) return null;
-    if (activeCamera !== requestCamera || recognitionSessionID !== requestSessionID) return null;
+    if (activeCamera !== requestCamera || recognitionSessionID !== requestSessionID ||
+        recognitionDisplayGeneration !== requestDisplayGeneration) return null;
     completedRecognition = true;
     renderRecognition(r);
     if ((r.verified_count || r.recognized_count || 0) > 0) {
@@ -256,10 +259,12 @@ async function recognizeBurst() {
   if (manualRecognitionBurst) return;
   manualRecognitionBurst = true;
   const startedAt = performance.now();
+  const burstDisplayGeneration = recognitionDisplayGeneration;
   let maxFrames = 6;
   let decisionTimeoutMS = 6000;
   try {
     for (let i = 0; i < maxFrames && performance.now() - startedAt < decisionTimeoutMS; i++) {
+      if (recognitionDisplayGeneration !== burstDisplayGeneration) break;
       const result = await recognizeFrame({silent: true});
       if (!result) break;
       maxFrames = Math.max(3, Number(result.liveness_max_frames || maxFrames));
@@ -304,6 +309,8 @@ async function runAutoRecognitionLoop() {
 function stopAutoRecognition() {
   clearTimeout(autoTimer);
   autoTimer = null;
+  recognitionDisplayGeneration++;
+  drawFaceOverlay([], []);
   const checkbox = $('#autoScan');
   if (checkbox) checkbox.checked = false;
 }
