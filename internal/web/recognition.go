@@ -96,10 +96,15 @@ func (s *Server) recognizeImage(w http.ResponseWriter, r *http.Request, img imag
 	}
 
 	loadLevel := normalizeRecognitionLoadLevel(r.Header.Get("X-FaceSign-AI-Load"))
-	personDetections, err := s.personDetectionsForRecognition(sessionID, img, now, loadLevel, false)
-	if err != nil {
-		s.logger.Warn("person detector failed; continuing with face-derived tracks", "error", err)
-		personDetections = nil
+	var personDetections []person.Detection
+	// Browser tracking already follows current face pixels locally. Do not make
+	// identity check-in wait for a second, full-body model on the same frame.
+	if r.Header.Get("X-FaceSign-Recognition-Mode") != "face-first" {
+		personDetections, err = s.personDetectionsForRecognition(sessionID, img, now, loadLevel, false)
+		if err != nil {
+			s.logger.Warn("person detector failed; continuing with face-derived tracks", "error", err)
+			personDetections = nil
+		}
 	}
 	s.recognizePreparedImage(w, r, img, now, sessionID, personDetections, detections)
 }

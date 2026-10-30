@@ -58,6 +58,7 @@ function trackTextureBox(previous, current, box) {
   }
   if (squares / samples.length - (sum / samples.length) ** 2 < 50) return null;
   const matches = [];
+  let best = null;
   for (let offsetY = -16; offsetY <= 16; offsetY += 2) {
     for (let offsetX = -16; offsetX <= 16; offsetX += 2) {
       if (centerX + offsetX - radius < 0 || centerY + offsetY - radius < 0 ||
@@ -68,13 +69,17 @@ function trackTextureBox(previous, current, box) {
           (centerY + offsetY + sample.vertical) * current.width + centerX + offsetX + sample.horizontal
         ]);
       }
-      matches.push({offsetX, offsetY, error: difference / samples.length});
+      const candidate = {offsetX, offsetY, error: difference / samples.length};
+      matches.push(candidate);
+      if (!best || candidate.error < best.error) best = candidate;
     }
   }
-  matches.sort((first, second) => first.error - second.error);
-  const best = matches[0];
   if (!best || best.error > 22 || Math.abs(best.offsetX) === 16 || Math.abs(best.offsetY) === 16) return null;
-  const alternative = matches.find(match => Math.hypot(match.offsetX - best.offsetX, match.offsetY - best.offsetY) >= 6);
+  let alternative = null;
+  for (const candidate of matches) {
+    if (Math.hypot(candidate.offsetX - best.offsetX, candidate.offsetY - best.offsetY) >= 6 &&
+        (!alternative || candidate.error < alternative.error)) alternative = candidate;
+  }
   if (alternative && alternative.error < best.error * 1.15 + 1) return null;
   return {...box, x: box.x + best.offsetX / current.width, y: box.y + best.offsetY / current.height};
 }

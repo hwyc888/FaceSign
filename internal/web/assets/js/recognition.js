@@ -211,6 +211,7 @@ async function recognizeFrame(options = {}) {
       r = await api('/api/recognize', {
         method: 'POST',
         headers: {
+          'X-FaceSign-Recognition-Mode': 'face-first',
           'X-FaceSign-Session': recognitionSessionID,
           'X-FaceSign-AI-Load': loadProfile.level
         },
