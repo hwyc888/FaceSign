@@ -92,3 +92,54 @@ test('a late response cannot redraw boxes after automatic recognition stops', as
   assert.equal(renderCount, 0);
   assert.equal(harness.timers.size, 0);
 });
+
+function loadMotionTracker() {
+  const context = vm.createContext({document: {createElement: () => ({})}, clearTimeout() {}});
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '../internal/web/assets/js/tracking.js'), 'utf8'), context);
+  return context;
+}
+
+function createTextureFrame(offsetX = 0, offsetY = 0) {
+  const width = 96;
+  const height = 96;
+  const gray = new Uint8Array(width * height);
+  for (let vertical = 0; vertical < height; vertical++) {
+    for (let horizontal = 0; horizontal < width; horizontal++) {
+      const sourceX = horizontal - offsetX;
+      const sourceY = vertical - offsetY;
+      gray[vertical * width + horizontal] = ((sourceX * 73856093) ^ (sourceY * 19349663)) & 255;
+    }
+  }
+  return {width, height, gray, time: 50};
+}
+
+test('local texture tracking follows actual image translation without waiting for identity', () => {
+  const tracker = loadMotionTracker();
+  const box = {x: 0.3, y: 0.3, width: 0.25, height: 0.25};
+  const moved = tracker.trackTextureBox(createTextureFrame(), createTextureFrame(6, -4), box);
+  assert.ok(moved);
+  assert.ok(Math.abs(moved.x - box.x - 6 / 96) < 0.0001);
+  assert.ok(Math.abs(moved.y - box.y + 4 / 96) < 0.0001);
+});
+
+test('textureless or expired evidence cannot retain a named tracking box', () => {
+  const tracker = loadMotionTracker();
+  const blank = {width: 96, height: 96, gray: new Uint8Array(96 * 96), time: 4000};
+  const box = {x: 0.3, y: 0.3, width: 0.25, height: 0.25};
+  assert.equal(tracker.trackTextureBox(blank, blank, box), null);
+  assert.equal(tracker.advanceTrackingBoxes(blank, blank, [{box, confirmedAt: 0}]).length, 0);
+});
+
+test('separate tracks move independently and overlapping tracks are discarded', () => {
+  const tracker = loadMotionTracker();
+  const previous = createTextureFrame();
+  const current = createTextureFrame(4, 2);
+  const first = {box: {x: 0.2, y: 0.2, width: 0.15, height: 0.15}, confirmedAt: 0, face: {student: {id: 1}}};
+  const second = {box: {x: 0.6, y: 0.6, width: 0.15, height: 0.15}, confirmedAt: 0, face: {student: {id: 2}}};
+  const moved = tracker.advanceTrackingBoxes(previous, current, [first, second]);
+  assert.equal(moved.length, 2);
+  assert.equal(moved[0].face.student.id, 1);
+  assert.equal(moved[1].face.student.id, 2);
+  assert.ok(Math.abs(moved[1].box.x - second.box.x - 4 / 96) < 0.0001);
+  assert.equal(tracker.advanceTrackingBoxes(previous, current, [first, {...second, box: first.box}]).length, 0);
+});

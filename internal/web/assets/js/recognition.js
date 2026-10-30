@@ -28,7 +28,7 @@ async function loadRecognitionStats() {
   return stats;
 }
 
-function renderRecognition(r) {
+function renderRecognition(r, trackingReference = null) {
   updateRecognitionCounts(r);
   const faces = Array.isArray(r.faces) ? r.faces : [];
   const persons = Array.isArray(r.persons) ? r.persons : [];
@@ -38,7 +38,9 @@ function renderRecognition(r) {
   if (!faces.length && !persons.length) {
     el.className = 'result empty';
     el.textContent = '未检测到人员或人脸';
-    drawFaceOverlay([], [], r.frame_width, r.frame_height);
+    if (typeof applyTrackedRecognition !== 'function' || !applyTrackedRecognition(r, trackingReference)) {
+      drawFaceOverlay([], [], r.frame_width, r.frame_height);
+    }
     return;
   }
 
@@ -101,7 +103,9 @@ function renderRecognition(r) {
   }).join('');
 
   el.innerHTML = `<div class="result-summary">${summary}</div>` + faceHTML + waitingHTML;
-  drawFaceOverlay(faces, persons, r.frame_width, r.frame_height);
+  if (typeof applyTrackedRecognition !== 'function' || !applyTrackedRecognition(r, trackingReference)) {
+    drawFaceOverlay(faces, persons, r.frame_width, r.frame_height);
+  }
 }
 
 function drawFaceOverlay(faces, persons = [], sourceWidth = 0, sourceHeight = 0) {
@@ -184,6 +188,7 @@ async function recognizeFrame(options = {}) {
   const requestCamera = activeCamera;
   const requestSessionID = recognitionSessionID;
   const requestDisplayGeneration = recognitionDisplayGeneration;
+  const trackingReference = typeof beginTrackingReference === 'function' ? beginTrackingReference() : null;
   const performanceStartedAt = performance.now();
   let completedRecognition = false;
   try {
@@ -216,7 +221,7 @@ async function recognizeFrame(options = {}) {
     if (activeCamera !== requestCamera || recognitionSessionID !== requestSessionID ||
         recognitionDisplayGeneration !== requestDisplayGeneration) return null;
     completedRecognition = true;
-    renderRecognition(r);
+    renderRecognition(r, trackingReference);
     if ((r.verified_count || r.recognized_count || 0) > 0) {
       loadToday();
       if (typeof loadCheckinSeatBoard === 'function') loadCheckinSeatBoard();
@@ -310,6 +315,7 @@ function stopAutoRecognition() {
   clearTimeout(autoTimer);
   autoTimer = null;
   recognitionDisplayGeneration++;
+  if (typeof stopRealtimeTracking === 'function') stopRealtimeTracking();
   drawFaceOverlay([], []);
   const checkbox = $('#autoScan');
   if (checkbox) checkbox.checked = false;
