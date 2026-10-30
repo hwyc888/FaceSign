@@ -93,53 +93,65 @@ test('a late response cannot redraw boxes after automatic recognition stops', as
   assert.equal(harness.timers.size, 0);
 });
 
-function loadMotionTracker() {
-  const context = vm.createContext({document: {createElement: () => ({})}, clearTimeout() {}});
-  vm.runInContext(fs.readFileSync(path.join(__dirname, '../internal/web/assets/js/tracking.js'), 'utf8'), context);
-  return context;
+function createMotionHarness() {
+  const harness = createHarness();
+  harness.context.document = {createElement: () => ({})};
+  vm.runInContext(fs.readFileSync(path.join(__dirname, '../internal/web/assets/js/tracking.js'), 'utf8'), harness.context);
+  return harness;
 }
 
-function createTextureFrame(offsetX = 0, offsetY = 0) {
-  const width = 96;
-  const height = 96;
+function createTextureFrame(offsetX = 0, time = 0) {
+  const width = 160;
+  const height = 120;
   const gray = new Uint8Array(width * height);
   for (let vertical = 0; vertical < height; vertical++) {
     for (let horizontal = 0; horizontal < width; horizontal++) {
       const sourceX = horizontal - offsetX;
-      const sourceY = vertical - offsetY;
-      gray[vertical * width + horizontal] = ((sourceX * 73856093) ^ (sourceY * 19349663)) & 255;
+      gray[vertical * width + horizontal] = ((sourceX * 73) ^ (vertical * 151) ^ (sourceX * vertical * 31)) & 255;
     }
   }
-  return {width, height, gray, time: 50};
+  return {width, height, gray, time};
 }
 
-test('local texture tracking follows actual image translation without waiting for identity', () => {
-  const tracker = loadMotionTracker();
-  const box = {x: 0.3, y: 0.3, width: 0.25, height: 0.25};
-  const moved = tracker.trackTextureBox(createTextureFrame(), createTextureFrame(6, -4), box);
-  assert.ok(moved);
-  assert.ok(Math.abs(moved.x - box.x - 6 / 96) < 0.0001);
-  assert.ok(Math.abs(moved.y - box.y + 4 / 96) < 0.0001);
-});
-
-test('textureless or expired evidence cannot retain a named tracking box', () => {
-  const tracker = loadMotionTracker();
-  const blank = {width: 96, height: 96, gray: new Uint8Array(96 * 96), time: 4000};
-  const box = {x: 0.3, y: 0.3, width: 0.25, height: 0.25};
-  assert.equal(tracker.trackTextureBox(blank, blank, box), null);
-  assert.equal(tracker.advanceTrackingBoxes(blank, blank, [{box, confirmedAt: 0}]).length, 0);
-});
-
-test('separate tracks move independently and overlapping tracks are discarded', () => {
-  const tracker = loadMotionTracker();
+test('local texture tracking moves boxes from pixels without waiting for identity', () => {
+  const harness = createMotionHarness();
   const previous = createTextureFrame();
-  const current = createTextureFrame(4, 2);
-  const first = {box: {x: 0.2, y: 0.2, width: 0.15, height: 0.15}, confirmedAt: 0, face: {student: {id: 1}}};
-  const second = {box: {x: 0.6, y: 0.6, width: 0.15, height: 0.15}, confirmedAt: 0, face: {student: {id: 2}}};
-  const moved = tracker.advanceTrackingBoxes(previous, current, [first, second]);
-  assert.equal(moved.length, 2);
-  assert.equal(moved[0].face.student.id, 1);
-  assert.equal(moved[1].face.student.id, 2);
-  assert.ok(Math.abs(moved[1].box.x - second.box.x - 4 / 96) < 0.0001);
-  assert.equal(tracker.advanceTrackingBoxes(previous, current, [first, {...second, box: first.box}]).length, 0);
+  const current = createTextureFrame(6, 33);
+  const box = {x: 0.3, y: 0.3, width: 0.2, height: 0.3};
+  const moved = harness.context.trackTextureBox(previous, current, box);
+  assert.ok(moved);
+  assert.ok(Math.abs(moved.x - box.x - 6 / current.width) < 0.0001);
+  assert.equal(moved.y, box.y);
+  assert.equal(harness.context.trackTextureBox(previous, {...current, time: 1000}, box), null);
+});
+
+test('ambiguous overlapping people lose labels rather than exchanging identities', () => {
+  const harness = createMotionHarness();
+  const previous = createTextureFrame();
+  const current = createTextureFrame(4, 33);
+  const box = {x: 0.3, y: 0.3, width: 0.2, height: 0.3};
+  const result = harness.context.advanceTrackingBoxes(previous, current, [
+    {confirmedAt: 0, face: {student: {id: 1}}, box},
+    {confirmedAt: 0, face: {student: {id: 2}}, box: {...box, x: 0.32}}
+  ]);
+  assert.equal(result.length, 0);
+});
+
+test('recognition captures a motion reference and forwards it with the exact response', async () => {
+  const harness = createHarness();
+  const reference = {sequence: 42};
+  const response = {faces: [], persons: []};
+  harness.context.beginTrackingReference = () => reference;
+  harness.context.api = async () => response;
+  let receivedReference;
+  harness.context.renderRecognition = (result, trackingReference) => {
+    assert.equal(result, response);
+    receivedReference = trackingReference;
+  };
+  await harness.context.recognizeFrame({silent: true});
+  assert.equal(receivedReference, reference);
+  let stopped = false;
+  harness.context.stopRealtimeTracking = () => { stopped = true; };
+  harness.context.stopAutoRecognition();
+  assert.equal(stopped, true);
 });

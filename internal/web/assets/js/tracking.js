@@ -37,6 +37,8 @@ function sampleTrackingFrame() {
 
 function trackTextureBox(previous, current, box) {
   if (previous.width !== current.width || previous.height !== current.height) return null;
+  // A long frame gap cannot safely be bridged by a small local search window.
+  if (current.time - previous.time > 250 || current.time < previous.time) return null;
   const centerX = Math.round((box.x + box.width / 2) * current.width);
   const centerY = Math.round((box.y + box.height / 2) * current.height);
   const radius = Math.max(3, Math.min(9, Math.round(box.width * current.width / 4)));
@@ -93,8 +95,10 @@ function advanceTrackingBoxes(previous, current, boxes) {
 }
 
 function runRealtimeTracking() {
-  if (!cameraOpen || !$('#autoScan')?.checked || recognitionSessionID !== realtimeTrackingSession) {
+  if (!cameraOpen || !$('#autoScan')?.checked || recognitionSessionID !== realtimeTrackingSession ||
+      !$('#page-checkin')?.classList.contains('active')) {
     stopRealtimeTracking();
+    drawFaceOverlay([], []);
     return;
   }
   try {
@@ -114,7 +118,7 @@ function runRealtimeTracking() {
     realtimeTrackingBoxes = [];
     drawFaceOverlay([], []);
   }
-  realtimeTrackingTimer = setTimeout(runRealtimeTracking, 50);
+  realtimeTrackingTimer = setTimeout(runRealtimeTracking, 33);
 }
 
 function beginTrackingReference() {
