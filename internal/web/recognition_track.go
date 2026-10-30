@@ -17,16 +17,18 @@ const (
 	livenessFastPassThreshold = 0.80
 	livenessPassThreshold     = 0.68
 	livenessSpoofThreshold    = 0.40
-	livenessDecisionTimeout   = 2 * time.Second
+	livenessDecisionTimeout   = 6 * time.Second
 )
 
 type recognitionObservation struct {
-	Student    store.Student
-	Similarity float64
-	LiveScore  float64
+	PersonTrackID string
+	Student       store.Student
+	Similarity    float64
+	LiveScore     float64
 }
 
 type recognitionTrack struct {
+	PersonTrackID string
 	ID            string
 	StudentID     int64
 	FirstSeen     time.Time
@@ -88,13 +90,14 @@ func (t *recognitionTracker) Observe(sessionID string, observations []recognitio
 	out := make([]trackDecision, len(observations))
 	for i, observation := range observations {
 		track := session.Tracks[observation.Student.ID]
-		if track == nil {
+		if track == nil || track.PersonTrackID != observation.PersonTrackID {
 			session.NextID++
 			track = &recognitionTrack{
-				ID:        fmt.Sprintf("%s-%d", sessionID, session.NextID),
-				StudentID: observation.Student.ID,
-				FirstSeen: now,
-				Scores:    make([]float64, 0, livenessMaxFrames),
+				PersonTrackID: observation.PersonTrackID,
+				ID:            fmt.Sprintf("%s-%d", sessionID, session.NextID),
+				StudentID:     observation.Student.ID,
+				FirstSeen:     now,
+				Scores:        make([]float64, 0, livenessMaxFrames),
 			}
 			session.Tracks[observation.Student.ID] = track
 		}
@@ -107,6 +110,10 @@ func (t *recognitionTracker) Observe(sessionID string, observations []recognitio
 		}
 
 		average := averageScores(track.Scores)
+		// Re-evaluate the rolling window so a transient rejection can recover and
+		// a previously verified track cannot keep passing after spoof evidence.
+		track.Verified = false
+		track.Rejected = false
 		liveVotes := 0
 		spoofVotes := 0
 		for _, score := range track.Scores {
@@ -131,7 +138,7 @@ func (t *recognitionTracker) Observe(sessionID string, observations []recognitio
 				average >= livenessPassThreshold &&
 				liveVotes >= livenessMinFrames-1:
 				track.Verified = true
-			case now.Sub(track.FirstSeen) >= livenessDecisionTimeout || len(track.Scores) >= livenessMaxFrames:
+			case (now.Sub(track.FirstSeen) >= livenessDecisionTimeout && len(track.Scores) >= livenessMinFrames) || len(track.Scores) >= livenessMaxFrames:
 				timedOut = true
 			}
 		}

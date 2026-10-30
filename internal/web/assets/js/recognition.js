@@ -1,4 +1,5 @@
 let recognitionLastDurationMS = 0;
+let recognitionOverlayExpiryTimer = null;
 function renderRecognitionStats(stats = {}) {
   const verified = Math.max(0, Number(stats.verified ?? 0) || 0);
   const unregistered = Math.max(0, Number(stats.unregistered ?? 0) || 0);
@@ -103,6 +104,7 @@ function renderRecognition(r) {
 }
 
 function drawFaceOverlay(faces, persons = [], sourceWidth = 0, sourceHeight = 0) {
+  clearTimeout(recognitionOverlayExpiryTimer);
   const overlay = $('#faceOverlay');
   if (!overlay) return;
   const dimensions = typeof cameraFrameDimensions === 'function'
@@ -168,11 +170,19 @@ function drawFaceOverlay(faces, persons = [], sourceWidth = 0, sourceHeight = 0)
     const y = Math.max(24, b.y || 0);
     ctx.fillText(label, x, y - 5);
   });
+  if (faces.length || persons.length) {
+    recognitionOverlayExpiryTimer = setTimeout(() => {
+      ctx.clearRect(0, 0, overlay.width, overlay.height);
+    }, 500);
+  }
 }
 
 async function recognizeFrame(options = {}) {
   if (recognizing) return null;
   recognizing = true;
+  const requestCamera = activeCamera;
+  const requestSessionID = recognitionSessionID;
+  drawFaceOverlay([], []);
   const performanceStartedAt = performance.now();
   let completedRecognition = false;
   try {
@@ -202,6 +212,7 @@ async function recognizeFrame(options = {}) {
       });
     }
     if (r?.skipped && r?.busy) return null;
+    if (activeCamera !== requestCamera || recognitionSessionID !== requestSessionID) return null;
     completedRecognition = true;
     renderRecognition(r);
     if ((r.verified_count || r.recognized_count || 0) > 0) {

@@ -707,7 +707,7 @@ jobs:
 
   cleanup-old-runs:
     needs: build-windows
-    if: success()
+    if: success() && github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - name: Keep current and previous successful run

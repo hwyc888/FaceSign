@@ -122,11 +122,7 @@ func (t *personTracker) Observe(sessionID string, detections []person.Detection,
 			}
 			session.Tracks[trackID] = track
 		}
-		if !track.Rectangle.Empty() {
-			track.Rectangle = blendRectangle(track.Rectangle, detection.Rectangle, 0.68)
-		} else {
-			track.Rectangle = detection.Rectangle
-		}
+		track.Rectangle = detection.Rectangle
 		track.Score = detection.Score
 		track.LastSeen = now
 

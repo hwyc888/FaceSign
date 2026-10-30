@@ -70,12 +70,12 @@ func TestRecognitionTrackerRejectsLowLivenessInThreeFrames(t *testing.T) {
 	}
 }
 
-func TestRecognitionTrackerTimesOutWithinTwoSecondsAndResets(t *testing.T) {
+func TestRecognitionTrackerTimesOutAfterDecisionWindowAndResets(t *testing.T) {
 	tracker := newRecognitionTracker()
 	now := time.Now()
 	student := store.Student{ID: 4, StudentNo: "S4", Name: "丁"}
 	var decision trackDecision
-	for i, offset := range []time.Duration{0, 600 * time.Millisecond, 1200 * time.Millisecond, 2050 * time.Millisecond} {
+	for i, offset := range []time.Duration{0, 2100 * time.Millisecond, 4200 * time.Millisecond, livenessDecisionTimeout + 50*time.Millisecond} {
 		decision = tracker.Observe("camera-timeout", []recognitionObservation{{
 			Student: student, Similarity: 0.91, LiveScore: 0.55,
 		}}, now.Add(offset))[0]
@@ -89,7 +89,7 @@ func TestRecognitionTrackerTimesOutWithinTwoSecondsAndResets(t *testing.T) {
 
 	next := tracker.Observe("camera-timeout", []recognitionObservation{{
 		Student: student, Similarity: 0.91, LiveScore: 0.90,
-	}}, now.Add(2200*time.Millisecond))[0]
+	}}, now.Add(livenessDecisionTimeout+200*time.Millisecond))[0]
 	if next.TrackID == decision.TrackID || next.Frames != 1 {
 		t.Fatalf("timed-out track was not reset: old=%#v new=%#v", decision, next)
 	}
@@ -122,5 +122,57 @@ func TestRecognitionTrackerExpiresOldTrack(t *testing.T) {
 	}}, now.Add(livenessTrackTTL+time.Second))[0]
 	if first.TrackID == second.TrackID || second.Frames != 1 {
 		t.Fatalf("expired track was reused: first=%#v second=%#v", first, second)
+	}
+}
+
+func TestRecognitionTrackerAllowsSlowMultiPersonFrames(t *testing.T) {
+	tracker := newRecognitionTracker()
+	now := time.Now()
+	var decision trackDecision
+	for frameIndex := 0; frameIndex < 4; frameIndex++ {
+		decision = tracker.Observe("slow-camera", []recognitionObservation{{
+			Student: store.Student{ID: 1}, PersonTrackID: "person-1", LiveScore: 0.70,
+		}}, now.Add(time.Duration(frameIndex)*1100*time.Millisecond))[0]
+		if decision.TimedOut {
+			t.Fatalf("slow inference timed out before enough evidence: %#v", decision)
+		}
+	}
+	if !decision.Verified {
+		t.Fatalf("moderate live evidence did not pass: %#v", decision)
+	}
+}
+
+func TestRecognitionTrackerDoesNotShareVerificationAcrossPeople(t *testing.T) {
+	tracker := newRecognitionTracker()
+	now := time.Now()
+	observation := recognitionObservation{Student: store.Student{ID: 1}, PersonTrackID: "person-1", LiveScore: 0.95}
+	for frameIndex := 0; frameIndex < 3; frameIndex++ {
+		tracker.Observe("camera", []recognitionObservation{observation}, now.Add(time.Duration(frameIndex)*200*time.Millisecond))
+	}
+	observation.PersonTrackID = "person-2"
+	decision := tracker.Observe("camera", []recognitionObservation{observation}, now.Add(time.Second))[0]
+	if decision.Verified || decision.Frames != 1 {
+		t.Fatalf("new person inherited previous verification: %#v", decision)
+	}
+}
+
+func TestRecognitionTrackerReevaluatesRejectedAndVerifiedTracks(t *testing.T) {
+	tracker := newRecognitionTracker()
+	now := time.Now()
+	observation := recognitionObservation{Student: store.Student{ID: 1}, PersonTrackID: "person-1"}
+	var decision trackDecision
+	for frameIndex, liveScore := range []float64{0.1, 0.1, 0.1, 0.95, 0.95, 0.95, 0.95, 0.95, 0.95} {
+		observation.LiveScore = liveScore
+		decision = tracker.Observe("camera", []recognitionObservation{observation}, now.Add(time.Duration(frameIndex)*200*time.Millisecond))[0]
+	}
+	if !decision.Verified || decision.Rejected {
+		t.Fatalf("rejection stayed latched despite new live evidence: %#v", decision)
+	}
+	for frameIndex := 0; frameIndex < 6; frameIndex++ {
+		observation.LiveScore = 0.1
+		decision = tracker.Observe("camera", []recognitionObservation{observation}, now.Add(2*time.Second+time.Duration(frameIndex)*200*time.Millisecond))[0]
+	}
+	if decision.Verified || !decision.Rejected {
+		t.Fatalf("verification stayed latched despite spoof evidence: %#v", decision)
 	}
 }

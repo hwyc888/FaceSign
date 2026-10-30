@@ -105,6 +105,12 @@ func (s *Server) recognizeImage(w http.ResponseWriter, r *http.Request, img imag
 }
 
 func (s *Server) recognizeNetworkCameraImage(w http.ResponseWriter, r *http.Request, camera store.Camera, personImg image.Image) {
+	// Fetch the detailed frame before detection so body and face ROIs stay synchronized.
+	if frame, _, _, _, frameErr := s.cameraPreviewSourceFrame(r.Context(), camera); frameErr == nil {
+		if decoded, _, decodeErr := image.Decode(bytes.NewReader(frame)); decodeErr == nil {
+			personImg = decoded
+		}
+	}
 	now := time.Now()
 	sessionID := recognitionSessionID(r)
 	loadLevel := normalizeRecognitionLoadLevel(r.Header.Get("X-FaceSign-AI-Load"))
@@ -126,30 +132,13 @@ func (s *Server) recognizeNetworkCameraImage(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	if !anyPersonReadyForFaceProbe(personDetections) {
-		s.recognizePreparedImage(w, r, personImg, now, sessionID, personDetections, nil)
-		return
-	}
-
-	faceImg := personImg
-	facePeople := personDetections
-	if frame, _, _, _, frameErr := s.cameraPreviewSourceFrame(r.Context(), camera); frameErr == nil {
-		if decoded, _, decodeErr := image.Decode(bytes.NewReader(frame)); decodeErr == nil {
-			faceImg = decoded
-			facePeople = scalePersonDetections(personDetections, personImg.Bounds(), faceImg.Bounds())
-		} else {
-			s.logger.Warn("main-stream face frame decode failed; using recognition frame", "camera_id", camera.ID, "error", decodeErr)
-		}
-	} else {
-		s.logger.Warn("main-stream face frame unavailable; using recognition frame", "camera_id", camera.ID, "error", frameErr)
-	}
-
-	detections, err := s.detectFacesInPersonROIs(faceImg, facePeople)
-	if err != nil {
+	// Cached body ROIs may lag behind moving people; detect faces on the current frame.
+	detections, err := s.engine.DetectAll(personImg, s.detectionThreshold)
+	if err != nil && !errors.Is(err, face.ErrNoFace) {
 		writeFaceError(w, err)
 		return
 	}
-	s.recognizePreparedImage(w, r, faceImg, now, sessionID, facePeople, detections)
+	s.recognizePreparedImage(w, r, personImg, now, sessionID, personDetections, detections)
 }
 
 func (s *Server) recognizePreparedImage(
@@ -167,17 +156,12 @@ func (s *Server) recognizePreparedImage(
 	personIndex := make(map[string]int, len(tracks))
 	for i, track := range tracks {
 		status := personWaitingStatus(track.Rectangle)
-		if track.Student != nil {
-			status = "已识别，等待再次露脸"
-		}
 		personResults[i] = recognitionPerson{
 			TrackID:         track.TrackID,
 			Box:             boxFromRectangle(track.Rectangle),
 			Score:           track.Score,
 			Status:          status,
 			BestFaceQuality: track.BestQuality,
-			Student:         track.Student,
-			Similarity:      track.Similarity,
 		}
 		personIndex[track.TrackID] = i
 	}
@@ -188,6 +172,7 @@ func (s *Server) recognizePreparedImage(
 	needsFeature := make([]bool, len(detections))
 	featureEvaluated := make([]bool, len(detections))
 	candidates := make([]matchCandidate, 0, len(detections)*2)
+	associatedTracks := make(map[string]bool, len(tracks))
 
 	for i, detected := range detections {
 		quality := scoreFaceQuality(img, detected)
@@ -199,8 +184,15 @@ func (s *Server) recognizePreparedImage(
 			QualityStatus: quality.Status,
 		}
 
-		if trackIndex, ok := associateFaceToPerson(detected.Rectangle, tracks); ok {
-			track := tracks[trackIndex]
+		availableTracks := make([]personTrackObservation, 0, len(tracks))
+		for _, track := range tracks {
+			if !associatedTracks[track.TrackID] {
+				availableTracks = append(availableTracks, track)
+			}
+		}
+		if trackIndex, ok := associateFaceToPerson(detected.Rectangle, availableTracks); ok {
+			track := availableTracks[trackIndex]
+			associatedTracks[track.TrackID] = true
 			detectionTrackIDs[i] = track.TrackID
 			result.TrackID = track.TrackID
 			result.BestQuality = track.BestQuality
@@ -212,35 +204,12 @@ func (s *Server) recognizePreparedImage(
 		}
 
 		if quality.Score < minRecognitionFaceQuality {
-			if student, similarity, best := s.personTracker.Identity(sessionID, result.TrackID); student != nil {
-				result.Matched = true
-				result.Student = student
-				result.Similarity = similarity
-				result.BestQuality = best
-				if pIndex, ok := personIndex[result.TrackID]; ok {
-					personResults[pIndex].Student = student
-					personResults[pIndex].Similarity = similarity
-					personResults[pIndex].BestFaceQuality = best
-				}
-			}
 			results[i] = result
 			continue
 		}
 
-		if result.TrackID != "" && !s.personTracker.NeedFeature(sessionID, result.TrackID, quality.Score, now) {
-			if student, similarity, best := s.personTracker.Identity(sessionID, result.TrackID); student != nil {
-				candidates = append(candidates, matchCandidate{
-					DetectionIndex: i,
-					Student:        *student,
-					Score:          similarity,
-				})
-				result.BestQuality = best
-			} else {
-				result.Status = "等待更佳人脸帧"
-			}
-		} else {
-			needsFeature[i] = true
-		}
+		// Geometry-only body tracks cannot prove identity after crossings or occlusion.
+		needsFeature[i] = true
 		results[i] = result
 	}
 
@@ -261,16 +230,21 @@ func (s *Server) recognizePreparedImage(
 				continue
 			}
 			featureEvaluated[i] = true
+			var bestCandidate *matchCandidate
 			for _, sample := range decoded {
 				score := face.Similarity(feature, sample.Feature)
-				if score >= s.matchThreshold {
-					candidates = append(candidates, matchCandidate{
+				if score >= s.matchThreshold && (bestCandidate == nil || score > bestCandidate.Score) {
+					bestCandidate = &matchCandidate{
 						DetectionIndex: i,
 						Student:        sample.Student,
 						Score:          score,
 						FreshFeature:   true,
-					})
+					}
 				}
+			}
+			// A duplicate best identity is ambiguous, not a reason to invent a second-best name.
+			if bestCandidate != nil {
+				candidates = append(candidates, *bestCandidate)
 			}
 		}
 	}
@@ -346,9 +320,10 @@ func (s *Server) recognizePreparedImage(
 		}
 		result.LivenessScore = score
 		observations = append(observations, recognitionObservation{
-			Student:    match.Student,
-			Similarity: match.Similarity,
-			LiveScore:  score,
+			PersonTrackID: result.TrackID,
+			Student:       match.Student,
+			Similarity:    match.Similarity,
+			LiveScore:     score,
 		})
 		observationDetectionIndexes = append(observationDetectionIndexes, match.DetectionIndex)
 	}
