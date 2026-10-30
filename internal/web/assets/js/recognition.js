@@ -129,14 +129,14 @@ function drawFaceOverlay(faces, persons = [], sourceWidth = 0, sourceHeight = 0)
 
   persons.forEach(p => {
     const b = scaledBox(p.box);
-    if (p.face_visible) return;
     ctx.save();
     ctx.strokeStyle = '#8b5cf6';
     ctx.fillStyle = '#8b5cf6';
     ctx.setLineDash([10, 8]);
     ctx.strokeRect(b.x || 0, b.y || 0, b.width || 0, b.height || 0);
-    const waitStatus = p.status || '等待露脸';
-    const label = p.student ? p.student.name + ' · ' + waitStatus : '人员 · ' + waitStatus;
+    const waitStatus = p.face_visible ? '跟踪中' : (p.status || '等待露脸');
+    // Body geometry alone must never carry a cached person's name.
+    const label = `人员 ${String(p.track_id || '').split('-').pop()} · ${waitStatus}`;
     ctx.fillText(label, Math.max(0, b.x || 0), Math.max(24, b.y || 0) - 5);
     ctx.restore();
   });
@@ -173,7 +173,7 @@ function drawFaceOverlay(faces, persons = [], sourceWidth = 0, sourceHeight = 0)
   if (faces.length || persons.length) {
     recognitionOverlayExpiryTimer = setTimeout(() => {
       ctx.clearRect(0, 0, overlay.width, overlay.height);
-    }, 500);
+    }, Math.max(3000, Math.min(10000, recognitionLastDurationMS * 3)));
   }
 }
 
@@ -182,7 +182,6 @@ async function recognizeFrame(options = {}) {
   recognizing = true;
   const requestCamera = activeCamera;
   const requestSessionID = recognitionSessionID;
-  drawFaceOverlay([], []);
   const performanceStartedAt = performance.now();
   let completedRecognition = false;
   try {
@@ -221,7 +220,6 @@ async function recognizeFrame(options = {}) {
     }
     return r;
   } catch (e) {
-    drawFaceOverlay([], []);
     if (!autoTimer && !options.silent) toast(e.message);
     return null;
   } finally {

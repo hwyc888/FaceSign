@@ -26,6 +26,7 @@ function makeRecognitionSessionID() {
 
 function resetRecognitionSession() {
   recognitionSessionID = makeRecognitionSessionID();
+  if (typeof drawFaceOverlay === 'function') drawFaceOverlay([], []);
 }
 
 const titles = {

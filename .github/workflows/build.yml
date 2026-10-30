@@ -44,6 +44,8 @@ jobs:
             node --check $_.FullName
             if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           }
+          node --test scripts/recognition-overlay.test.cjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           foreach ($script in @('scripts\install.ps1','scripts\upgrade.ps1','scripts\uninstall.ps1')) {
             $tokens = $null
             $parseErrors = $null
