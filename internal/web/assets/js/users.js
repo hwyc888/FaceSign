@@ -23,11 +23,11 @@ async function loadUsers() {
         '<button class="danger" data-user-delete="' + user.id + '">删除账号</button></div></td></tr>';
     }).join('') || '<tr><td colspan="6">暂无用户</td></tr>';
 
-    $('[data-user-clone]').forEach(button => {
+    $$('[data-user-clone]').forEach(button => {
       button.onclick = () => openUserCloneModal(Number(button.dataset.userClone), 'single');
     });
 
-    $('[data-user-save]').forEach(button => {
+    $$('[data-user-save]').forEach(button => {
       button.onclick = async () => {
         const userID = Number(button.dataset.userSave);
         const values = {};
