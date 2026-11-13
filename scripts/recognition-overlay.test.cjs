@@ -130,7 +130,7 @@ test('local texture tracking moves boxes from pixels without waiting for identit
   const moved = harness.context.trackTextureBox(previous, current, box);
   assert.ok(moved);
   assert.ok(Math.abs(moved.x - box.x - 6 / current.width) < 0.0001);
-  assert.equal(moved.y, box.y);
+  assert.ok(Math.abs(moved.y - box.y) < 0.0001);
   assert.equal(harness.context.trackTextureBox(previous, {...current, time: 1000}, box), null);
 });
 

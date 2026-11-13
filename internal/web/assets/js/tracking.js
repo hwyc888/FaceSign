@@ -57,7 +57,7 @@ function trackTexturePoint(previous, current, point, radius, maxOffset) {
       squares += value * value;
     }
   }
-  if (squares / samples.length - (sum / samples.length) ** 2 < 35) return null;
+  if (squares / samples.length - (sum / samples.length) ** 2 < 20) return null;
 
   let best = null;
   const matches = [];
@@ -76,13 +76,7 @@ function trackTexturePoint(previous, current, point, radius, maxOffset) {
       if (!best || candidate.error < best.error) best = candidate;
     }
   }
-  if (!best || best.error > 24 || Math.abs(best.offsetX) === maxOffset || Math.abs(best.offsetY) === maxOffset) return null;
-  let alternative = null;
-  for (const candidate of matches) {
-    if (Math.hypot(candidate.offsetX - best.offsetX, candidate.offsetY - best.offsetY) >= 6 &&
-        (!alternative || candidate.error < alternative.error)) alternative = candidate;
-  }
-  if (alternative && alternative.error < best.error * 1.12 + 1) return null;
+  if (!best || best.error > 30 || Math.abs(best.offsetX) === maxOffset || Math.abs(best.offsetY) === maxOffset) return null;
   return best;
 }
 
@@ -93,8 +87,8 @@ function trackTextureBox(previous, current, box) {
 
   const centerX = box.x + box.width / 2;
   const centerY = box.y + box.height / 2;
-  const radius = Math.max(2, Math.min(5, Math.round(
-    Math.min(box.width * current.width, box.height * current.height) / 16
+  const radius = Math.max(2, Math.min(4, Math.round(
+    Math.min(box.width * current.width, box.height * current.height) / 20
   )));
   const maxOffset = Math.max(14, Math.min(22, Math.round(12 + elapsed / 40)));
   const points = [
@@ -109,16 +103,23 @@ function trackTextureBox(previous, current, box) {
     const match = trackTexturePoint(previous, current, point, radius, maxOffset);
     if (match) matches.set(point.role, match);
   }
-  if (matches.size < 3) return null;
+  if (matches.size < 4) return null;
 
-  const dx = median([...matches.values()].map(match => match.offsetX));
-  const dy = median([...matches.values()].map(match => match.offsetY));
+  const initialDX = median([...matches.values()].map(match => match.offsetX));
+  const initialDY = median([...matches.values()].map(match => match.offsetY));
+  const consistent = new Map([...matches.entries()].filter(([, match]) =>
+    Math.hypot(match.offsetX - initialDX, match.offsetY - initialDY) <= 4
+  ));
+  if (consistent.size < 4) return null;
+
+  const dx = median([...consistent.values()].map(match => match.offsetX));
+  const dy = median([...consistent.values()].map(match => match.offsetY));
   let scaleX = 1;
   let scaleY = 1;
-  const left = matches.get('left');
-  const right = matches.get('right');
-  const top = matches.get('top');
-  const bottom = matches.get('bottom');
+  const left = consistent.get('left');
+  const right = consistent.get('right');
+  const top = consistent.get('top');
+  const bottom = consistent.get('bottom');
   if (left && right) {
     const span = Math.max(1, box.width * current.width * 0.5);
     scaleX = Math.max(0.85, Math.min(1.15, 1 + (right.offsetX - left.offsetX) / span));
