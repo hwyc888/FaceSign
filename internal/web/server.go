@@ -87,6 +87,13 @@ func New(logger *slog.Logger, st *store.Store, engine *face.Engine, live *livene
 
 func (s *Server) Handler() http.Handler {
 	mux := http.NewServeMux()
+	mux.HandleFunc("/api/auth/status", s.authStatus)
+	mux.HandleFunc("/api/auth/setup", s.authSetup)
+	mux.HandleFunc("/api/auth/login", s.authLogin)
+	mux.HandleFunc("/api/auth/logout", s.authLogout)
+	mux.HandleFunc("/api/auth/password", s.authPassword)
+	mux.HandleFunc("/api/users", s.users)
+	mux.HandleFunc("/api/users/", s.userAction)
 	mux.HandleFunc("/api/health", s.health)
 	mux.HandleFunc("/api/version", s.versionInfo)
 	mux.HandleFunc("/api/settings", s.settings)
@@ -108,7 +115,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/photo-import/analyze", s.photoImportAnalyze)
 	mux.HandleFunc("/api/photo-import/", s.photoImportAction)
 	mux.HandleFunc("/", s.root)
-	return s.logging(mux)
+	return s.logging(s.authMiddleware(mux))
 }
 
 func (s *Server) logging(next http.Handler) http.Handler {
