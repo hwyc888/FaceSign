@@ -566,3 +566,8 @@ pre{background:#0b1220;color:#d8e2f3;border-radius:12px;padding:16px;overflow:au
   .user-permission-grid{grid-template-columns:1fr}
   .user-create-form>button{width:100%}
 }
+
+@media(max-width:640px){
+  body.non-admin-user .sidebar nav{grid-template-columns:repeat(5,minmax(0,1fr))}
+  body.non-admin-user:not(.user-can-arrange-seats) .sidebar nav{grid-template-columns:repeat(4,minmax(0,1fr))}
+}
