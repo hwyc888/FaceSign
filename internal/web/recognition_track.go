@@ -151,14 +151,16 @@ func (t *recognitionTracker) Observe(sessionID string, observations []recognitio
 				}
 				status := "光线不足或画面模糊，请调整摄像头"
 				if track.ManualReviewRequired {
+					track.ManualReviewUntil = now.Add(livenessLowLightManualReviewTTL)
 					status = "低光画面无法确认活体，请人工核验"
 				}
 				out[i] = trackDecision{
 					TrackID:           track.ID,
-					Frames:            len(track.Scores),
+					Frames:            track.LowQualityFrames,
 					RequiredFrames:    livenessFastFrames,
+					LiveScore:         observation.LiveScore,
 					Similarity:        track.SimilaritySum / maxLivenessFloat(1, float64(track.Frames)),
-					NeedsManualReview: track.ManualReviewRequired,
+					NeedsManualReview: track.ManualReviewRequired && now.Before(track.ManualReviewUntil),
 					LivenessStatus:    status,
 				}
 				continue
@@ -243,7 +245,8 @@ func (t *recognitionTracker) Observe(sessionID string, observations []recognitio
 				track.Rejected = true
 				track.ManualReviewRequired = false
 			case len(track.Scores) >= 3 && average < livenessSpoofThreshold &&
-				track.LowLightMode && track.SpoofVotes == 0 && track.LowQualitySpoofVotes >= 2:
+				track.LowLightMode && !livenessObservationSpoofQualityUsable(observation) &&
+				track.SpoofVotes == 0 && track.LowQualitySpoofVotes >= 2:
 				track.ManualReviewRequired = true
 				track.ManualReviewUntil = now.Add(livenessLowLightManualReviewTTL)
 			case len(track.Scores) >= livenessFastFrames &&
@@ -261,6 +264,9 @@ func (t *recognitionTracker) Observe(sessionID string, observations []recognitio
 			}
 		}
 
+		if track.ManualReviewRequired && !livenessObservationSpoofQualityUsable(observation) {
+			track.ManualReviewUntil = now.Add(livenessLowLightManualReviewTTL)
+		}
 		requiredFrames := requiredLivenessFrames(track)
 		if timedOut {
 			requiredFrames = maxFrames
