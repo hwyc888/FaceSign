@@ -18,6 +18,10 @@ type faceComparison struct {
 }
 
 func (s *Server) enrollmentCheck(w http.ResponseWriter, r *http.Request) {
+	user := authUser(r)
+	if !requirePermission(w, r, user.CanAddStudents || user.CanResampleFaces, "没有新增人员或重新采样的权限") {
+		return
+	}
 	if r.Method != http.MethodPost {
 		methodNotAllowed(w)
 		return
@@ -45,6 +49,9 @@ func (s *Server) enrollmentCheck(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) createEnrollment(w http.ResponseWriter, r *http.Request) {
+	if !requirePermission(w, r, authUser(r).CanAddStudents, "没有新增学生的权限") {
+		return
+	}
 	if r.Method != http.MethodPost {
 		methodNotAllowed(w)
 		return
@@ -96,6 +103,9 @@ func (s *Server) createEnrollment(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) addFaceSample(w http.ResponseWriter, r *http.Request, studentID int64) {
+	if !requirePermission(w, r, authUser(r).CanResampleFaces, "没有补充或重新采样人脸的权限") {
+		return
+	}
 	feature, err := s.readEnrollmentFeature(w, r)
 	if err != nil {
 		s.writeEnrollmentError(w, err)
