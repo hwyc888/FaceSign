@@ -113,7 +113,7 @@ $('#lowLightRecognitionMode').addEventListener('change', async event => {
     appSettingsLoaded = true;
     renderAppSettings();
     toast(enabled
-      ? '夜间低光识别已开启：保留活体与照片攻击检测'
+      ? '夜间低光识别已开启：连续匹配且无可信照片/屏幕攻击证据时自动签到'
       : '夜间低光识别已关闭：恢复标准识别参数');
   } catch (e) {
     event.target.checked = !enabled;
