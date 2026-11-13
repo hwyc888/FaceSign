@@ -374,3 +374,82 @@ func TestStopNetworkCameraStreamMarksStoppedAndCancels(t *testing.T) {
 		t.Fatalf("stopped stream waiter error=%v want context.Canceled", err)
 	}
 }
+
+
+func TestSharedCameraPreviewIsReleasedOnlyAfterLastBrowserLeaves(t *testing.T) {
+	const cameraID int64 = 502
+	previewCtx, cancelPreview := context.WithCancel(context.Background())
+	recognitionCtx, cancelRecognition := context.WithCancel(context.Background())
+	defer cancelRecognition()
+
+	preview := newNetworkCameraStreamForPurpose(store.Camera{ID: cameraID, Kind: "local"}, "shared-preview", "host-usb")
+	preview.cancel = cancelPreview
+	recognition := newNetworkCameraStreamForPurpose(store.Camera{ID: cameraID}, "shared-recognition", "recognition")
+	recognition.cancel = cancelRecognition
+	s := &Server{
+		networkCameraStreams:        map[int64]*networkCameraStream{cameraID: recognition},
+		networkCameraPreviewStreams: map[int64]*networkCameraStream{cameraID: preview},
+		networkCameraPreviewClients: make(map[int64]int),
+	}
+
+	s.acquireNetworkCameraPreviewClient(cameraID)
+	s.acquireNetworkCameraPreviewClient(cameraID)
+	if s.releaseNetworkCameraPreviewIfUnused(cameraID) {
+		t.Fatal("one browser must not release a camera used by another browser")
+	}
+	if preview.isStopped() {
+		t.Fatal("shared preview stopped while two browsers were connected")
+	}
+
+	s.releaseNetworkCameraPreviewClient(cameraID)
+	if preview.isStopped() {
+		t.Fatal("first browser closing must leave the second browser's preview running")
+	}
+	s.releaseNetworkCameraPreviewClient(cameraID)
+	if !preview.isStopped() {
+		t.Fatal("preview capture should stop after the final browser leaves")
+	}
+	if !recognition.isStopped() {
+		t.Fatal("preview release must not interrupt the independent recognition pool")
+	}
+	select {
+	case <-previewCtx.Done():
+	default:
+		t.Fatal("last preview release did not cancel the host capture")
+	}
+	if s.networkCameraPreviewStreams[cameraID] != nil {
+		t.Fatal("released preview stream remained in the shared pool")
+	}
+}
+
+func TestExplicitCameraReleaseStopsPreviewOnlyWhenUnused(t *testing.T) {
+	const cameraID int64 = 503
+	previewCtx, cancelPreview := context.WithCancel(context.Background())
+	recognitionCtx, cancelRecognition := context.WithCancel(context.Background())
+	defer cancelRecognition()
+
+	preview := newNetworkCameraStreamForPurpose(store.Camera{ID: cameraID, Kind: "local"}, "preview", "host-usb")
+	preview.cancel = cancelPreview
+	recognition := newNetworkCameraStreamForPurpose(store.Camera{ID: cameraID}, "recognition", "recognition")
+	recognition.cancel = cancelRecognition
+	s := &Server{
+		networkCameraStreams:        map[int64]*networkCameraStream{cameraID: recognition},
+		networkCameraPreviewStreams: map[int64]*networkCameraStream{cameraID: preview},
+	}
+
+	if !s.releaseNetworkCameraPreviewIfUnused(cameraID) {
+		t.Fatal("unused preview should be released")
+	}
+	if !preview.isStopped() {
+		t.Fatal("unused preview was not stopped")
+	}
+	if recognition.isStopped() {
+		t.Fatal("explicit preview release must not stop recognition stream")
+	}
+	select {
+	case <-previewCtx.Done():
+	default:
+		t.Fatal("unused preview cancellation was not propagated")
+	}
+	_ = recognitionCtx
+}
