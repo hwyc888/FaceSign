@@ -1239,6 +1239,8 @@ func TestClosingCameraReleasesServerCapture(t *testing.T) {
 		"async function stopCamera()",
 		"if (cameraOpen) await stopCamera()",
 		"摄像头已关闭并释放设备",
+		"releaseResult?.shared",
+		"当前窗口已关闭，摄像头仍供其他浏览器使用",
 	} {
 		if !strings.Contains(cameraScript, want) {
 			t.Fatalf("camera hard-release flow missing %q", want)
