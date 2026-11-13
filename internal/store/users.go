@@ -148,7 +148,7 @@ func (s *Store) UpdateUserAccess(ctx context.Context, id int64, user User, passw
 		return sql.ErrNoRows
 	}
 	if passwordHash != "" {
-		if _, err := s.db.ExecContext(ctx, "DELETE FROM auth_sessions WHERE user_id=?", id); err != nil {
+		if _, err := s.db.ExecContext(ctx, "UPDATE auth_sessions SET expires_at=MIN(expires_at,?) WHERE user_id=?", time.Now().Unix(), id); err != nil {
 			return err
 		}
 	}
@@ -177,8 +177,8 @@ func (s *Store) DeleteUser(ctx context.Context, id int64) error {
 	return nil
 }
 
-func (s *Store) DeleteOtherAuthSessions(ctx context.Context, userID int64, keepTokenHash string) error {
-	_, err := s.db.ExecContext(ctx, "DELETE FROM auth_sessions WHERE user_id=? AND token_hash<>?", userID, keepTokenHash)
+func (s *Store) ExpireOtherAuthSessions(ctx context.Context, userID int64, keepTokenHash string) error {
+	_, err := s.db.ExecContext(ctx, "UPDATE auth_sessions SET expires_at=MIN(expires_at,?) WHERE user_id=? AND token_hash<>?", time.Now().Unix(), userID, keepTokenHash)
 	return err
 }
 
