@@ -39,7 +39,7 @@ func TestRecognitionStatsAPIGetAndClear(t *testing.T) {
 
 	deleteReq := httptest.NewRequest(http.MethodDelete, "/api/recognition-stats", nil)
 	deleteRec := httptest.NewRecorder()
-	s.recognitionStats(deleteRec, deleteReq)
+	s.recognitionStats(deleteRec, withTestAdmin(deleteReq))
 	if deleteRec.Code != http.StatusOK {
 		t.Fatalf("DELETE status=%d body=%s", deleteRec.Code, deleteRec.Body.String())
 	}
