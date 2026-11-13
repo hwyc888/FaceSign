@@ -1268,8 +1268,15 @@ func TestAuthenticationAndUserManagementUI(t *testing.T) {
 	}
 	for _, want := range []string{
 		`id="authScreen"`,
+		`class="auth-brand"`,
+		`class="auth-brand-mark"`,
+		`id="authLoginTitle"`,
 		`id="authLoginForm"`,
+		`id="authSetupTitle"`,
 		`id="authSetupForm"`,
+		`class="auth-security-note"`,
+		`class="primary auth-submit"`,
+		`role="alert"`,
 		`data-page="users"`,
 		`id="userCreateForm"`,
 		`id="studentEditForm"`,
@@ -1278,6 +1285,12 @@ func TestAuthenticationAndUserManagementUI(t *testing.T) {
 		if !strings.Contains(string(index), want) {
 			t.Fatalf("authentication and user management UI missing %q", want)
 		}
+	}
+	if strings.Contains(string(index), "请使用管理员或已创建的用户账号登录。远程访问必须使用 HTTPS 地址；在 FaceSign 主机本机可使用本地地址。") {
+		t.Fatal("login screen should not display the long network-access notice")
+	}
+	if !strings.Contains(string(index), "首次初始化仅限在 FaceSign 主机本机完成") {
+		t.Fatal("administrator setup must retain its local-only security notice")
 	}
 	authScript, err := assets.ReadFile("assets/js/auth.js")
 	if err != nil {
