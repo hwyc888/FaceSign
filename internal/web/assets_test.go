@@ -1433,3 +1433,22 @@ func TestLowLightRecognitionSettingIsAdminConfigurableAndKeepsLivenessEnabled(t 
 		}
 	}
 }
+
+
+func TestRecognitionUIUsesServerLivenessTimeoutForLowLightMode(t *testing.T) {
+	data, err := assets.ReadFile("assets/js/recognition.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(data)
+	for _, want := range []string{
+		"let maxDurationMs = 2100;",
+		"Number(result.liveness_timeout_ms || 0) + 100",
+		"performance.now() - startedAt < maxDurationMs",
+		"performance.now() - startedAt + retryDelay >= maxDurationMs",
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("recognition burst does not honor configured liveness timeout: %q", want)
+		}
+	}
+}
