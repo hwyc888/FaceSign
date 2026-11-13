@@ -64,6 +64,15 @@ func (s *Store) UserBySession(ctx context.Context, tokenHash string, now time.Ti
 	return user, err
 }
 
+func (s *Store) UserBySessionForRelease(ctx context.Context, tokenHash string) (User, error) {
+	var user User
+	err := s.db.QueryRowContext(ctx, "SELECT u.id,u.username,u.password_hash,u.is_admin,u.can_edit_students,u.can_add_students,u.can_resample_faces,u.can_arrange_seats FROM auth_sessions a JOIN users u ON u.id=a.user_id WHERE a.token_hash=?", tokenHash).Scan(
+		&user.ID, &user.Username, &user.PasswordHash, &user.IsAdmin,
+		&user.CanEditStudents, &user.CanAddStudents, &user.CanResampleFaces, &user.CanArrangeSeats,
+	)
+	return user, err
+}
+
 func (s *Store) CreateAuthSession(ctx context.Context, tokenHash string, userID int64, expiresAt time.Time) error {
 	now := time.Now().Unix()
 	if _, err := s.db.ExecContext(ctx, "DELETE FROM auth_sessions WHERE expires_at<=?", now); err != nil {
