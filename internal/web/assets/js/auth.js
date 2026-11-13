@@ -129,6 +129,8 @@ $('#authSetupForm').addEventListener('submit', async event => {
 });
 
 $('#logoutButton').addEventListener('click', async () => {
+  if (typeof stopAutoRecognition === 'function') stopAutoRecognition();
+  if (typeof stopCamera === 'function') await stopCamera().catch(() => {});
   try {
     await api('/api/auth/logout', {method: 'POST'});
   } catch (error) {
@@ -136,8 +138,6 @@ $('#logoutButton').addEventListener('click', async () => {
   }
   currentUser = null;
   authAppStarted = false;
-  if (typeof stopAutoRecognition === 'function') stopAutoRecognition();
-  if (typeof stopCamera === 'function') await stopCamera().catch(() => {});
   showAuthPanel('login');
 });
 
