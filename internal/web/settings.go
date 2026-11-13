@@ -14,6 +14,7 @@ type appSettingsRequest struct {
 	RealtimeStatusNetwork     *bool `json:"realtime_status_network"`
 	RealtimeStatusRecognition *bool `json:"realtime_status_recognition"`
 	RealtimeStatusReason      *bool `json:"realtime_status_reason"`
+	LowLightRecognitionMode   *bool `json:"low_light_recognition_mode"`
 }
 
 func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
@@ -41,7 +42,8 @@ func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
 			in.RealtimeStatusDrop == nil &&
 			in.RealtimeStatusNetwork == nil &&
 			in.RealtimeStatusRecognition == nil &&
-			in.RealtimeStatusReason == nil {
+			in.RealtimeStatusReason == nil &&
+			in.LowLightRecognitionMode == nil {
 			writeError(w, http.StatusBadRequest, errors.New("缺少应用设置"))
 			return
 		}
@@ -73,6 +75,9 @@ func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
 		}
 		if in.RealtimeStatusReason != nil {
 			settings.RealtimeStatusReason = *in.RealtimeStatusReason
+		}
+		if in.LowLightRecognitionMode != nil {
+			settings.LowLightRecognitionMode = *in.LowLightRecognitionMode
 		}
 		if err := s.store.UpdateAppSettings(r.Context(), settings); err != nil {
 			writeError(w, http.StatusInternalServerError, err)
