@@ -626,3 +626,15 @@ pre{background:#0b1220;color:#d8e2f3;border-radius:12px;padding:16px;overflow:au
   .user-clone-preview{grid-column:auto}
   .user-row-actions{min-width:220px}
 }
+
+
+.low-light-security-note{
+  margin:8px 0 0;
+  padding:10px 12px;
+  border:1px solid #f0dfb5;
+  border-radius:9px;
+  background:#fffaf0;
+  color:#795b1d;
+  font-size:12px;
+  line-height:1.65;
+}
