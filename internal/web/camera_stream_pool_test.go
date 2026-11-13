@@ -409,7 +409,7 @@ func TestSharedCameraPreviewIsReleasedOnlyAfterLastBrowserLeaves(t *testing.T) {
 	if !preview.isStopped() {
 		t.Fatal("preview capture should stop after the final browser leaves")
 	}
-	if !recognition.isStopped() {
+	if recognition.isStopped() {
 		t.Fatal("preview release must not interrupt the independent recognition pool")
 	}
 	select {
