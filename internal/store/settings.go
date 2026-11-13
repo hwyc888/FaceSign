@@ -79,6 +79,10 @@ func (s *Store) AppSettings(ctx context.Context) (AppSettings, error) {
 	}, nil
 }
 
+func (s *Store) LowLightRecognitionMode(ctx context.Context) (bool, error) {
+	return s.appSettingBool(ctx, lowLightRecognitionModeSettingKey, false)
+}
+
 func (s *Store) appSettingBool(ctx context.Context, key string, defaultValue bool) (bool, error) {
 	var value string
 	err := s.db.QueryRowContext(ctx,
