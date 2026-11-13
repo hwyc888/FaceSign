@@ -452,7 +452,7 @@ pre{background:#0b1220;color:#d8e2f3;border-radius:12px;padding:16px;overflow:au
     box-shadow:0 -8px 24px rgba(16,24,40,.16)
   }
   .brand,.brand-sub{display:none}
-  .sidebar nav{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:5px;width:100%;overflow:visible}
+  .sidebar nav{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:5px;width:100%;overflow:visible}
   .nav{min-width:0;width:100%;padding:8px 3px;border-radius:10px;font-size:11px;line-height:1.2;overflow:hidden;text-overflow:ellipsis}
   .main{padding:10px}
   .topbar{
@@ -510,4 +510,29 @@ pre{background:#0b1220;color:#d8e2f3;border-radius:12px;padding:16px;overflow:au
   .seat-board{margin-left:-4px;margin-right:-4px}
   pre{white-space:pre-wrap;overflow-wrap:anywhere}
   .toast{left:10px;right:10px;bottom:calc(82px + env(safe-area-inset-bottom));text-align:center}
+}
+
+
+/* Dedicated student seat arrangement and selected-only batch controls. */
+.seat-editor-bulk-panel{display:grid;gap:11px;margin-top:14px;padding:14px;border:1px solid #e2e8f0;border-radius:12px;background:#fff}
+.seat-editor-bulk-filters,.seat-editor-bulk-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.seat-editor-filter{padding:8px 11px;border:1px solid #d8e0ea;border-radius:9px;background:#f8fafc;color:#475467;cursor:pointer}
+.seat-editor-filter.active{border-color:#7da9ef;background:#eef4ff;color:#1d4ed8;font-weight:750}
+.seat-editor-filter strong{margin-left:4px}
+.seat-editor-select-visible{display:inline-flex;align-items:center;gap:7px;color:#475467;font-size:13px}
+.seat-editor-select-visible input,.seat-editor-student-option input{width:auto;min-height:0;margin:0}
+.seat-editor-bulk-actions>span{font-size:13px;color:#475467}
+.seat-editor-student-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;max-height:290px;overflow:auto}
+.seat-editor-student-option{display:flex;align-items:center;gap:9px;min-width:0;padding:9px 10px;border:1px solid #e4e9f0;border-radius:9px;background:#fbfcfe;cursor:pointer}
+.seat-editor-student-option:has(input:checked){border-color:#8bb3f4;background:#eef4ff}
+.seat-editor-student-details{display:grid;gap:2px;min-width:0;flex:1}
+.seat-editor-student-details strong{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;font-size:13px}
+.seat-editor-student-details small{color:#667085;font-size:11px}
+.seat-editor-student-option em{flex:0 0 auto;color:#475467;font-size:12px;font-style:normal}
+.seat-editor-list-empty{padding:12px;color:#667085;font-size:13px;text-align:center;border:1px dashed #d8e0ea;border-radius:9px}
+@media(max-width:640px){
+  .seat-editor-bulk-actions{display:grid;grid-template-columns:1fr 1fr;align-items:stretch}
+  .seat-editor-bulk-actions button{width:100%}
+  .seat-editor-bulk-actions>span{align-self:center}
+  .seat-editor-student-list{grid-template-columns:1fr;max-height:340px}
 }

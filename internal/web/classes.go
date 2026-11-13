@@ -150,6 +150,24 @@ func (s *Server) classAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+
+	if len(parts) == 2 && parts[1] == "arrange-selected" && r.Method == http.MethodPost {
+		var in struct {
+			StudentIDs []int64 `json:"student_ids"`
+		}
+		if err := decodeJSON(r, &in); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		count, err := s.store.AutoArrangeSelectedSeats(r.Context(), id, in.StudentIDs)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "arranged": count})
+		return
+	}
+
 	if len(parts) == 2 && parts[1] == "arrange" && r.Method == http.MethodPost {
 		count, err := s.store.AutoArrangeSeats(r.Context(), id)
 		if err != nil {

@@ -268,6 +268,141 @@ func (s *Store) AutoArrangeSeats(ctx context.Context, id int64) (int, error) {
 	return len(ids), nil
 }
 
+
+func (s *Store) AutoArrangeSelectedSeats(ctx context.Context, id int64, studentIDs []int64) (int, error) {
+	if id <= 0 {
+		return 0, errors.New("无效的班级")
+	}
+	if len(studentIDs) == 0 {
+		return 0, errors.New("请先选择要编排的学生")
+	}
+
+	seen := make(map[int64]struct{}, len(studentIDs))
+	for _, studentID := range studentIDs {
+		if studentID <= 0 {
+			return 0, errors.New("无效的学生")
+		}
+		if _, exists := seen[studentID]; exists {
+			return 0, errors.New("选中的学生不能重复")
+		}
+		seen[studentID] = struct{}{}
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return 0, err
+	}
+	defer tx.Rollback()
+
+	var className string
+	var seatRows, seatsPerRow int
+	if err := tx.QueryRowContext(ctx,
+		"SELECT name,seat_rows,seats_per_row FROM classes WHERE id=?", id,
+	).Scan(&className, &seatRows, &seatsPerRow); err != nil {
+		return 0, err
+	}
+	capacity := seatRows * seatsPerRow
+	if len(studentIDs) > capacity {
+		return 0, fmt.Errorf("选中的学生有%d名，超过班级座位容量%d", len(studentIDs), capacity)
+	}
+
+	placeholders := strings.TrimSuffix(strings.Repeat("?,", len(studentIDs)), ",")
+	selectedArgs := make([]any, 0, len(studentIDs)+1)
+	selectedArgs = append(selectedArgs, strings.TrimSpace(className))
+	for _, studentID := range studentIDs {
+		selectedArgs = append(selectedArgs, studentID)
+	}
+
+	selectedRows, err := tx.QueryContext(ctx,
+		"SELECT id FROM students WHERE TRIM(class_name)=? AND id IN ("+placeholders+") ORDER BY student_no,id",
+		selectedArgs...,
+	)
+	if err != nil {
+		return 0, err
+	}
+	orderedIDs := make([]int64, 0, len(studentIDs))
+	for selectedRows.Next() {
+		var studentID int64
+		if err := selectedRows.Scan(&studentID); err != nil {
+			selectedRows.Close()
+			return 0, err
+		}
+		orderedIDs = append(orderedIDs, studentID)
+	}
+	if err := selectedRows.Err(); err != nil {
+		selectedRows.Close()
+		return 0, err
+	}
+	if err := selectedRows.Close(); err != nil {
+		return 0, err
+	}
+	if len(orderedIDs) != len(studentIDs) {
+		return 0, errors.New("部分学生不存在或不属于当前班级，请刷新后重试")
+	}
+
+	occupiedRows, err := tx.QueryContext(ctx,
+		"SELECT seat_no FROM students WHERE TRIM(class_name)=? AND seat_no>0 AND id NOT IN ("+placeholders+")",
+		selectedArgs...,
+	)
+	if err != nil {
+		return 0, err
+	}
+	occupied := make(map[int]struct{})
+	for occupiedRows.Next() {
+		var seatNo int
+		if err := occupiedRows.Scan(&seatNo); err != nil {
+			occupiedRows.Close()
+			return 0, err
+		}
+		if seatNo > 0 && seatNo <= capacity {
+			occupied[seatNo] = struct{}{}
+		}
+	}
+	if err := occupiedRows.Err(); err != nil {
+		occupiedRows.Close()
+		return 0, err
+	}
+	if err := occupiedRows.Close(); err != nil {
+		return 0, err
+	}
+
+	available := make([]int, 0, capacity-len(occupied))
+	for seatNo := 1; seatNo <= capacity; seatNo++ {
+		if _, taken := occupied[seatNo]; !taken {
+			available = append(available, seatNo)
+		}
+	}
+	if len(available) < len(orderedIDs) {
+		return 0, fmt.Errorf(
+			"可用座位只有%d个，选中的学生有%d名；未选中学生的座位未作修改",
+			len(available), len(orderedIDs),
+		)
+	}
+
+	idArgs := make([]any, 0, len(orderedIDs))
+	for _, studentID := range orderedIDs {
+		idArgs = append(idArgs, studentID)
+	}
+	if _, err := tx.ExecContext(ctx,
+		"UPDATE students SET seat_no=0 WHERE id IN ("+placeholders+")",
+		idArgs...,
+	); err != nil {
+		return 0, err
+	}
+	for index, studentID := range orderedIDs {
+		if _, err := tx.ExecContext(ctx,
+			"UPDATE students SET seat_no=? WHERE id=?", available[index], studentID,
+		); err != nil {
+			return 0, err
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return 0, err
+	}
+	return len(orderedIDs), nil
+}
+
 func (s *Store) DeleteClass(ctx context.Context, id int64) error {
 	var name string
 	if err := s.db.QueryRowContext(ctx, "SELECT name FROM classes WHERE id=?", id).Scan(&name); err != nil {

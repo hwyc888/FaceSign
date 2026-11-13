@@ -1,4 +1,4 @@
-async function showPage(name) {
+async function showPage(name, options = {}) {
   if (name !== 'checkin' && typeof stopAutoRecognition === 'function') {
     stopAutoRecognition();
   }
@@ -15,6 +15,12 @@ async function showPage(name) {
   if (name === 'students') {
     await loadStudents();
     startCamera().catch(() => {});
+  }
+  if (name === 'seating') {
+    await loadClasses();
+    if (!options.skipSeatEditorReload && Number(window.classSeatEditorID || 0) > 0 && !$('#classSeatEditor').classList.contains('hidden')) {
+      await reloadClassSeatEditor();
+    }
   }
   if (name === 'attendance') loadAttendance();
   if (name === 'settings') {
