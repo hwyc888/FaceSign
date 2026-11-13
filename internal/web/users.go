@@ -1,6 +1,7 @@
 package web
 
 import (
+	"database/sql"
 	"errors"
 	"net/http"
 	"strconv"
@@ -135,7 +136,7 @@ func (s *Server) userAction(w http.ResponseWriter, r *http.Request) {
 	case http.MethodDelete:
 		if err := s.store.DeleteUser(r.Context(), id); err != nil {
 			status := http.StatusBadRequest
-			if errors.Is(err, store.ErrUserNotFound) {
+			if errors.Is(err, sql.ErrNoRows) {
 				status = http.StatusNotFound
 			}
 			writeError(w, status, err)
