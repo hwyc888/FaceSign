@@ -114,9 +114,15 @@ function createTextureFrame(offsetX = 0, time = 0, scale = 1) {
   const gray = new Uint8Array(width * height);
   for (let vertical = 0; vertical < height; vertical++) {
     for (let horizontal = 0; horizontal < width; horizontal++) {
-      const sourceX = Math.round((horizontal - offsetX - width / 2) / scale + width / 2);
-      const sourceY = Math.round((vertical - height / 2) / scale + height / 2);
-      gray[vertical * width + horizontal] = ((sourceX * 73) ^ (sourceY * 151) ^ (sourceX * sourceY * 31)) & 255;
+      const sourceX = (horizontal - offsetX - width / 2) / scale + width / 2;
+      const sourceY = (vertical - height / 2) / scale + height / 2;
+      const texture =
+        128 +
+        42 * Math.sin(sourceX * 0.11) +
+        37 * Math.cos(sourceY * 0.13) +
+        24 * Math.sin((sourceX + sourceY) * 0.07) +
+        18 * Math.cos((sourceX - sourceY) * 0.17);
+      gray[vertical * width + horizontal] = Math.max(0, Math.min(255, Math.round(texture)));
     }
   }
   return {width, height, gray, time};
