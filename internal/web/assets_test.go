@@ -409,7 +409,7 @@ func TestRecognitionClientUsesFastLivenessCadence(t *testing.T) {
 	}
 	script := string(data)
 	for _, want := range []string{
-		"performance.now() - startedAt < 2100",
+		"performance.now() - startedAt < maxDurationMs",
 		"result.liveness_max_frames",
 		"face.liveness_timed_out",
 		"function recognitionFrameIntervalMS()",
@@ -1398,6 +1398,57 @@ func TestRecognitionUIRetriesBusySharedCameraFrames(t *testing.T) {
 	} {
 		if !strings.Contains(script, want) {
 			t.Fatalf("shared camera busy retry missing %q", want)
+		}
+	}
+}
+
+
+func TestLowLightRecognitionSettingIsAdminConfigurableAndKeepsLivenessEnabled(t *testing.T) {
+	index, err := assets.ReadFile("assets/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`id="lowLightRecognitionMode"`,
+		`id="lowLightRecognitionModeState"`,
+		"夜间低光识别模式",
+		"不会跳过活体验证",
+		"照片 / 屏幕攻击检测保持不变",
+	} {
+		if !strings.Contains(string(index), want) {
+			t.Fatalf("low-light recognition settings UI missing %q", want)
+		}
+	}
+	scriptData, err := assets.ReadFile("assets/js/settings.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"low_light_recognition_mode",
+		"lowLightRecognitionMode",
+		"保留活体与照片攻击检测",
+	} {
+		if !strings.Contains(string(scriptData), want) {
+			t.Fatalf("low-light recognition setting frontend missing %q", want)
+		}
+	}
+}
+
+
+func TestRecognitionUIUsesServerLivenessTimeoutForLowLightMode(t *testing.T) {
+	data, err := assets.ReadFile("assets/js/recognition.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(data)
+	for _, want := range []string{
+		"let maxDurationMs = 2100;",
+		"Number(result.liveness_timeout_ms || 0) + 100",
+		"performance.now() - startedAt < maxDurationMs",
+		"performance.now() - startedAt + retryDelay >= maxDurationMs",
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("recognition burst does not honor configured liveness timeout: %q", want)
 		}
 	}
 }

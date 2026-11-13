@@ -20,6 +20,11 @@ const (
 	livenessDecisionTimeout   = 2 * time.Second
 	livenessMinExposureScore  = 0.35
 	livenessMinSharpnessScore = 0.08
+
+	livenessLowLightMaxFrames        = 8
+	livenessLowLightDecisionTimeout = 3500 * time.Millisecond
+	livenessLowLightMinExposureScore = 0.20
+	livenessLowLightMinSharpnessScore = 0.05
 )
 
 type recognitionObservation struct {
@@ -27,7 +32,8 @@ type recognitionObservation struct {
 	Similarity float64
 	LiveScore  float64
 	Exposure   float64
-	Sharpness  float64
+	Sharpness    float64
+	LowLightMode bool
 }
 
 type recognitionTrack struct {
@@ -41,6 +47,7 @@ type recognitionTrack struct {
 	Verified      bool
 	Rejected      bool
 	Committed     bool
+	LowLightMode  bool
 }
 
 type trackDecision struct {
@@ -92,6 +99,9 @@ func (t *recognitionTracker) Observe(sessionID string, observations []recognitio
 	out := make([]trackDecision, len(observations))
 	for i, observation := range observations {
 		track := session.Tracks[observation.Student.ID]
+		if track != nil {
+			track.LowLightMode = observation.LowLightMode
+		}
 		if !livenessObservationQualityUsable(observation) {
 			if track == nil {
 				out[i] = trackDecision{
@@ -128,17 +138,21 @@ func (t *recognitionTracker) Observe(sessionID string, observations []recognitio
 			track = &recognitionTrack{
 				ID:        fmt.Sprintf("%s-%d", sessionID, session.NextID),
 				StudentID: observation.Student.ID,
-				FirstSeen: now,
-				Scores:    make([]float64, 0, livenessMaxFrames),
+				FirstSeen:    now,
+				Scores:       make([]float64, 0, livenessMaxFramesForMode(observation.LowLightMode)),
+				LowLightMode: observation.LowLightMode,
 			}
 			session.Tracks[observation.Student.ID] = track
 		}
+		track.LowLightMode = observation.LowLightMode
+		maxFrames := livenessMaxFramesForMode(track.LowLightMode)
+		decisionTimeout := livenessDecisionTimeoutForMode(track.LowLightMode)
 		track.LastSeen = now
 		track.Frames++
 		track.SimilaritySum += observation.Similarity
 		track.Scores = append(track.Scores, observation.LiveScore)
-		if len(track.Scores) > livenessMaxFrames {
-			track.Scores = append([]float64(nil), track.Scores[len(track.Scores)-livenessMaxFrames:]...)
+		if len(track.Scores) > maxFrames {
+			track.Scores = append([]float64(nil), track.Scores[len(track.Scores)-maxFrames:]...)
 		}
 
 		average := averageScores(track.Scores)
@@ -166,17 +180,14 @@ func (t *recognitionTracker) Observe(sessionID string, observations []recognitio
 				average >= livenessPassThreshold &&
 				liveVotes >= livenessMinFrames-1:
 				track.Verified = true
-			case now.Sub(track.FirstSeen) >= livenessDecisionTimeout || len(track.Scores) >= livenessMaxFrames:
+			case now.Sub(track.FirstSeen) >= decisionTimeout || len(track.Scores) >= maxFrames:
 				timedOut = true
 			}
 		}
 
-		requiredFrames := livenessFastFrames
-		if !track.Verified && !track.Rejected && !timedOut && len(track.Scores) >= livenessFastFrames {
-			requiredFrames = livenessMinFrames
-		}
-		if !track.Verified && !track.Rejected && !timedOut && len(track.Scores) >= livenessMinFrames {
-			requiredFrames = livenessMaxFrames
+		requiredFrames := requiredLivenessFrames(track)
+		if timedOut {
+			requiredFrames = maxFrames
 		}
 
 		status := "活体验证中"
@@ -226,17 +237,38 @@ func (t *recognitionTracker) Commit(sessionID, trackID string) {
 }
 
 func livenessObservationQualityUsable(observation recognitionObservation) bool {
-	return observation.Exposure >= livenessMinExposureScore &&
-		observation.Sharpness >= livenessMinSharpnessScore
+	exposureThreshold := livenessMinExposureScore
+	sharpnessThreshold := livenessMinSharpnessScore
+	if observation.LowLightMode {
+		exposureThreshold = livenessLowLightMinExposureScore
+		sharpnessThreshold = livenessLowLightMinSharpnessScore
+	}
+	return observation.Exposure >= exposureThreshold &&
+		observation.Sharpness >= sharpnessThreshold
+}
+
+func livenessMaxFramesForMode(lowLightMode bool) int {
+	if lowLightMode {
+		return livenessLowLightMaxFrames
+	}
+	return livenessMaxFrames
+}
+
+func livenessDecisionTimeoutForMode(lowLightMode bool) time.Duration {
+	if lowLightMode {
+		return livenessLowLightDecisionTimeout
+	}
+	return livenessDecisionTimeout
 }
 
 func requiredLivenessFrames(track *recognitionTrack) int {
 	if track == nil || track.Verified || track.Rejected {
 		return livenessFastFrames
 	}
+	maxFrames := livenessMaxFramesForMode(track.LowLightMode)
 	switch {
 	case len(track.Scores) >= livenessMinFrames:
-		return livenessMaxFrames
+		return maxFrames
 	case len(track.Scores) >= livenessFastFrames:
 		return livenessMinFrames
 	default:

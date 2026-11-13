@@ -154,3 +154,81 @@ func TestRecognitionTrackerDoesNotTreatPoorQualityFramesAsSpoofEvidence(t *testi
 		t.Fatalf("good quality live frames should still pass normally: %#v", decision)
 	}
 }
+
+
+func TestRecognitionTrackerLowLightModeAcceptsDimFramesButStillRequiresLiveScores(t *testing.T) {
+	tracker := newRecognitionTracker()
+	now := time.Now()
+	student := store.Student{ID: 88, StudentNo: "S88", Name: "夜间测试"}
+	var decision trackDecision
+	for i := 0; i < livenessMinFrames; i++ {
+		decision = tracker.Observe("camera-low-light-enabled", []recognitionObservation{{
+			Student: student, Similarity: 0.90, LiveScore: 0.70,
+			Exposure: 0.25, Sharpness: 0.055, LowLightMode: true,
+		}}, now.Add(time.Duration(i)*250*time.Millisecond))[0]
+	}
+	if !decision.Verified || decision.Rejected {
+		t.Fatalf("usable dim live frames should pass in low-light mode: %#v", decision)
+	}
+	if decision.Frames != livenessMinFrames {
+		t.Fatalf("low-light mode unexpectedly changed live vote count: %#v", decision)
+	}
+}
+
+func TestRecognitionTrackerLowLightModeStillRejectsPhotoAndScreenScores(t *testing.T) {
+	tracker := newRecognitionTracker()
+	now := time.Now()
+	student := store.Student{ID: 89, StudentNo: "S89", Name: "照片攻击测试"}
+	var decision trackDecision
+	for i := 0; i < livenessFastFrames; i++ {
+		decision = tracker.Observe("camera-low-light-spoof", []recognitionObservation{{
+			Student: student, Similarity: 0.94, LiveScore: 0.10,
+			Exposure: 0.25, Sharpness: 0.055, LowLightMode: true,
+		}}, now.Add(time.Duration(i)*200*time.Millisecond))[0]
+	}
+	if !decision.Rejected || decision.Verified || decision.NeedsAttendance {
+		t.Fatalf("low-light mode must continue rejecting spoof evidence: %#v", decision)
+	}
+}
+
+func TestRecognitionTrackerLowLightModeAllowsMoreTimeForUsableFrames(t *testing.T) {
+	tracker := newRecognitionTracker()
+	now := time.Now()
+	student := store.Student{ID: 90, StudentNo: "S90", Name: "超时测试"}
+	var decision trackDecision
+	offsets := []time.Duration{
+		0, 600 * time.Millisecond, 1200 * time.Millisecond,
+		1800 * time.Millisecond, 2400 * time.Millisecond, 3000 * time.Millisecond,
+	}
+	for _, offset := range offsets {
+		decision = tracker.Observe("camera-low-light-timeout", []recognitionObservation{{
+			Student: student, Similarity: 0.90, LiveScore: 0.55,
+			Exposure: 0.25, Sharpness: 0.055, LowLightMode: true,
+		}}, now.Add(offset))[0]
+		if decision.TimedOut {
+			t.Fatalf("low-light track timed out before extended deadline at %s: %#v", offset, decision)
+		}
+	}
+	decision = tracker.Observe("camera-low-light-timeout", []recognitionObservation{{
+		Student: student, Similarity: 0.90, LiveScore: 0.55,
+		Exposure: 0.25, Sharpness: 0.055, LowLightMode: true,
+	}}, now.Add(3600*time.Millisecond))[0]
+	if !decision.TimedOut || decision.Verified || decision.Rejected {
+		t.Fatalf("uncertain low-light track should time out without auto-attendance: %#v", decision)
+	}
+}
+
+func TestLowLightModeUsesRelaxedQualityFloorButKeepsNormalFloor(t *testing.T) {
+	observation := recognitionObservation{Exposure: 0.25, Sharpness: 0.055}
+	if livenessObservationQualityUsable(observation) {
+		t.Fatal("normal mode must keep the standard exposure and sharpness floor")
+	}
+	observation.LowLightMode = true
+	if !livenessObservationQualityUsable(observation) {
+		t.Fatal("low-light mode should accept dim but still measurable frames")
+	}
+	if livenessMaxFramesForMode(true) <= livenessMaxFrames ||
+		livenessDecisionTimeoutForMode(true) <= livenessDecisionTimeout {
+		t.Fatal("low-light mode should allow additional frames and sampling time")
+	}
+}

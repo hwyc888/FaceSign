@@ -15,6 +15,7 @@ const (
 	realtimeStatusNetworkSettingKey     = "realtime_status_network"
 	realtimeStatusRecognitionSettingKey = "realtime_status_recognition"
 	realtimeStatusReasonSettingKey      = "realtime_status_reason"
+	lowLightRecognitionModeSettingKey   = "low_light_recognition_mode"
 )
 
 type AppSettings struct {
@@ -26,6 +27,7 @@ type AppSettings struct {
 	RealtimeStatusNetwork      bool `json:"realtime_status_network"`
 	RealtimeStatusRecognition  bool `json:"realtime_status_recognition"`
 	RealtimeStatusReason       bool `json:"realtime_status_reason"`
+	LowLightRecognitionMode    bool `json:"low_light_recognition_mode"`
 }
 
 func (s *Store) AppSettings(ctx context.Context) (AppSettings, error) {
@@ -61,6 +63,10 @@ func (s *Store) AppSettings(ctx context.Context) (AppSettings, error) {
 	if err != nil {
 		return AppSettings{}, err
 	}
+	lowLightMode, err := s.appSettingBool(ctx, lowLightRecognitionModeSettingKey, false)
+	if err != nil {
+		return AppSettings{}, err
+	}
 	return AppSettings{
 		AutoStartCheckin:          autoStart,
 		RealtimeStatusEnabled:     realtimeStatus,
@@ -70,7 +76,12 @@ func (s *Store) AppSettings(ctx context.Context) (AppSettings, error) {
 		RealtimeStatusNetwork:     network,
 		RealtimeStatusRecognition: recognition,
 		RealtimeStatusReason:      reason,
+		LowLightRecognitionMode:   lowLightMode,
 	}, nil
+}
+
+func (s *Store) LowLightRecognitionMode(ctx context.Context) (bool, error) {
+	return s.appSettingBool(ctx, lowLightRecognitionModeSettingKey, false)
 }
 
 func (s *Store) appSettingBool(ctx context.Context, key string, defaultValue bool) (bool, error) {
@@ -107,6 +118,7 @@ func (s *Store) UpdateAppSettings(ctx context.Context, settings AppSettings) err
 		{realtimeStatusNetworkSettingKey, settings.RealtimeStatusNetwork},
 		{realtimeStatusRecognitionSettingKey, settings.RealtimeStatusRecognition},
 		{realtimeStatusReasonSettingKey, settings.RealtimeStatusReason},
+		{lowLightRecognitionModeSettingKey, settings.LowLightRecognitionMode},
 	}
 	for _, item := range values {
 		value := "0"

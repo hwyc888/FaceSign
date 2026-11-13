@@ -249,19 +249,21 @@ async function recognizeBurst() {
   manualRecognitionBurst = true;
   const startedAt = performance.now();
   let maxFrames = 6;
+  let maxDurationMs = 2100;
   let processedFrames = 0;
   try {
-    while (processedFrames < maxFrames && performance.now() - startedAt < 2100) {
+    while (processedFrames < maxFrames && performance.now() - startedAt < maxDurationMs) {
       const result = await recognizeFrame({silent: true});
       if (!result) break;
       if (result.skipped && result.busy) {
         const retryDelay = Math.max(100, recognitionFrameIntervalMS());
-        if (performance.now() - startedAt + retryDelay >= 2100) break;
+        if (performance.now() - startedAt + retryDelay >= maxDurationMs) break;
         await new Promise(resolve => setTimeout(resolve, retryDelay));
         continue;
       }
       processedFrames++;
       maxFrames = Math.max(3, Number(result.liveness_max_frames || maxFrames));
+      maxDurationMs = Math.max(maxDurationMs, Number(result.liveness_timeout_ms || 0) + 100);
       const faces = Array.isArray(result.faces) ? result.faces : [];
       const qualityThreshold = Number(result.face_quality_threshold || 0.45);
       const terminalFaces = faces.length && faces.every(face =>
@@ -276,7 +278,7 @@ async function recognizeBurst() {
       if (terminalFaces && !waitingPerson) {
         break;
       }
-      if (processedFrames < maxFrames && performance.now() - startedAt < 1980) {
+      if (processedFrames < maxFrames && performance.now() - startedAt < maxDurationMs - 120) {
         await new Promise(resolve => setTimeout(resolve, recognitionFrameIntervalMS()));
       }
     }

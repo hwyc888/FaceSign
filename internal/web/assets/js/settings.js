@@ -15,7 +15,8 @@ let appSettingsCache = {
   realtime_status_drop: true,
   realtime_status_network: true,
   realtime_status_recognition: true,
-  realtime_status_reason: true
+  realtime_status_reason: true,
+  low_light_recognition_mode: false
 };
 let appSettingsLoaded = false;
 
@@ -31,6 +32,12 @@ function renderAppSettings() {
   const realtimeEnabled = appSettingsCache.realtime_status_enabled !== false;
   if (realtimeCheckbox) realtimeCheckbox.checked = realtimeEnabled;
   if (realtimeState) realtimeState.textContent = realtimeEnabled ? '已显示' : '已隐藏';
+
+  const lowLightCheckbox = $('#lowLightRecognitionMode');
+  const lowLightState = $('#lowLightRecognitionModeState');
+  const lowLightEnabled = Boolean(appSettingsCache.low_light_recognition_mode);
+  if (lowLightCheckbox) lowLightCheckbox.checked = lowLightEnabled;
+  if (lowLightState) lowLightState.textContent = lowLightEnabled ? '已开启 · 全局生效' : '已关闭';
 
   const realtimeFields = {};
   REALTIME_STATUS_FIELDS.forEach(([id, key, field]) => {
@@ -86,6 +93,28 @@ $('#autoStartCheckin').addEventListener('change', async event => {
     appSettingsLoaded = true;
     renderAppSettings();
     toast(enabled ? '已开启：进入人脸签到时自动开始签到' : '已关闭：进入人脸签到时手动开始签到');
+  } catch (e) {
+    event.target.checked = !enabled;
+    toast(e.message);
+  } finally {
+    event.target.disabled = false;
+  }
+});
+
+$('#lowLightRecognitionMode').addEventListener('change', async event => {
+  const enabled = event.target.checked;
+  event.target.disabled = true;
+  try {
+    appSettingsCache = await api('/api/settings', {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({low_light_recognition_mode: enabled})
+    });
+    appSettingsLoaded = true;
+    renderAppSettings();
+    toast(enabled
+      ? '夜间低光识别已开启：保留活体与照片攻击检测'
+      : '夜间低光识别已关闭：恢复标准识别参数');
   } catch (e) {
     event.target.checked = !enabled;
     toast(e.message);
