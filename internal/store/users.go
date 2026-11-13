@@ -75,7 +75,8 @@ func (s *Store) UserBySessionForRelease(ctx context.Context, tokenHash string) (
 
 func (s *Store) CreateAuthSession(ctx context.Context, tokenHash string, userID int64, expiresAt time.Time) error {
 	now := time.Now().Unix()
-	if _, err := s.db.ExecContext(ctx, "DELETE FROM auth_sessions WHERE expires_at<=?", now); err != nil {
+	expiredCleanupBefore := now - int64((7 * 24 * time.Hour).Seconds())
+	if _, err := s.db.ExecContext(ctx, "DELETE FROM auth_sessions WHERE expires_at<=?", expiredCleanupBefore); err != nil {
 		return err
 	}
 	_, err := s.db.ExecContext(ctx, "INSERT INTO auth_sessions(token_hash,user_id,expires_at,created_at) VALUES(?,?,?,?)", tokenHash, userID, expiresAt.Unix(), now)
