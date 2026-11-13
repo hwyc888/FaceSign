@@ -128,6 +128,7 @@ function renderRecognition(r) {
         toast(result.first_checkin_today ? `${studentName} 已人工核验签到` : `${studentName} 今日已签到`);
         loadToday();
         if (typeof loadCheckinSeatBoard === 'function') loadCheckinSeatBoard();
+        if (cameraOpen) await recognizeFrame({silent: true});
       } catch (error) {
         toast(error.message);
         button.disabled = false;
