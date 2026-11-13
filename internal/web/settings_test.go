@@ -34,6 +34,18 @@ func TestAppSettingsAPI(t *testing.T) {
 	if current.AutoStartCheckin {
 		t.Fatal("auto start check-in should default off")
 	}
+	if current.LowLightRecognitionMode {
+		t.Fatal("low-light recognition mode should default off")
+	}
+
+	nonAdminPut := httptest.NewRequest(http.MethodPut, "/api/settings", strings.NewReader(`{"low_light_recognition_mode":true}`))
+	nonAdminPut.Header.Set("Content-Type", "application/json")
+	nonAdminPut = nonAdminPut.WithContext(context.WithValue(nonAdminPut.Context(), authContextKey{}, store.User{ID: 99}))
+	nonAdminRec := httptest.NewRecorder()
+	s.settings(nonAdminRec, nonAdminPut)
+	if nonAdminRec.Code != http.StatusForbidden {
+		t.Fatalf("non-admin low-light setting update status=%d body=%s", nonAdminRec.Code, nonAdminRec.Body.String())
+	}
 	if !current.RealtimeStatusEnabled {
 		t.Fatal("realtime status should default on")
 	}
@@ -107,3 +119,22 @@ func TestAppSettingsAPI(t *testing.T) {
 		t.Fatal("partial realtime field update changed unrelated status fields")
 	}
 }
+
+
+	lowLightPut := httptest.NewRequest(http.MethodPut, "/api/settings", strings.NewReader(\`{"low_light_recognition_mode":true}\`))
+	lowLightPut.Header.Set("Content-Type", "application/json")
+	lowLightRec := httptest.NewRecorder()
+	s.settings(lowLightRec, withTestAdmin(lowLightPut))
+	if lowLightRec.Code != http.StatusOK {
+		t.Fatalf("low-light setting PUT status=%d body=%s", lowLightRec.Code, lowLightRec.Body.String())
+	}
+	persisted, err = st.AppSettings(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !persisted.LowLightRecognitionMode {
+		t.Fatal("low-light recognition mode was not persisted")
+	}
+	if !persisted.AutoStartCheckin || persisted.RealtimeStatusEnabled {
+		t.Fatal("partial low-light setting update changed unrelated application settings")
+	}
