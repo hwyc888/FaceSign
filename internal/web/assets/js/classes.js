@@ -12,6 +12,15 @@ async function loadClasses() {
     classesCache = items;
     renderClassOptions($('#modalClassName') ? $('#modalClassName').value : '');
     if (typeof renderCheckinSeatClassOptions === 'function') renderCheckinSeatClassOptions();
+    const seatClassSelect = $('#seatArrangementClass');
+    if (seatClassSelect) {
+      const currentSeatClass = seatClassSelect.value || String(window.classSeatEditorID || '');
+      seatClassSelect.innerHTML = '<option value="">请选择班级</option>' +
+        classesCache.map(item => '<option value="' + item.id + '">' + esc(item.name) + '</option>').join('');
+      if (classesCache.some(item => String(item.id) === currentSeatClass)) {
+        seatClassSelect.value = currentSeatClass;
+      }
+    }
 
     const body = $('#classesBody');
     if (!body) return;
