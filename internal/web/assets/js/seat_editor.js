@@ -3,22 +3,33 @@ let classSeatEditorStudents = [];
 let classSeatEditorSelectedStudentID = 0;
 let classSeatEditorDraggingStudentID = 0;
 let classSeatEditorAdjustedSeats = new Set();
+let classSeatEditorStudentFilter = 'all';
+let classSeatEditorSelectedStudentIDs = new Set();
 
 function classSeatEditorClass() {
   return classesCache.find(item => Number(item.id) === Number(window.classSeatEditorID)) || null;
 }
 
 async function openClassSeatEditor(classID, options = {}) {
+  if (!$('#page-seating').classList.contains('active')) {
+    await showPage('seating', {skipSeatEditorReload: true});
+  }
   const item = classesCache.find(row => Number(row.id) === Number(classID));
   if (!item) {
     toast('班级不存在，请刷新后重试');
     return;
+  }
+  if (Number(window.classSeatEditorID || 0) !== Number(classID)) {
+    classSeatEditorSelectedStudentIDs.clear();
+    classSeatEditorStudentFilter = 'all';
   }
   window.classSeatEditorID = Number(classID);
   classSeatEditorSelectedStudentID = 0;
   if (!options.preserveAdjustments) {
     classSeatEditorAdjustedSeats = new Set();
   }
+  const classSelect = $('#seatArrangementClass');
+  if (classSelect) classSelect.value = String(classID);
   $('#classSeatEditor').classList.remove('hidden');
   $('#seatEditorTitle').textContent = item.name + ' · 座位编排';
   $('#seatEditorName').value = item.name;
@@ -34,7 +45,11 @@ function closeClassSeatEditor() {
   window.classSeatEditorID = 0;
   classSeatEditorStudents = [];
   classSeatEditorSelectedStudentID = 0;
+  classSeatEditorSelectedStudentIDs.clear();
+  classSeatEditorStudentFilter = 'all';
   classSeatEditorAdjustedSeats = new Set();
+  const classSelect = $('#seatArrangementClass');
+  if (classSelect) classSelect.value = '';
   $('#classSeatEditor').classList.add('hidden');
 }
 
@@ -44,6 +59,10 @@ async function reloadClassSeatEditor() {
   try {
     const students = await api('/api/students');
     classSeatEditorStudents = students.filter(student => student.class_name === item.name);
+    const currentStudentIDs = new Set(classSeatEditorStudents.map(student => Number(student.id)));
+    classSeatEditorSelectedStudentIDs.forEach(studentID => {
+      if (!currentStudentIDs.has(Number(studentID))) classSeatEditorSelectedStudentIDs.delete(studentID);
+    });
     renderClassSeatEditor();
   } catch (e) {
     toast(e.message);
@@ -59,6 +78,100 @@ function selectedSeatEditorStudent() {
 function setSeatEditorSelection(studentID) {
   classSeatEditorSelectedStudentID = Number(studentID || 0);
   renderClassSeatEditor();
+}
+
+
+function filteredSeatEditorStudents() {
+  return classSeatEditorStudents.filter(student => {
+    const assigned = Number(student.seat_no || 0) > 0;
+    if (classSeatEditorStudentFilter === 'assigned') return assigned;
+    if (classSeatEditorStudentFilter === 'unassigned') return !assigned;
+    return true;
+  }).sort((a, b) =>
+    String(a.student_no || '').localeCompare(String(b.student_no || ''), undefined, {numeric: true}) ||
+    Number(a.id) - Number(b.id)
+  );
+}
+
+function updateSeatEditorBulkState() {
+  const visible = filteredSeatEditorStudents();
+  const selectedVisible = visible.filter(student =>
+    classSeatEditorSelectedStudentIDs.has(Number(student.id))
+  ).length;
+  const count = $('#seatEditorBulkSelectionCount');
+  if (count) {
+    count.textContent = '已选择 ' + classSeatEditorSelectedStudentIDs.size +
+      ' 人（当前筛选 ' + selectedVisible + '/' + visible.length + ' 人）';
+  }
+  const selectVisible = $('#seatEditorSelectVisible');
+  if (selectVisible) {
+    selectVisible.checked = visible.length > 0 && selectedVisible === visible.length;
+    selectVisible.indeterminate = selectedVisible > 0 && selectedVisible < visible.length;
+    selectVisible.disabled = visible.length === 0;
+  }
+  const arrangeButton = $('#seatEditorArrangeSelected');
+  if (arrangeButton) arrangeButton.disabled = classSeatEditorSelectedStudentIDs.size === 0;
+  const clearButton = $('#seatEditorClearSelection');
+  if (clearButton) clearButton.disabled = classSeatEditorSelectedStudentIDs.size === 0;
+}
+
+function renderSeatEditorBulkControls() {
+  const all = classSeatEditorStudents.length;
+  const assigned = classSeatEditorStudents.filter(student => Number(student.seat_no || 0) > 0).length;
+  const unassigned = all - assigned;
+  const counts = {all, assigned, unassigned};
+  $$('[data-seat-student-count]').forEach(element => {
+    element.textContent = String(counts[element.dataset.seatStudentCount] || 0);
+  });
+  $$('[data-seat-student-filter]').forEach(button => {
+    button.classList.toggle('active', button.dataset.seatStudentFilter === classSeatEditorStudentFilter);
+    button.onclick = () => {
+      classSeatEditorStudentFilter = button.dataset.seatStudentFilter || 'all';
+      renderSeatEditorBulkControls();
+    };
+  });
+
+  const list = $('#seatEditorStudentList');
+  const visible = filteredSeatEditorStudents();
+  if (list) {
+    list.innerHTML = visible.length ? visible.map(student => {
+      const studentID = Number(student.id);
+      const checked = classSeatEditorSelectedStudentIDs.has(studentID) ? ' checked' : '';
+      const seatLabel = Number(student.seat_no || 0) > 0
+        ? Number(student.seat_no) + '号'
+        : '未编座位';
+      return '<label class="seat-editor-student-option">' +
+        '<input type="checkbox" data-seat-select-student="' + studentID + '"' + checked + '>' +
+        '<span class="seat-editor-student-details"><strong>' + esc(student.name) + '</strong>' +
+        '<small>' + esc(student.student_no) + '</small></span>' +
+        '<em>' + seatLabel + '</em></label>';
+    }).join('') : '<div class="seat-editor-list-empty">当前筛选下没有学生。</div>';
+  }
+
+  $$('[data-seat-select-student]').forEach(input => {
+    input.onchange = () => {
+      const studentID = Number(input.dataset.seatSelectStudent);
+      if (input.checked) classSeatEditorSelectedStudentIDs.add(studentID);
+      else classSeatEditorSelectedStudentIDs.delete(studentID);
+      updateSeatEditorBulkState();
+    };
+  });
+
+  const selectVisible = $('#seatEditorSelectVisible');
+  if (selectVisible) {
+    selectVisible.onchange = () => {
+      filteredSeatEditorStudents().forEach(student => {
+        const studentID = Number(student.id);
+        if (selectVisible.checked) classSeatEditorSelectedStudentIDs.add(studentID);
+        else classSeatEditorSelectedStudentIDs.delete(studentID);
+      });
+      $$('[data-seat-select-student]').forEach(input => {
+        input.checked = classSeatEditorSelectedStudentIDs.has(Number(input.dataset.seatSelectStudent));
+      });
+      updateSeatEditorBulkState();
+    };
+  }
+  updateSeatEditorBulkState();
 }
 
 function renderClassSeatEditor() {
@@ -119,6 +232,8 @@ function renderClassSeatEditor() {
         </button>`;
       }).join('')
     : '<span class="muted">全部学生都已编排座位。</span>';
+
+  renderSeatEditorBulkControls();
 
   const selection = $('#seatEditorSelection');
   const clear = $('#seatEditorClearSeat');
@@ -252,6 +367,12 @@ async function moveSeatEditorStudent(studentID, targetSeatNo, options = {}) {
   }
 }
 
+$('#seatArrangementClass').addEventListener('change', () => {
+  const classID = Number($('#seatArrangementClass').value || 0);
+  if (classID > 0) openClassSeatEditor(classID);
+  else closeClassSeatEditor();
+});
+
 $('#closeSeatEditor').addEventListener('click', closeClassSeatEditor);
 
 $('#seatEditorClearSeat').addEventListener('click', async () => {
@@ -261,18 +382,31 @@ $('#seatEditorClearSeat').addEventListener('click', async () => {
   await moveSeatEditorStudent(selected.id, 0);
 });
 
-$('#seatEditorAutoArrange').addEventListener('click', async () => {
+$('#seatEditorClearSelection').addEventListener('click', () => {
+  classSeatEditorSelectedStudentIDs.clear();
+  $$('[data-seat-select-student]').forEach(input => {
+    input.checked = false;
+  });
+  updateSeatEditorBulkState();
+});
+
+$('#seatEditorArrangeSelected').addEventListener('click', async () => {
   const item = classSeatEditorClass();
-  if (!item) return;
-  if (!confirm(`将“${item.name}”按学号顺序重新编排座位？现有座位调整会被覆盖。`)) return;
+  const studentIDs = Array.from(classSeatEditorSelectedStudentIDs);
+  if (!item || !studentIDs.length) return;
+  if (!confirm('只重新编排选中的 ' + studentIDs.length + ' 名学生，未选中学生的座位保持不变。继续吗？')) return;
   try {
     const beforeSeats = new Map(classSeatEditorStudents.map(student => [
       Number(student.id),
       Number(student.seat_no || 0)
     ]));
-    const result = await api(`/api/classes/${item.id}/arrange`, {method: 'POST'});
+    const result = await api('/api/classes/' + item.id + '/arrange-selected', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({student_ids: studentIDs})
+    });
     classSeatEditorSelectedStudentID = 0;
-    toast(`已重新编排 ${result.arranged} 名学生`);
+    classSeatEditorSelectedStudentIDs.clear();
     await reloadClassSeatEditor();
     classSeatEditorStudents.forEach(student => {
       const oldSeat = Number(beforeSeats.get(Number(student.id)) || 0);
@@ -284,6 +418,7 @@ $('#seatEditorAutoArrange').addEventListener('click', async () => {
     renderClassSeatEditor();
     if (typeof loadStudents === 'function') await loadStudents();
     if (typeof loadCheckinSeatBoard === 'function') await loadCheckinSeatBoard();
+    toast('已编排 ' + result.arranged + ' 名学生，未选中学生座位保持不变');
   } catch (e) {
     toast(e.message);
   }
