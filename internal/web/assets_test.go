@@ -1239,6 +1239,8 @@ func TestClosingCameraReleasesServerCapture(t *testing.T) {
 		"async function stopCamera()",
 		"if (cameraOpen) await stopCamera()",
 		"摄像头已关闭并释放设备",
+		"releaseResult?.shared",
+		"当前窗口已关闭，摄像头仍供其他浏览器使用",
 	} {
 		if !strings.Contains(cameraScript, want) {
 			t.Fatalf("camera hard-release flow missing %q", want)
@@ -1377,6 +1379,25 @@ func TestUserCloneUIProvidesSingleAndBatchGeneration(t *testing.T) {
 	for _, want := range []string{".user-clone-modal", ".user-clone-batch-fields", ".user-clone-permission"} {
 		if !strings.Contains(string(cssData), want) {
 			t.Fatalf("user clone styles missing %q", want)
+		}
+	}
+}
+
+
+func TestRecognitionUIRetriesBusySharedCameraFrames(t *testing.T) {
+	data, err := assets.ReadFile("assets/js/recognition.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(data)
+	for _, want := range []string{
+		"if (r?.skipped && r?.busy) return r;",
+		"if (result.skipped && result.busy)",
+		"const retryDelay = Math.max(100, recognitionFrameIntervalMS())",
+		"continue;",
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("shared camera busy retry missing %q", want)
 		}
 	}
 }

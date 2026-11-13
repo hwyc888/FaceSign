@@ -94,6 +94,10 @@ func (e *Engine) Score(img image.Image, faceRect image.Rectangle) (float64, erro
 
 	resized := image.NewRGBA(image.Rect(0, 0, inputSize, inputSize))
 	xdraw.CatmullRom.Scale(resized, resized.Bounds(), img, crop, xdraw.Src, nil)
+	// Apply bounded gamma compensation only to underexposed crops. Keep the
+	// anti-spoof decision thresholds unchanged; this restores some usable
+	// facial detail without turning a low-confidence frame into a live vote.
+	applyLowLightCompensation(resized)
 	fillInput(e.input.GetData(), resized)
 	if err := e.session.Run(); err != nil {
 		return 0, fmt.Errorf("run anti-spoof model: %w", err)
@@ -103,6 +107,61 @@ func (e *Engine) Score(img image.Image, faceRect image.Rectangle) (float64, erro
 		return 0, errors.New("anti-spoof model returned invalid output")
 	}
 	return realProbability(float64(data[0]), float64(data[1])), nil
+}
+
+func applyLowLightCompensation(img *image.RGBA) float64 {
+	if img == nil || img.Bounds().Empty() {
+		return 1
+	}
+	brightness := averageLuminance(img)
+	gamma := lowLightGamma(brightness)
+	if gamma >= 0.999 {
+		return 1
+	}
+
+	var lookup [256]uint8
+	for i := range lookup {
+		lookup[i] = uint8(math.Round(math.Pow(float64(i)/255, gamma) * 255))
+	}
+	for y := img.Bounds().Min.Y; y < img.Bounds().Max.Y; y++ {
+		for x := img.Bounds().Min.X; x < img.Bounds().Max.X; x++ {
+			offset := img.PixOffset(x, y)
+			img.Pix[offset] = lookup[img.Pix[offset]]
+			img.Pix[offset+1] = lookup[img.Pix[offset+1]]
+			img.Pix[offset+2] = lookup[img.Pix[offset+2]]
+		}
+	}
+	return gamma
+}
+
+func averageLuminance(img image.Image) float64 {
+	if img == nil || img.Bounds().Empty() {
+		return 0
+	}
+	var total float64
+	var samples int
+	bounds := img.Bounds()
+	for y := bounds.Min.Y; y < bounds.Max.Y; y++ {
+		for x := bounds.Min.X; x < bounds.Max.X; x++ {
+			r, g, b, _ := img.At(x, y).RGBA()
+			total += 0.299*float64(r)/257 + 0.587*float64(g)/257 + 0.114*float64(b)/257
+			samples++
+		}
+	}
+	if samples == 0 {
+		return 0
+	}
+	return total / float64(samples)
+}
+
+func lowLightGamma(brightness float64) float64 {
+	if brightness <= 1 || brightness >= 100 {
+		return 1
+	}
+	normalized := brightness / 255
+	target := 110.0 / 255
+	gamma := math.Log(target) / math.Log(normalized)
+	return math.Max(0.55, math.Min(1, gamma))
 }
 
 func expandedFaceRect(rect, bounds image.Rectangle) image.Rectangle {

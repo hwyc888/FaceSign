@@ -46,3 +46,53 @@ func TestRealProbability(t *testing.T) {
 		t.Fatalf("softmax conversion unexpected: %v", got)
 	}
 }
+
+
+func TestLowLightGammaIsBoundedAndLeavesNormalExposureAlone(t *testing.T) {
+	if got := lowLightGamma(40); got < 0.55 || got >= 1 {
+		t.Fatalf("dark frame gamma=%v, want bounded brightening", got)
+	}
+	if got := lowLightGamma(85); got >= 1 || got < 0.55 {
+		t.Fatalf("dim frame gamma=%v, want bounded brightening", got)
+	}
+	if got := lowLightGamma(120); got != 1 {
+		t.Fatalf("normal exposure should not be adjusted, gamma=%v", got)
+	}
+	if got := lowLightGamma(0); got != 1 {
+		t.Fatalf("completely black frame cannot be recovered, gamma=%v", got)
+	}
+}
+
+func TestLowLightCompensationBrightensDimCropWithoutChangingAlpha(t *testing.T) {
+	img := image.NewRGBA(image.Rect(0, 0, inputSize, inputSize))
+	for y := 0; y < inputSize; y++ {
+		for x := 0; x < inputSize; x++ {
+			img.Set(x, y, color.RGBA{R: 35, G: 42, B: 48, A: 255})
+		}
+	}
+	before := averageLuminance(img)
+	gamma := applyLowLightCompensation(img)
+	after := averageLuminance(img)
+	if gamma >= 1 || after <= before+20 {
+		t.Fatalf("low-light crop was not sufficiently brightened: gamma=%v before=%v after=%v", gamma, before, after)
+	}
+	if got := img.RGBAAt(0, 0).A; got != 255 {
+		t.Fatalf("alpha channel changed during compensation: %d", got)
+	}
+}
+
+func TestLowLightCompensationDoesNotChangeWellLitCrop(t *testing.T) {
+	img := image.NewRGBA(image.Rect(0, 0, inputSize, inputSize))
+	for y := 0; y < inputSize; y++ {
+		for x := 0; x < inputSize; x++ {
+			img.Set(x, y, color.RGBA{R: 125, G: 130, B: 135, A: 255})
+		}
+	}
+	before := img.RGBAAt(0, 0)
+	if gamma := applyLowLightCompensation(img); gamma != 1 {
+		t.Fatalf("well-lit crop should not be adjusted, gamma=%v", gamma)
+	}
+	if after := img.RGBAAt(0, 0); after != before {
+		t.Fatalf("well-lit crop changed: before=%v after=%v", before, after)
+	}
+}

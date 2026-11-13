@@ -599,8 +599,10 @@ func (s *Server) cameraAction(w http.ResponseWriter, r *http.Request) {
 				methodNotAllowed(w)
 				return
 			}
-			s.stopNetworkCameraStream(id)
-			writeJSON(w, http.StatusOK, map[string]any{"ok": true, "released": true})
+			released := s.releaseNetworkCameraPreviewIfUnused(id)
+			writeJSON(w, http.StatusOK, map[string]any{
+				"ok": true, "released": released, "shared": !released,
+			})
 			return
 		case "recognize":
 			if r.Method != http.MethodPost {
@@ -673,6 +675,10 @@ func (s *Server) cameraPreviewSourceFrame(ctx context.Context, item store.Camera
 }
 
 func (s *Server) cameraStream(w http.ResponseWriter, r *http.Request, item store.Camera) {
+	if networkCameraContinuousMode(item) != "" {
+		s.acquireNetworkCameraPreviewClient(item.ID)
+		defer s.releaseNetworkCameraPreviewClient(item.ID)
+	}
 	_ = http.NewResponseController(w).SetWriteDeadline(time.Time{})
 	flusher, ok := w.(http.Flusher)
 	if !ok {

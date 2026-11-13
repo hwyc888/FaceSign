@@ -44,7 +44,8 @@ function renderRecognition(r) {
 
   const faceHTML = faces.map((f, i) => {
     const quality = Number(f.quality_score || 0);
-    const qualityText = `人脸质量 ${(quality * 100).toFixed(0)}% · ${esc(f.quality_status || '等待清晰')}`;
+    const qualityHint = f.quality_hint ? ` · ${esc(f.quality_hint)}` : '';
+    const qualityText = `人脸质量 ${(quality * 100).toFixed(0)}% · ${esc(f.quality_status || '等待清晰')}${qualityHint}`;
     if (f.recognized && f.student) {
       const attendanceMeta = f.attendance
         ? ` | 首次 ${esc(String(f.attendance.checked_at || '').slice(-8))} | 最近 ${esc(String(f.attendance.last_seen_at || f.attendance.checked_at || '').slice(-8))} | 今日 ${Number(f.attendance.recognition_count || 1)}次`
@@ -201,7 +202,7 @@ async function recognizeFrame(options = {}) {
         body: fd
       });
     }
-    if (r?.skipped && r?.busy) return null;
+    if (r?.skipped && r?.busy) return r;
     completedRecognition = true;
     renderRecognition(r);
     if ((r.verified_count || r.recognized_count || 0) > 0) {
@@ -248,10 +249,18 @@ async function recognizeBurst() {
   manualRecognitionBurst = true;
   const startedAt = performance.now();
   let maxFrames = 6;
+  let processedFrames = 0;
   try {
-    for (let i = 0; i < maxFrames && performance.now() - startedAt < 2100; i++) {
+    while (processedFrames < maxFrames && performance.now() - startedAt < 2100) {
       const result = await recognizeFrame({silent: true});
       if (!result) break;
+      if (result.skipped && result.busy) {
+        const retryDelay = Math.max(100, recognitionFrameIntervalMS());
+        if (performance.now() - startedAt + retryDelay >= 2100) break;
+        await new Promise(resolve => setTimeout(resolve, retryDelay));
+        continue;
+      }
+      processedFrames++;
       maxFrames = Math.max(3, Number(result.liveness_max_frames || maxFrames));
       const faces = Array.isArray(result.faces) ? result.faces : [];
       const qualityThreshold = Number(result.face_quality_threshold || 0.45);
@@ -267,7 +276,7 @@ async function recognizeBurst() {
       if (terminalFaces && !waitingPerson) {
         break;
       }
-      if (i + 1 < maxFrames && performance.now() - startedAt < 1980) {
+      if (processedFrames < maxFrames && performance.now() - startedAt < 1980) {
         await new Promise(resolve => setTimeout(resolve, recognitionFrameIntervalMS()));
       }
     }

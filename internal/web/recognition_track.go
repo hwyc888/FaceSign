@@ -18,12 +18,16 @@ const (
 	livenessPassThreshold     = 0.68
 	livenessSpoofThreshold    = 0.40
 	livenessDecisionTimeout   = 2 * time.Second
+	livenessMinExposureScore  = 0.35
+	livenessMinSharpnessScore = 0.08
 )
 
 type recognitionObservation struct {
 	Student    store.Student
 	Similarity float64
 	LiveScore  float64
+	Exposure   float64
+	Sharpness  float64
 }
 
 type recognitionTrack struct {
@@ -88,6 +92,37 @@ func (t *recognitionTracker) Observe(sessionID string, observations []recognitio
 	out := make([]trackDecision, len(observations))
 	for i, observation := range observations {
 		track := session.Tracks[observation.Student.ID]
+		if !livenessObservationQualityUsable(observation) {
+			if track == nil {
+				out[i] = trackDecision{
+					RequiredFrames: livenessFastFrames,
+					LivenessStatus: "光线不足或画面模糊，请调整摄像头",
+				}
+				continue
+			}
+			track.LastSeen = now
+			if !track.Verified && !track.Rejected {
+				track.FirstSeen = now
+			}
+			status := "画面质量不足，请补光或靠近摄像头"
+			if track.Verified {
+				status = "活体通过"
+			} else if track.Rejected {
+				status = "疑似照片/屏幕"
+			}
+			out[i] = trackDecision{
+				TrackID:         track.ID,
+				Frames:          len(track.Scores),
+				RequiredFrames:  requiredLivenessFrames(track),
+				LiveScore:       averageScores(track.Scores),
+				Similarity:      track.SimilaritySum / maxLivenessFloat(1, float64(track.Frames)),
+				Verified:        track.Verified,
+				Rejected:        track.Rejected,
+				NeedsAttendance: track.Verified && !track.Committed,
+				LivenessStatus:  status,
+			}
+			continue
+		}
 		if track == nil {
 			session.NextID++
 			track = &recognitionTrack{
@@ -188,6 +223,32 @@ func (t *recognitionTracker) Commit(sessionID, trackID string) {
 			return
 		}
 	}
+}
+
+func livenessObservationQualityUsable(observation recognitionObservation) bool {
+	return observation.Exposure >= livenessMinExposureScore &&
+		observation.Sharpness >= livenessMinSharpnessScore
+}
+
+func requiredLivenessFrames(track *recognitionTrack) int {
+	if track == nil || track.Verified || track.Rejected {
+		return livenessFastFrames
+	}
+	switch {
+	case len(track.Scores) >= livenessMinFrames:
+		return livenessMaxFrames
+	case len(track.Scores) >= livenessFastFrames:
+		return livenessMinFrames
+	default:
+		return livenessFastFrames
+	}
+}
+
+func maxLivenessFloat(a, b float64) float64 {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 func averageScores(scores []float64) float64 {

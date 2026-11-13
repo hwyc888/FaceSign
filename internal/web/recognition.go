@@ -34,6 +34,7 @@ type recognitionFace struct {
 	LivenessTrackID   string            `json:"liveness_track_id,omitempty"`
 	QualityScore      float64           `json:"quality_score,omitempty"`
 	QualityStatus     string            `json:"quality_status,omitempty"`
+	QualityHint       string            `json:"quality_hint,omitempty"`
 	BestQuality       float64           `json:"best_quality,omitempty"`
 	LivenessScore     float64           `json:"liveness_score,omitempty"`
 	LivenessStatus    string            `json:"liveness_status,omitempty"`
@@ -197,6 +198,7 @@ func (s *Server) recognizePreparedImage(
 			Box:           boxFromRectangle(detected.Rectangle),
 			QualityScore:  quality.Score,
 			QualityStatus: quality.Status,
+			QualityHint:   quality.Hint,
 		}
 
 		if trackIndex, ok := associateFaceToPerson(detected.Rectangle, tracks); ok {
@@ -349,6 +351,8 @@ func (s *Server) recognizePreparedImage(
 			Student:    match.Student,
 			Similarity: match.Similarity,
 			LiveScore:  score,
+			Exposure:   qualities[match.DetectionIndex].Exposure,
+			Sharpness:  qualities[match.DetectionIndex].Sharpness,
 		})
 		observationDetectionIndexes = append(observationDetectionIndexes, match.DetectionIndex)
 	}

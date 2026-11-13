@@ -1160,8 +1160,8 @@ async function startCamera() {
 }
 
 async function releaseServerCameraCapture(camera) {
-  if (!camera || camera.kind === 'browser' || !Number(camera.id || 0)) return;
-  await api(`/api/cameras/${camera.id}/release`, {method: 'POST'});
+  if (!camera || camera.kind === 'browser' || !Number(camera.id || 0)) return null;
+  return await api(`/api/cameras/${camera.id}/release`, {method: 'POST'});
 }
 
 async function stopCamera() {
@@ -1197,15 +1197,18 @@ async function stopCamera() {
   }
 
   let releaseError = null;
+  let releaseResult = null;
   try {
-    await releaseServerCameraCapture(cameraToRelease);
+    releaseResult = await releaseServerCameraCapture(cameraToRelease);
   } catch (error) {
     releaseError = error;
     console.warn('release server camera capture failed', error);
   }
   toast(releaseError
     ? '摄像头画面已关闭，但服务器释放设备失败：' + (releaseError?.message || releaseError)
-    : '摄像头已关闭并释放设备');
+    : releaseResult?.shared
+      ? '当前窗口已关闭，摄像头仍供其他浏览器使用'
+      : '摄像头已关闭并释放设备');
 }
 
 async function toggleCamera() {
