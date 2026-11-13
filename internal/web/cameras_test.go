@@ -464,7 +464,7 @@ func TestCameraConnectionTestDiagnosesSuccess(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/cameras/test", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
-	s.cameraTest(rec, req)
+	s.cameraTest(rec, withTestAdmin(req))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
@@ -493,7 +493,7 @@ func TestCameraConnectionTestDiagnosesAuthenticationFailure(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/cameras/test", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
-	s.cameraTest(rec, req)
+	s.cameraTest(rec, withTestAdmin(req))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
@@ -523,7 +523,7 @@ func TestCameraConnectionTestDiagnosesInvalidImage(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/cameras/test", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
-	s.cameraTest(rec, req)
+	s.cameraTest(rec, withTestAdmin(req))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
@@ -639,7 +639,7 @@ func TestCameraConnectionTestReportsAutoDetectedDigest(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPost, "/api/cameras/test", strings.NewReader(body))
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
-	s.cameraTest(rec, req)
+	s.cameraTest(rec, withTestAdmin(req))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
@@ -738,7 +738,7 @@ func TestCameraReleaseActionStopsServerCapture(t *testing.T) {
 
 	rec := httptest.NewRecorder()
 	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/cameras/%d/release", camera.ID), nil)
-	s.cameraAction(rec, req)
+	s.cameraAction(rec, withTestAdmin(req))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("release status=%d body=%s", rec.Code, rec.Body.String())
 	}
