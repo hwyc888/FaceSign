@@ -484,9 +484,6 @@ func (s *Server) cameras(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) cameraAction(w http.ResponseWriter, r *http.Request) {
-	if r.Method != http.MethodGet && !requireAdmin(w, r) {
-		return
-	}
 	rest := strings.TrimPrefix(r.URL.Path, "/api/cameras/")
 	parts := strings.Split(strings.Trim(rest, "/"), "/")
 	if len(parts) == 0 || parts[0] == "" {
@@ -500,6 +497,9 @@ func (s *Server) cameraAction(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(parts) == 1 {
+		if !requireAdmin(w, r) {
+			return
+		}
 		switch r.Method {
 		case http.MethodPut:
 			current, err := s.store.CameraByID(r.Context(), id)
@@ -544,6 +544,9 @@ func (s *Server) cameraAction(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(parts) == 2 && parts[1] == "default" && r.Method == http.MethodPost {
+		if !requireAdmin(w, r) {
+			return
+		}
 		item, err := s.store.SetDefaultCamera(r.Context(), id)
 		if err != nil {
 			writeCameraStoreError(w, err)
