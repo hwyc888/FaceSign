@@ -40,7 +40,7 @@ func TestStudentProfileUpdateAPI(t *testing.T) {
 	req := httptest.NewRequest(http.MethodPut, "/api/students/1", body)
 	req.Header.Set("Content-Type", "application/json")
 	rec := httptest.NewRecorder()
-	s.studentAction(rec, req)
+	s.studentAction(rec, withTestAdmin(req))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status=%d body=%s", rec.Code, rec.Body.String())
 	}
