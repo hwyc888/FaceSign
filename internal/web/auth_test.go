@@ -189,3 +189,60 @@ func withTestAdmin(r *http.Request) *http.Request {
 		CanResampleFaces: true, CanArrangeSeats: true,
 	}))
 }
+
+
+func TestOnlyAdministratorCanManageUsersAndCannotCreateAnotherAdmin(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "user-management.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	admin, err := st.CreateInitialAdmin(context.Background(), "admin", "hash")
+	if err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{store: st, logger: slog.Default()}
+
+	nonAdminReq := httptest.NewRequest(http.MethodGet, "/api/users", nil)
+	nonAdminReq = nonAdminReq.WithContext(context.WithValue(nonAdminReq.Context(), authContextKey{}, store.User{ID: 22}))
+	nonAdminRec := httptest.NewRecorder()
+	s.users(nonAdminRec, nonAdminReq)
+	if nonAdminRec.Code != http.StatusForbidden {
+		t.Fatalf("non-admin user list status=%d body=%s", nonAdminRec.Code, nonAdminRec.Body.String())
+	}
+
+	adminContext := func(req *http.Request) *http.Request {
+		return req.WithContext(context.WithValue(req.Context(), authContextKey{}, admin))
+	}
+	elevateReq := httptest.NewRequest(http.MethodPost, "/api/users", strings.NewReader(\`{"username":"operator","password":"secure-pass-123","is_admin":true}\`))
+	elevateRec := httptest.NewRecorder()
+	s.users(elevateRec, adminContext(elevateReq))
+	if elevateRec.Code != http.StatusBadRequest {
+		t.Fatalf("admin creation attempt status=%d body=%s", elevateRec.Code, elevateRec.Body.String())
+	}
+	count, err := st.UserCount(context.Background())
+	if err != nil || count != 1 {
+		t.Fatalf("unexpected user count after admin creation attempt: count=%d err=%v", count, err)
+	}
+
+	createReq := httptest.NewRequest(http.MethodPost, "/api/users", strings.NewReader(\`{"username":"operator","password":"secure-pass-123","can_edit_students":true}\`))
+	createRec := httptest.NewRecorder()
+	s.users(createRec, adminContext(createReq))
+	if createRec.Code != http.StatusCreated {
+		t.Fatalf("ordinary user creation status=%d body=%s", createRec.Code, createRec.Body.String())
+	}
+	created, err := st.UserByUsername(context.Background(), "operator")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if created.IsAdmin {
+		t.Fatal("ordinary account was unexpectedly created as administrator")
+	}
+
+	adminDelete := httptest.NewRequest(http.MethodDelete, "/api/users/"+strconv.FormatInt(admin.ID, 10), nil)
+	adminDeleteRec := httptest.NewRecorder()
+	s.userAction(adminDeleteRec, adminContext(adminDelete))
+	if adminDeleteRec.Code == http.StatusOK {
+		t.Fatal("administrator account must not be deletable")
+	}
+}
