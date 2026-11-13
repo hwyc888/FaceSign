@@ -145,7 +145,7 @@ func (t *recognitionTracker) Observe(sessionID string, observations []recognitio
 			session.NextID++
 			track = &recognitionTrack{
 				ID:        fmt.Sprintf("%s-%d", sessionID, session.NextID),
-								FirstSeen: now,
+				FirstSeen: now,
 				Scores:    make([]float64, 0, livenessMaxFramesForMode(observation.LowLightMode)),
 			}
 			session.Tracks[observation.Student.ID] = track
