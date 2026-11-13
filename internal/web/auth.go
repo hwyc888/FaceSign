@@ -117,8 +117,8 @@ func (s *Server) authSetup(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in struct {
-		Username string \`json:"username"\`
-		Password string \`json:"password"\`
+		Username string `json:"username"`
+		Password string `json:"password"`
 	}
 	if err := decodeJSON(r, &in); err != nil {
 		writeError(w, http.StatusBadRequest, err)
@@ -160,8 +160,8 @@ func (s *Server) authLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	var in struct {
-		Username string \`json:"username"\`
-		Password string \`json:"password"\`
+		Username string `json:"username"`
+		Password string `json:"password"`
 	}
 	if err := decodeJSON(r, &in); err != nil {
 		writeError(w, http.StatusBadRequest, err)
@@ -201,8 +201,8 @@ func (s *Server) authPassword(w http.ResponseWriter, r *http.Request) {
 	}
 	user := authUser(r)
 	var in struct {
-		CurrentPassword string \`json:"current_password"\`
-		NewPassword     string \`json:"new_password"\`
+		CurrentPassword string `json:"current_password"`
+		NewPassword     string `json:"new_password"`
 	}
 	if err := decodeJSON(r, &in); err != nil {
 		writeError(w, http.StatusBadRequest, err)
