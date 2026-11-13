@@ -8,30 +8,58 @@
 </head>
 <body>
   <div class="auth-screen" id="authScreen">
-    <div class="auth-card">
-      <div class="brand">FaceSign</div>
-      <p class="muted">校园人脸考勤管理系统</p>
-      <div id="authLoginPanel" class="hidden">
-        <h2>用户登录</h2>
-        <p class="muted compact">请使用管理员或已创建的用户账号登录。远程访问必须使用 HTTPS 地址；在 FaceSign 主机本机可使用本地地址。</p>
+    <section class="auth-card" aria-label="FaceSign 账号访问">
+      <div class="auth-brand">
+        <span class="auth-brand-mark" aria-hidden="true">F</span>
+        <span class="auth-brand-copy">
+          <strong>FaceSign</strong>
+          <small>校园人脸考勤管理平台</small>
+        </span>
+      </div>
+
+      <div id="authLoginPanel" class="auth-panel hidden">
+        <div class="auth-heading">
+          <span class="auth-kicker">ACCOUNT SIGN IN</span>
+          <h1 id="authLoginTitle">欢迎回来</h1>
+          <p>登录账号，继续使用 FaceSign。</p>
+        </div>
         <form id="authLoginForm" class="auth-form">
-          <label>用户名<input id="authLoginUsername" required autocomplete="username"></label>
-          <label>密码<input id="authLoginPassword" type="password" required autocomplete="current-password"></label>
-          <button class="primary" type="submit">登录</button>
+          <label>用户名<input id="authLoginUsername" required autocomplete="username" placeholder="请输入用户名"></label>
+          <label>密码<input id="authLoginPassword" type="password" required autocomplete="current-password" placeholder="请输入密码"></label>
+          <button class="primary auth-submit" type="submit">
+            <span>登录系统</span>
+            <span class="auth-submit-arrow" aria-hidden="true">→</span>
+          </button>
         </form>
       </div>
-      <div id="authSetupPanel" class="hidden">
-        <h2>首次初始化管理员</h2>
-        <p class="muted compact">请在运行 FaceSign 的电脑本机浏览器完成初始化。管理员创建后不可删除，普通用户不能创建或提升为管理员。</p>
+
+      <div id="authSetupPanel" class="auth-panel hidden">
+        <div class="auth-heading">
+          <span class="auth-kicker">INITIAL SETUP</span>
+          <h1 id="authSetupTitle">创建管理员账号</h1>
+          <p>首次使用 FaceSign，请先设置系统管理员。</p>
+        </div>
+        <p class="auth-security-note">
+          <span class="auth-security-icon" aria-hidden="true">i</span>
+          <span>首次初始化仅限在 FaceSign 主机本机完成。管理员账号创建后不可删除。</span>
+        </p>
         <form id="authSetupForm" class="auth-form">
-          <label>管理员用户名<input id="authSetupUsername" required minlength="3" maxlength="32" autocomplete="username"></label>
-          <label>设置密码<input id="authSetupPassword" type="password" required minlength="10" autocomplete="new-password"></label>
-          <label>确认密码<input id="authSetupPasswordConfirm" type="password" required minlength="10" autocomplete="new-password"></label>
-          <button class="primary" type="submit">创建管理员并进入系统</button>
+          <label>管理员用户名<input id="authSetupUsername" required minlength="3" maxlength="32" autocomplete="username" placeholder="设置管理员用户名"></label>
+          <label>设置密码<input id="authSetupPassword" type="password" required minlength="10" autocomplete="new-password" placeholder="至少 10 位字符"></label>
+          <label>确认密码<input id="authSetupPasswordConfirm" type="password" required minlength="10" autocomplete="new-password" placeholder="再次输入密码"></label>
+          <button class="primary auth-submit" type="submit">
+            <span>创建管理员并进入系统</span>
+            <span class="auth-submit-arrow" aria-hidden="true">→</span>
+          </button>
         </form>
       </div>
-      <p class="auth-error" id="authError"></p>
-    </div>
+
+      <p class="auth-error" id="authError" role="alert" aria-live="polite"></p>
+      <footer class="auth-footer">
+        <span class="auth-footer-indicator" aria-hidden="true"></span>
+        <span>FaceSign · 校园人脸考勤管理系统</span>
+      </footer>
+    </section>
   </div>
   <div class="shell hidden" id="appShell">
     <aside class="sidebar">
