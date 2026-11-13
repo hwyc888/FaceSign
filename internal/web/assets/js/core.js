@@ -49,7 +49,9 @@ async function api(url, opt = {}) {
   const r = await fetch(url, opt);
   const data = await r.json().catch(() => ({}));
   if (!r.ok) {
-    if (r.status === 401 && !url.startsWith('/api/auth/') && typeof handleAuthExpired === 'function') {
+    if (r.status === 401 &&
+      !['/api/auth/status', '/api/auth/login', '/api/auth/setup', '/api/auth/logout'].includes(url) &&
+      typeof handleAuthExpired === 'function') {
       handleAuthExpired();
     }
     const err = new Error(data.error || `HTTP ${r.status}`);
