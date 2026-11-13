@@ -247,3 +247,45 @@ func TestOnlyAdministratorCanManageUsersAndCannotCreateAnotherAdmin(t *testing.T
 		t.Fatal("administrator account must not be deletable")
 	}
 }
+
+
+func TestExpiredSessionCanOnlyReleaseCameraCapture(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "expired-camera-release.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	user, err := st.CreateInitialAdmin(context.Background(), "admin", "hash")
+	if err != nil {
+		t.Fatal(err)
+	}
+	token, tokenHash, err := newSessionToken()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := st.CreateAuthSession(context.Background(), tokenHash, user.ID, time.Now().Add(-time.Hour)); err != nil {
+		t.Fatal(err)
+	}
+	s := &Server{store: st}
+	handler := s.authMiddleware(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	}))
+
+	release := httptest.NewRequest(http.MethodPost, "/api/cameras/1/release", nil)
+	release.RemoteAddr = "127.0.0.1:12345"
+	release.AddCookie(&http.Cookie{Name: authCookieName, Value: token})
+	releaseRec := httptest.NewRecorder()
+	handler.ServeHTTP(releaseRec, release)
+	if releaseRec.Code != http.StatusNoContent {
+		t.Fatalf("expired session camera release status=%d body=%s", releaseRec.Code, releaseRec.Body.String())
+	}
+
+	other := httptest.NewRequest(http.MethodGet, "/api/students", nil)
+	other.RemoteAddr = "127.0.0.1:12345"
+	other.AddCookie(&http.Cookie{Name: authCookieName, Value: token})
+	otherRec := httptest.NewRecorder()
+	handler.ServeHTTP(otherRec, other)
+	if otherRec.Code != http.StatusUnauthorized {
+		t.Fatalf("expired session normal API status=%d body=%s", otherRec.Code, otherRec.Body.String())
+	}
+}
