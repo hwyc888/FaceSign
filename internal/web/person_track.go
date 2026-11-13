@@ -334,6 +334,10 @@ func addFaceFallbackPersons(people []person.Detection, faces []face.Detection, b
 }
 
 func scoreFaceQuality(img image.Image, detected face.Detection) faceQualityResult {
+	return scoreFaceQualityWithThreshold(img, detected, minRecognitionFaceQuality)
+}
+
+func scoreFaceQualityWithThreshold(img image.Image, detected face.Detection, qualityThreshold float64) faceQualityResult {
 	rect := detected.Rectangle.Intersect(img.Bounds())
 	if rect.Empty() {
 		return faceQualityResult{Status: "等待清晰人脸"}
@@ -365,7 +369,7 @@ func scoreFaceQuality(img image.Image, detected face.Detection) faceQualityResul
 		status = "优秀"
 	case score >= 0.62:
 		status = "清晰"
-	case score >= minRecognitionFaceQuality:
+	case score >= qualityThreshold:
 		status = "可识别"
 	}
 	return faceQualityResult{
