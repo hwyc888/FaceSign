@@ -215,7 +215,7 @@ func TestOnlyAdministratorCanManageUsersAndCannotCreateAnotherAdmin(t *testing.T
 	adminContext := func(req *http.Request) *http.Request {
 		return req.WithContext(context.WithValue(req.Context(), authContextKey{}, admin))
 	}
-	elevateReq := httptest.NewRequest(http.MethodPost, "/api/users", strings.NewReader(\`{"username":"operator","password":"secure-pass-123","is_admin":true}\`))
+	elevateReq := httptest.NewRequest(http.MethodPost, "/api/users", strings.NewReader(`{"username":"operator","password":"secure-pass-123","is_admin":true}`))
 	elevateRec := httptest.NewRecorder()
 	s.users(elevateRec, adminContext(elevateReq))
 	if elevateRec.Code != http.StatusBadRequest {
@@ -226,7 +226,7 @@ func TestOnlyAdministratorCanManageUsersAndCannotCreateAnotherAdmin(t *testing.T
 		t.Fatalf("unexpected user count after admin creation attempt: count=%d err=%v", count, err)
 	}
 
-	createReq := httptest.NewRequest(http.MethodPost, "/api/users", strings.NewReader(\`{"username":"operator","password":"secure-pass-123","can_edit_students":true}\`))
+	createReq := httptest.NewRequest(http.MethodPost, "/api/users", strings.NewReader(`{"username":"operator","password":"secure-pass-123","can_edit_students":true}`))
 	createRec := httptest.NewRecorder()
 	s.users(createRec, adminContext(createReq))
 	if createRec.Code != http.StatusCreated {
