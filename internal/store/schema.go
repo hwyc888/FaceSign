@@ -60,6 +60,25 @@ func (s *Store) init(ctx context.Context) error {
             created_at INTEGER NOT NULL,
             PRIMARY KEY(kind, subject_key)
         )`,
+		`CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            username TEXT NOT NULL UNIQUE,
+            password_hash TEXT NOT NULL,
+            is_admin INTEGER NOT NULL DEFAULT 0,
+            can_edit_students INTEGER NOT NULL DEFAULT 0,
+            can_add_students INTEGER NOT NULL DEFAULT 0,
+            can_resample_faces INTEGER NOT NULL DEFAULT 0,
+            can_arrange_seats INTEGER NOT NULL DEFAULT 0,
+            created_at INTEGER NOT NULL,
+            updated_at INTEGER NOT NULL
+        )`,
+		`CREATE TABLE IF NOT EXISTS auth_sessions (
+            token_hash TEXT PRIMARY KEY,
+            user_id INTEGER NOT NULL,
+            expires_at INTEGER NOT NULL,
+            created_at INTEGER NOT NULL,
+            FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+        )`,
 		`CREATE TABLE IF NOT EXISTS cameras (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
             name TEXT NOT NULL UNIQUE,
@@ -129,6 +148,7 @@ func (s *Store) init(ctx context.Context) error {
 	}
 	for _, statement := range []string{
 		"CREATE INDEX IF NOT EXISTS idx_face_samples_student ON face_samples(student_id, created_at DESC)",
+		"CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions(user_id, expires_at)",
 		"CREATE INDEX IF NOT EXISTS idx_attendance_day ON attendance(day, checked_at DESC)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS idx_students_class_seat ON students(class_name,seat_no) WHERE seat_no > 0",
 		"CREATE UNIQUE INDEX IF NOT EXISTS idx_cameras_default ON cameras(is_default) WHERE is_default=1",
