@@ -1275,7 +1275,7 @@ func TestAuthenticationAndUserManagementUI(t *testing.T) {
 		`id="authSetupTitle"`,
 		`id="authSetupForm"`,
 		`class="auth-security-note"`,
-		`class="auth-submit"`,
+		`class="primary auth-submit"`,
 		`role="alert"`,
 		`data-page="users"`,
 		`id="userCreateForm"`,
