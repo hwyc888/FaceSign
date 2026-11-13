@@ -112,3 +112,32 @@ func TestUnknownFaceRetriesSoonWithoutBusyLoop(t *testing.T) {
 		t.Fatal("unknown face should retry within about 600ms")
 	}
 }
+
+
+func TestFaceQualityExplainsLowLightAndBlur(t *testing.T) {
+	detected := face.Detection{
+		Rectangle: image.Rect(90, 45, 230, 195),
+		Landmarks: [5]image.Point{{125, 95}, {195, 95}, {160, 125}, {135, 155}, {185, 155}},
+		Score: 0.95,
+	}
+
+	dark := image.NewRGBA(image.Rect(0, 0, 320, 240))
+	for y := 0; y < 240; y++ {
+		for x := 0; x < 320; x++ {
+			dark.Set(x, y, color.RGBA{R: 18, G: 18, B: 18, A: 255})
+		}
+	}
+	if got := scoreFaceQuality(dark, detected).Hint; got != "光线太暗，请增加正面补光" {
+		t.Fatalf("low-light hint=%q", got)
+	}
+
+	blurred := image.NewRGBA(image.Rect(0, 0, 320, 240))
+	for y := 0; y < 240; y++ {
+		for x := 0; x < 320; x++ {
+			blurred.Set(x, y, color.RGBA{R: 125, G: 125, B: 125, A: 255})
+		}
+	}
+	if got := scoreFaceQuality(blurred, detected).Hint; got != "画面模糊，请擦拭镜头并保持静止" {
+		t.Fatalf("blur hint=%q", got)
+	}
+}
