@@ -138,3 +138,109 @@ func TestPasswordResetExpiresSessionsButKeepsCameraReleaseToken(t *testing.T) {
 		t.Fatalf("revoked session should remain available for camera release: %v", err)
 	}
 }
+
+
+func TestCloneUsersCopiesOnlyOrdinaryPermissionsWithSharedPasswordHashes(t *testing.T) {
+	st, err := Open(filepath.Join(t.TempDir(), "clone-users.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	ctx := context.Background()
+
+	admin, err := st.CreateInitialAdmin(ctx, "admin", "admin-hash")
+	if err != nil {
+		t.Fatal(err)
+	}
+	source, err := st.CreateUser(ctx, "source", "source-hash", User{
+		CanEditStudents: true,
+		CanAddStudents: false,
+		CanResampleFaces: true,
+		CanArrangeSeats: false,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	created, err := st.CloneUsers(ctx, source.ID, []UserCloneCredential{
+		{Username: "copy01", PasswordHash: "bcrypt-hash-01"},
+		{Username: "copy02", PasswordHash: "bcrypt-hash-02"},
+		{Username: "copy03", PasswordHash: "bcrypt-hash-03"},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(created) != 3 {
+		t.Fatalf("created %d accounts, want 3", len(created))
+	}
+	for _, username := range []string{"copy01", "copy02", "copy03"} {
+		user, err := st.UserByUsername(ctx, username)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if user.IsAdmin {
+			t.Fatalf("%s was unexpectedly created as administrator", username)
+		}
+		if !user.CanEditStudents || user.CanAddStudents || !user.CanResampleFaces || user.CanArrangeSeats {
+			t.Fatalf("%s did not inherit source permissions: %#v", username, user)
+		}
+		if user.PasswordHash == "" || user.PasswordHash == "source-hash" {
+			t.Fatalf("%s did not receive a new password hash", username)
+		}
+	}
+	if _, err := st.CloneUsers(ctx, admin.ID, []UserCloneCredential{
+		{Username: "admin-copy", PasswordHash: "hash"},
+	}); err == nil {
+		t.Fatal("administrator account must not be a clone source")
+	}
+	if _, err := st.UserByUsername(ctx, "admin-copy"); err == nil {
+		t.Fatal("administrator clone was unexpectedly created")
+	}
+}
+
+func TestCloneUsersBatchIsAtomicWhenUsernameAlreadyExists(t *testing.T) {
+	st, err := Open(filepath.Join(t.TempDir(), "clone-users-atomic.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	ctx := context.Background()
+
+	source, err := st.CreateUser(ctx, "source", "source-hash", User{CanAddStudents: true})
+	if err != nil {
+		t.Fatal(err)
+	}
+	existing, err := st.CreateUser(ctx, "taken", "taken-hash", User{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	before, err := st.UserCount(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = st.CloneUsers(ctx, source.ID, []UserCloneCredential{
+		{Username: "new01", PasswordHash: "hash-01"},
+		{Username: "TAKEN", PasswordHash: "hash-02"},
+		{Username: "new03", PasswordHash: "hash-03"},
+	})
+	if err == nil {
+		t.Fatal("expected case-insensitive username collision")
+	}
+	after, err := st.UserCount(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if after != before {
+		t.Fatalf("failed clone batch left partial accounts: count before=%d after=%d", before, after)
+	}
+	if _, err := st.UserByUsername(ctx, "new01"); err == nil {
+		t.Fatal("first account from failed batch should have been rolled back")
+	}
+	if _, err := st.UserByUsername(ctx, "new03"); err == nil {
+		t.Fatal("last account from failed batch should not have been created")
+	}
+	if existing.Username != "taken" {
+		t.Fatalf("existing account unexpectedly changed: %#v", existing)
+	}
+}
