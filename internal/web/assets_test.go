@@ -1452,3 +1452,32 @@ func TestRecognitionUIUsesServerLivenessTimeoutForLowLightMode(t *testing.T) {
 		}
 	}
 }
+
+func TestLowLightManualReviewUIRequiresAdministratorConfirmation(t *testing.T) {
+	data, err := assets.ReadFile("assets/js/recognition.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(data)
+	for _, want := range []string{
+		"manual_review_required",
+		"data-manual-attendance",
+		"currentUser?.is_admin",
+		"/api/attendance/manual",
+		"window.confirm",
+		"低光画面无法确认活体",
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("low-light manual review UI missing %q", want)
+		}
+	}
+	cssData, err := assets.ReadFile("assets/style.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{".manual-review-result", ".manual-review-button"} {
+		if !strings.Contains(string(cssData), want) {
+			t.Fatalf("low-light manual review style missing %q", want)
+		}
+	}
+}
