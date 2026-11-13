@@ -17,12 +17,20 @@ function createHarness() {
     save() {}, restore() {}, setLineDash() {}
   };
   const overlay = {getContext: () => drawingContext};
+  const autoScan = {checked: false, addEventListener() {}};
+  const checkinPage = {classList: {contains: () => true}};
   const context = vm.createContext({
-    $: selector => selector === '#faceOverlay' ? overlay : {addEventListener() {}},
+    $: selector => {
+      if (selector === '#faceOverlay') return overlay;
+      if (selector === '#autoScan') return autoScan;
+      if (selector === '#page-checkin') return checkinPage;
+      return {addEventListener() {}};
+    },
     setTimeout(callback, delay) { timers.set(++nextTimer, {callback, delay}); return nextTimer; },
     clearTimeout(timer) { timers.delete(timer); },
     performance: {now: () => 0},
     recognizing: false, activeCamera: {id: 1, kind: 'network'},
+    cameraOpen: true, manualRecognitionBurst: false,
     recognitionSessionID: 'camera-one', autoTimer: null,
     toast() {},
     toggleCamera() {},
@@ -30,7 +38,7 @@ function createHarness() {
   });
   const script = fs.readFileSync(path.join(__dirname, '../internal/web/assets/js/recognition.js'), 'utf8');
   vm.runInContext(script, context);
-  return {context, rectangles, labels, timers, clearCount: () => clearCount};
+  return {context, rectangles, labels, timers, autoScan, clearCount: () => clearCount};
 }
 
 test('multiple bodies keep separate boxes without trusting cached body names', () => {
@@ -100,14 +108,15 @@ function createMotionHarness() {
   return harness;
 }
 
-function createTextureFrame(offsetX = 0, time = 0) {
+function createTextureFrame(offsetX = 0, time = 0, scale = 1) {
   const width = 160;
   const height = 120;
   const gray = new Uint8Array(width * height);
   for (let vertical = 0; vertical < height; vertical++) {
     for (let horizontal = 0; horizontal < width; horizontal++) {
-      const sourceX = horizontal - offsetX;
-      gray[vertical * width + horizontal] = ((sourceX * 73) ^ (vertical * 151) ^ (sourceX * vertical * 31)) & 255;
+      const sourceX = Math.round((horizontal - offsetX - width / 2) / scale + width / 2);
+      const sourceY = Math.round((vertical - height / 2) / scale + height / 2);
+      gray[vertical * width + horizontal] = ((sourceX * 73) ^ (sourceY * 151) ^ (sourceX * sourceY * 31)) & 255;
     }
   }
   return {width, height, gray, time};
@@ -154,4 +163,68 @@ test('recognition captures a motion reference and forwards it with the exact res
   harness.context.stopRealtimeTracking = () => { stopped = true; };
   harness.context.stopAutoRecognition();
   assert.equal(stopped, true);
+});
+
+
+test('server camera body boxes render before full face recognition returns', async () => {
+  const harness = createHarness();
+  harness.context.activeCamera = {id: 42, kind: 'local'};
+  const early = {
+    persons: [{track_id: 'camera-P1', box: {x: 10, y: 20, width: 100, height: 200}}],
+    frame_width: 640, frame_height: 480, tracked_person_count: 1
+  };
+  const final = {faces: [], persons: [], frame_width: 640, frame_height: 480};
+  const calls = [];
+  const rendered = [];
+  harness.context.api = async url => {
+    calls.push(url);
+    return url.endsWith('/track') ? early : final;
+  };
+  harness.context.renderRecognition = result => rendered.push(result);
+  const result = await harness.context.recognizeFrame({silent: true});
+  assert.equal(result, final);
+  assert.deepEqual(calls, ['/api/cameras/42/track', '/api/cameras/42/recognize']);
+  assert.equal(rendered[0], early);
+  assert.equal(rendered[1], final);
+});
+
+test('manual browser recognition enables local motion tracking', () => {
+  const harness = createMotionHarness();
+  harness.context.manualRecognitionBurst = true;
+  assert.equal(harness.context.realtimeTrackingEnabled(), true);
+});
+
+test('browser tracking keeps body and face boxes independently visible', () => {
+  const harness = createMotionHarness();
+  const reference = createTextureFrame(0, 0);
+  reference.sequence = 42;
+  const current = createTextureFrame(6, 33);
+  current.sequence = 43;
+  harness.autoScan.checked = true;
+  harness.context.testReference = reference;
+  harness.context.testCurrent = current;
+  vm.runInContext(
+    'activeCamera = {id: 1, kind: "browser"}; recognitionSessionID = "camera-one"; realtimeTrackingSession = "camera-one"; realtimeTrackingFrames = [testReference, testCurrent];',
+    harness.context
+  );
+  const result = {
+    frame_width: 160, frame_height: 120,
+    faces: [{recognized: true, student: {name: 'Amy'}, box: {x: 48, y: 36, width: 32, height: 36}}],
+    persons: [{track_id: 'camera-one-P1', status: '跟踪中', box: {x: 32, y: 20, width: 96, height: 92}}]
+  };
+  assert.equal(harness.context.applyTrackedRecognition(result, reference), true);
+  assert.equal(harness.rectangles.length, 2);
+  assert.ok(harness.labels.some(label => label.includes('P1')));
+  assert.ok(harness.labels.some(label => label.includes('Amy')));
+});
+
+test('local tracking adjusts box size as a person approaches', () => {
+  const harness = createMotionHarness();
+  const previous = createTextureFrame(0, 0, 1);
+  const current = createTextureFrame(0, 33, 1.12);
+  const box = {x: 0.25, y: 0.20, width: 0.35, height: 0.50};
+  const moved = harness.context.trackTextureBox(previous, current, box);
+  assert.ok(moved);
+  assert.ok(moved.width > box.width * 1.02, `width did not expand: ${moved.width}`);
+  assert.ok(moved.height > box.height * 1.02, `height did not expand: ${moved.height}`);
 });

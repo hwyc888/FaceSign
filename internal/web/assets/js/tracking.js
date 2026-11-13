@@ -35,13 +35,14 @@ function sampleTrackingFrame() {
   return {sequence: ++realtimeTrackingSequence, time: performance.now(), width, height, gray};
 }
 
-function trackTextureBox(previous, current, box) {
-  if (previous.width !== current.width || previous.height !== current.height) return null;
-  // A long frame gap cannot safely be bridged by a small local search window.
-  if (current.time - previous.time > 250 || current.time < previous.time) return null;
-  const centerX = Math.round((box.x + box.width / 2) * current.width);
-  const centerY = Math.round((box.y + box.height / 2) * current.height);
-  const radius = Math.max(3, Math.min(9, Math.round(box.width * current.width / 4)));
+function median(values) {
+  const sorted = values.slice().sort((a, b) => a - b);
+  return sorted[Math.floor(sorted.length / 2)] || 0;
+}
+
+function trackTexturePoint(previous, current, point, radius, maxOffset) {
+  const centerX = Math.round(point.x * previous.width);
+  const centerY = Math.round(point.y * previous.height);
   const samples = [];
   let sum = 0;
   let squares = 0;
@@ -56,11 +57,12 @@ function trackTextureBox(previous, current, box) {
       squares += value * value;
     }
   }
-  if (squares / samples.length - (sum / samples.length) ** 2 < 50) return null;
-  const matches = [];
+  if (squares / samples.length - (sum / samples.length) ** 2 < 35) return null;
+
   let best = null;
-  for (let offsetY = -16; offsetY <= 16; offsetY += 2) {
-    for (let offsetX = -16; offsetX <= 16; offsetX += 2) {
+  const matches = [];
+  for (let offsetY = -maxOffset; offsetY <= maxOffset; offsetY += 2) {
+    for (let offsetX = -maxOffset; offsetX <= maxOffset; offsetX += 2) {
       if (centerX + offsetX - radius < 0 || centerY + offsetY - radius < 0 ||
           centerX + offsetX + radius >= current.width || centerY + offsetY + radius >= current.height) continue;
       let difference = 0;
@@ -74,14 +76,63 @@ function trackTextureBox(previous, current, box) {
       if (!best || candidate.error < best.error) best = candidate;
     }
   }
-  if (!best || best.error > 22 || Math.abs(best.offsetX) === 16 || Math.abs(best.offsetY) === 16) return null;
+  if (!best || best.error > 24 || Math.abs(best.offsetX) === maxOffset || Math.abs(best.offsetY) === maxOffset) return null;
   let alternative = null;
   for (const candidate of matches) {
     if (Math.hypot(candidate.offsetX - best.offsetX, candidate.offsetY - best.offsetY) >= 6 &&
         (!alternative || candidate.error < alternative.error)) alternative = candidate;
   }
-  if (alternative && alternative.error < best.error * 1.15 + 1) return null;
-  return {...box, x: box.x + best.offsetX / current.width, y: box.y + best.offsetY / current.height};
+  if (alternative && alternative.error < best.error * 1.12 + 1) return null;
+  return best;
+}
+
+function trackTextureBox(previous, current, box) {
+  if (previous.width !== current.width || previous.height !== current.height) return null;
+  const elapsed = current.time - previous.time;
+  if (elapsed <= 0 || elapsed > 250) return null;
+
+  const centerX = box.x + box.width / 2;
+  const centerY = box.y + box.height / 2;
+  const radius = Math.max(2, Math.min(5, Math.round(
+    Math.min(box.width * current.width, box.height * current.height) / 16
+  )));
+  const maxOffset = Math.max(14, Math.min(22, Math.round(12 + elapsed / 40)));
+  const points = [
+    {role: 'center', x: centerX, y: centerY},
+    {role: 'left', x: box.x + box.width * 0.25, y: centerY},
+    {role: 'right', x: box.x + box.width * 0.75, y: centerY},
+    {role: 'top', x: centerX, y: box.y + box.height * 0.25},
+    {role: 'bottom', x: centerX, y: box.y + box.height * 0.75}
+  ];
+  const matches = new Map();
+  for (const point of points) {
+    const match = trackTexturePoint(previous, current, point, radius, maxOffset);
+    if (match) matches.set(point.role, match);
+  }
+  if (matches.size < 3) return null;
+
+  const dx = median([...matches.values()].map(match => match.offsetX));
+  const dy = median([...matches.values()].map(match => match.offsetY));
+  let scaleX = 1;
+  let scaleY = 1;
+  const left = matches.get('left');
+  const right = matches.get('right');
+  const top = matches.get('top');
+  const bottom = matches.get('bottom');
+  if (left && right) {
+    const span = Math.max(1, box.width * current.width * 0.5);
+    scaleX = Math.max(0.85, Math.min(1.15, 1 + (right.offsetX - left.offsetX) / span));
+  }
+  if (top && bottom) {
+    const span = Math.max(1, box.height * current.height * 0.5);
+    scaleY = Math.max(0.85, Math.min(1.15, 1 + (bottom.offsetY - top.offsetY) / span));
+  }
+
+  const width = box.width * scaleX;
+  const height = box.height * scaleY;
+  const nextCenterX = centerX + dx / current.width;
+  const nextCenterY = centerY + dy / current.height;
+  return {x: nextCenterX - width / 2, y: nextCenterY - height / 2, width, height};
 }
 
 function advanceTrackingBoxes(previous, current, boxes) {
@@ -90,20 +141,42 @@ function advanceTrackingBoxes(previous, current, boxes) {
     const box = trackTextureBox(previous, current, item.box);
     return box ? [{...item, box}] : [];
   });
-  // Overlapping tracks are ambiguous; hide names until fresh face recognition.
-  return updated.filter((item, index) => !updated.some((other, otherIndex) => {
-    if (index === otherIndex) return false;
-    const overlapWidth = Math.max(0, Math.min(item.box.x + item.box.width, other.box.x + other.box.width) - Math.max(item.box.x, other.box.x));
-    const overlapHeight = Math.max(0, Math.min(item.box.y + item.box.height, other.box.y + other.box.height) - Math.max(item.box.y, other.box.y));
-    return overlapWidth * overlapHeight > Math.min(item.box.width * item.box.height, other.box.width * other.box.height) * 0.35;
-  }));
+  // Only overlapping face boxes can exchange identity labels. Keep body boxes
+  // independently visible even when their outlines overlap.
+  return updated.filter((item, index) => {
+    if (item.kind === 'person') return true;
+    return !updated.some((other, otherIndex) => {
+      if (index === otherIndex || other.kind === 'person') return false;
+      const overlapWidth = Math.max(0, Math.min(item.box.x + item.box.width, other.box.x + other.box.width) - Math.max(item.box.x, other.box.x));
+      const overlapHeight = Math.max(0, Math.min(item.box.y + item.box.height, other.box.y + other.box.height) - Math.max(item.box.y, other.box.y));
+      return overlapWidth * overlapHeight > Math.min(item.box.width * item.box.height, other.box.width * other.box.height) * 0.35;
+    });
+  });
+}
+
+function realtimeTrackingEnabled() {
+  return Boolean($('#autoScan')?.checked || manualRecognitionBurst);
+}
+
+function drawRealtimeTrackingBoxes() {
+  const faces = realtimeTrackingBoxes
+    .filter(item => item.kind !== 'person')
+    .map(item => ({...item.face, box: item.box}));
+  const persons = realtimeTrackingBoxes
+    .filter(item => item.kind === 'person')
+    .map(item => ({...item.person, box: item.box}));
+  drawFaceOverlay(faces, persons, 1, 1);
 }
 
 function runRealtimeTracking() {
-  if (!cameraOpen || !$('#autoScan')?.checked || recognitionSessionID !== realtimeTrackingSession ||
+  if (!cameraOpen || recognitionSessionID !== realtimeTrackingSession ||
       !$('#page-checkin')?.classList.contains('active')) {
     stopRealtimeTracking();
     drawFaceOverlay([], []);
+    return;
+  }
+  if (!realtimeTrackingEnabled()) {
+    stopRealtimeTracking();
     return;
   }
   try {
@@ -113,11 +186,8 @@ function runRealtimeTracking() {
       if (previous) realtimeTrackingBoxes = advanceTrackingBoxes(previous, frame, realtimeTrackingBoxes);
       realtimeTrackingFrames.push(frame);
       realtimeTrackingFrames = realtimeTrackingFrames.filter(item => frame.time - item.time <= 4000);
-      if (realtimeTrackingBoxes.length) {
-        drawFaceOverlay(realtimeTrackingBoxes.map(item => ({...item.face, box: item.box})), [], 1, 1);
-      } else if (previous) {
-        drawFaceOverlay([], []);
-      }
+      if (realtimeTrackingBoxes.length) drawRealtimeTrackingBoxes();
+      else if (previous) drawFaceOverlay([], []);
     }
   } catch {
     realtimeTrackingBoxes = [];
@@ -128,7 +198,7 @@ function runRealtimeTracking() {
 
 function beginTrackingReference() {
   // Server-side camera captures are not synchronized to browser preview frames.
-  if (activeCamera?.kind !== 'browser' || !$('#autoScan')?.checked) return null;
+  if (activeCamera?.kind !== 'browser' || !cameraOpen || !realtimeTrackingEnabled()) return null;
   if (realtimeTrackingSession !== recognitionSessionID) {
     stopRealtimeTracking();
     realtimeTrackingSession = recognitionSessionID;
@@ -150,21 +220,43 @@ function beginTrackingReference() {
 }
 
 function applyTrackedRecognition(result, reference) {
-  if (!reference || realtimeTrackingSession !== recognitionSessionID || !$('#autoScan')?.checked) return false;
+  if (!reference || realtimeTrackingSession !== recognitionSessionID || !realtimeTrackingEnabled()) return false;
   const frames = realtimeTrackingFrames.filter(frame => frame.sequence >= reference.sequence);
   if (!frames.length || frames[0].sequence !== reference.sequence) {
     realtimeTrackingBoxes = [];
     drawFaceOverlay([], []);
     return true;
   }
-  let boxes = (result.faces || []).map(face => ({face, confirmedAt: reference.time, box: {
-    x: face.box.x / result.frame_width, y: face.box.y / result.frame_height,
-    width: face.box.width / result.frame_width, height: face.box.height / result.frame_height
-  }}));
-  for (let index = 1; index < frames.length && boxes.length; index++) {
-    boxes = advanceTrackingBoxes(frames[index - 1], frames[index], boxes);
+  if (!result.frame_width || !result.frame_height) return false;
+  const boxes = [];
+  for (const face of result.faces || []) {
+    boxes.push({
+      kind: 'face',
+      face,
+      confirmedAt: reference.time,
+      box: {
+        x: face.box.x / result.frame_width, y: face.box.y / result.frame_height,
+        width: face.box.width / result.frame_width, height: face.box.height / result.frame_height
+      }
+    });
   }
-  realtimeTrackingBoxes = boxes;
-  drawFaceOverlay(boxes.map(item => ({...item.face, box: item.box})), [], 1, 1);
+  for (const person of result.persons || []) {
+    boxes.push({
+      kind: 'person',
+      person,
+      confirmedAt: reference.time,
+      box: {
+        x: person.box.x / result.frame_width, y: person.box.y / result.frame_height,
+        width: person.box.width / result.frame_width, height: person.box.height / result.frame_height
+      }
+    });
+  }
+  let tracked = boxes;
+  for (let index = 1; index < frames.length && tracked.length; index++) {
+    tracked = advanceTrackingBoxes(frames[index - 1], frames[index], tracked);
+  }
+  if (!tracked.length) return false;
+  realtimeTrackingBoxes = tracked;
+  drawRealtimeTrackingBoxes();
   return true;
 }

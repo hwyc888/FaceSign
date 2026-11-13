@@ -196,24 +196,43 @@ async function recognizeFrame(options = {}) {
     const loadProfile = typeof cameraRecognitionLoadProfile === 'function'
       ? cameraRecognitionLoadProfile()
       : {level: 'normal', maxFPS: 5, minGapMS: 100};
-    if (activeCamera && activeCamera.kind !== 'browser') {
-      r = await api(`/api/cameras/${activeCamera.id}/recognize`, {
-        method: 'POST',
-        headers: {
-          'X-FaceSign-Session': recognitionSessionID,
-          'X-FaceSign-AI-Load': loadProfile.level
+    const requestHeaders = {
+      'X-FaceSign-Session': requestSessionID,
+      'X-FaceSign-AI-Load': loadProfile.level
+    };
+    if (requestCamera && requestCamera.kind !== 'browser') {
+      // Return the lightweight body pass first so its overlay appears while
+      // face feature matching is still running.
+      try {
+        const trackResult = await api(`/api/cameras/${requestCamera.id}/track`, {
+          method: 'POST',
+          headers: requestHeaders
+        });
+        if (activeCamera !== requestCamera || recognitionSessionID !== requestSessionID ||
+            recognitionDisplayGeneration !== requestDisplayGeneration) return null;
+        if (trackResult && !(trackResult.skipped && trackResult.busy)) {
+          renderRecognition(trackResult);
         }
+      } catch {
+        // Keep face recognition available if the optional early body pass fails.
+      }
+      if (activeCamera !== requestCamera || recognitionSessionID !== requestSessionID ||
+          recognitionDisplayGeneration !== requestDisplayGeneration) return null;
+      r = await api(`/api/cameras/${requestCamera.id}/recognize`, {
+        method: 'POST',
+        headers: requestHeaders
       });
     } else {
       const blob = await capture();
+      if (activeCamera !== requestCamera || recognitionSessionID !== requestSessionID ||
+          recognitionDisplayGeneration !== requestDisplayGeneration) return null;
       const fd = new FormData();
       fd.append('file', blob, 'camera.jpg');
       r = await api('/api/recognize', {
         method: 'POST',
         headers: {
-          'X-FaceSign-Recognition-Mode': 'face-first',
-          'X-FaceSign-Session': recognitionSessionID,
-          'X-FaceSign-AI-Load': loadProfile.level
+          ...requestHeaders,
+          'X-FaceSign-Recognition-Mode': 'face-first'
         },
         body: fd
       });

@@ -13,6 +13,7 @@ func TestFrontendModulesAreEmbedded(t *testing.T) {
 		"assets/js/cameras.js",
 		"assets/js/seating.js",
 		"assets/js/recognition.js",
+		"assets/js/tracking.js",
 		"assets/js/settings.js",
 		"assets/js/enrollment.js",
 		"assets/js/classes.js",

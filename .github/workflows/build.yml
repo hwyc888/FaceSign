@@ -2,7 +2,7 @@ name: Build FaceSign Windows
 
 on:
   push:
-    branches: [main]
+    branches: [main, fix/liveness-multi-person-labels]
   workflow_dispatch:
 
 permissions:
