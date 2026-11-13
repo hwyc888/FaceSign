@@ -25,6 +25,7 @@ const (
 	livenessLowLightDecisionTimeout = 3500 * time.Millisecond
 	livenessLowLightMinExposureScore = 0.20
 	livenessLowLightMinSharpnessScore = 0.05
+	// Match the face-quality blur warning so blurry frames cannot count as spoof evidence.
 	livenessLowLightManualReviewSharpnessScore = 0.12
 	livenessLowLightManualReviewTTL = 30 * time.Second
 )
