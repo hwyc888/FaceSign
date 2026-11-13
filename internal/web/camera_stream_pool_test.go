@@ -453,3 +453,37 @@ func TestExplicitCameraReleaseStopsPreviewOnlyWhenUnused(t *testing.T) {
 	}
 	_ = recognitionCtx
 }
+
+
+func TestPreviewReleaseWaitsForInFlightRecognition(t *testing.T) {
+	const cameraID int64 = 504
+	ctx, cancel := context.WithCancel(context.Background())
+	stream := newNetworkCameraStreamForPurpose(store.Camera{ID: cameraID, Kind: "local"}, "preview-recognition", "host-usb")
+	stream.cancel = cancel
+	s := &Server{
+		networkCameraPreviewStreams: map[int64]*networkCameraStream{cameraID: stream},
+		cameraRecognitionBusy:      map[int64]bool{cameraID: true},
+	}
+
+	if s.releaseNetworkCameraPreviewIfUnused(cameraID) {
+		t.Fatal("preview must remain active while recognition is reading from the shared USB capture")
+	}
+	if stream.isStopped() {
+		t.Fatal("in-flight recognition capture was stopped")
+	}
+
+	s.cameraRecognitionMu.Lock()
+	s.cameraRecognitionBusy[cameraID] = false
+	s.cameraRecognitionMu.Unlock()
+	if !s.releaseNetworkCameraPreviewIfUnused(cameraID) {
+		t.Fatal("unused preview should release after recognition completes")
+	}
+	if !stream.isStopped() {
+		t.Fatal("preview capture remained after all users and recognition work ended")
+	}
+	select {
+	case <-ctx.Done():
+	default:
+		t.Fatal("preview capture context was not cancelled")
+	}
+}
