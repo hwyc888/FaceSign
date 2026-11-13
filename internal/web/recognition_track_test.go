@@ -44,7 +44,7 @@ func TestRecognitionTrackerNormalPassesFourModerateLiveFrames(t *testing.T) {
 	var decision trackDecision
 	for i, score := range scores {
 		decision = tracker.Observe("camera-normal", []recognitionObservation{{
-			Student: student, Similarity: 0.92, LiveScore: score,
+			Student: student, Similarity: 0.92, LiveScore: score, Exposure: 1, Sharpness: 1,
 		}}, now.Add(time.Duration(i)*220*time.Millisecond))[0]
 		if i < len(scores)-1 && decision.Verified {
 			t.Fatalf("moderate track verified before normal frame %d", i+1)
