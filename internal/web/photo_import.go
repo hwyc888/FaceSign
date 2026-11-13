@@ -431,7 +431,7 @@ func (s *Server) photoImportCommit(w http.ResponseWriter, r *http.Request, sessi
 
 		switch requested.Action {
 		case "new":
-			if !requirePermission(w, r, authUser(r).CanAddStudents, "没有新增学生的权限") {
+			if !authUser(r).IsAdmin && !authUser(r).CanAddStudents {
 				failed++
 				results = append(results, map[string]any{"id": item.ID, "status": "failed", "message": "没有新增学生的权限"})
 				continue
@@ -475,7 +475,7 @@ func (s *Server) photoImportCommit(w http.ResponseWriter, r *http.Request, sessi
 			results = append(results, map[string]any{"id": item.ID, "status": "imported", "message": "已建立学生并录入正面样本", "student": student})
 
 		case "supplement":
-			if !requirePermission(w, r, authUser(r).CanResampleFaces, "没有补充或重新采样人脸的权限") {
+			if !authUser(r).IsAdmin && !authUser(r).CanResampleFaces {
 				failed++
 				results = append(results, map[string]any{"id": item.ID, "status": "failed", "message": "没有补充或重新采样人脸的权限"})
 				continue
@@ -517,7 +517,7 @@ func (s *Server) photoImportCommit(w http.ResponseWriter, r *http.Request, sessi
 				continue
 			}
 			if strings.TrimSpace(currentStudent.ClassName) != className &&
-				!requirePermission(w, r, authUser(r).CanEditStudents, "没有修改学生班级的权限") {
+				(!authUser(r).IsAdmin && !authUser(r).CanEditStudents) {
 				failed++
 				results = append(results, map[string]any{"id": item.ID, "status": "failed", "message": "没有修改学生班级的权限"})
 				continue
