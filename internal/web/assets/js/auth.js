@@ -22,7 +22,9 @@ function showAuthPanel(mode) {
 
 function applyUserPermissions() {
   const isAdmin = Boolean(currentUser && currentUser.is_admin);
-  $$('[data-admin-only]').forEach(element => {
+  document.body.classList.toggle('non-admin-user', !isAdmin);
+  document.body.classList.toggle('user-can-arrange-seats', hasPermission('can_arrange_seats'));
+  $('[data-admin-only]').forEach(element => {
     element.classList.toggle('hidden', !isAdmin);
   });
   $$('[data-permission]').forEach(element => {
