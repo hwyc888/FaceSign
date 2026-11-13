@@ -205,6 +205,9 @@ func (t *recognitionTracker) Observe(sessionID string, observations []recognitio
 		}
 		track.Student = observation.Student
 		track.LowLightMode = observation.LowLightMode
+		if livenessObservationSpoofQualityUsable(observation) {
+			track.ManualReviewRequired = false
+		}
 		maxFrames := livenessMaxFramesForMode(track.LowLightMode)
 		decisionTimeout := livenessDecisionTimeoutForMode(track.LowLightMode)
 		track.LastSeen = now
@@ -240,17 +243,19 @@ func (t *recognitionTracker) Observe(sessionID string, observations []recognitio
 				track.Rejected = true
 				track.ManualReviewRequired = false
 			case len(track.Scores) >= 3 && average < livenessSpoofThreshold &&
-				track.LowLightMode && track.LowQualitySpoofVotes >= 2:
+				track.LowLightMode && track.SpoofVotes == 0 && track.LowQualitySpoofVotes >= 2:
 				track.ManualReviewRequired = true
 				track.ManualReviewUntil = now.Add(livenessLowLightManualReviewTTL)
 			case len(track.Scores) >= livenessFastFrames &&
 				average >= livenessFastPassThreshold &&
 				liveVotes == len(track.Scores):
 				track.Verified = true
+				track.ManualReviewRequired = false
 			case len(track.Scores) >= livenessMinFrames &&
 				average >= livenessPassThreshold &&
 				liveVotes >= livenessMinFrames-1:
 				track.Verified = true
+				track.ManualReviewRequired = false
 			case now.Sub(track.FirstSeen) >= decisionTimeout || len(track.Scores) >= maxFrames:
 				timedOut = true
 			}
