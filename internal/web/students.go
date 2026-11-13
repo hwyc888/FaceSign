@@ -19,6 +19,9 @@ func (s *Server) students(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, items)
 	case http.MethodPost:
+		if !requirePermission(w, r, authUser(r).CanAddStudents, "没有新增学生的权限") {
+			return
+		}
 		var in struct {
 			StudentNo string `json:"student_no"`
 			Name      string `json:"name"`
@@ -55,6 +58,9 @@ func (s *Server) studentAction(w http.ResponseWriter, r *http.Request) {
 	if len(parts) == 1 {
 		switch r.Method {
 		case http.MethodDelete:
+			if !requireAdmin(w, r) {
+				return
+			}
 			if err := s.store.DeleteStudent(r.Context(), studentID); err != nil {
 				writeError(w, http.StatusNotFound, err)
 				return
@@ -74,6 +80,14 @@ func (s *Server) studentAction(w http.ResponseWriter, r *http.Request) {
 			}
 			if in.StudentNo == nil && in.Name == nil && in.ClassName == nil && in.SeatNo == nil {
 				writeError(w, http.StatusBadRequest, errors.New("没有需要修改的学生资料"))
+				return
+			}
+			if (in.StudentNo != nil || in.Name != nil || in.ClassName != nil) &&
+				!requirePermission(w, r, authUser(r).CanEditStudents, "没有修改学生资料的权限") {
+				return
+			}
+			if in.SeatNo != nil &&
+				!requirePermission(w, r, authUser(r).CanArrangeSeats, "没有编排座位的权限") {
 				return
 			}
 
@@ -174,6 +188,9 @@ func (s *Server) studentAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if len(parts) == 3 && parts[1] == "faces" && r.Method == http.MethodDelete {
+		if !requirePermission(w, r, authUser(r).CanResampleFaces, "没有删除或重新采样人脸的权限") {
+			return
+		}
 		sampleID, err := strconv.ParseInt(parts[2], 10, 64)
 		if err != nil || sampleID <= 0 {
 			writeError(w, http.StatusBadRequest, errors.New("invalid face sample id"))
