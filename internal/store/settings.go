@@ -27,6 +27,7 @@ type AppSettings struct {
 	RealtimeStatusNetwork      bool `json:"realtime_status_network"`
 	RealtimeStatusRecognition  bool `json:"realtime_status_recognition"`
 	RealtimeStatusReason       bool `json:"realtime_status_reason"`
+	LowLightRecognitionMode    bool `json:"low_light_recognition_mode"`
 }
 
 func (s *Store) AppSettings(ctx context.Context) (AppSettings, error) {
