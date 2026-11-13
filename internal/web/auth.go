@@ -155,6 +155,10 @@ func (s *Server) authSetup(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) authLogin(w http.ResponseWriter, r *http.Request) {
+	if r.TLS == nil && !requestIsLoopback(r) {
+		writeError(w, http.StatusForbidden, errors.New("远程登录必须使用 HTTPS 地址"))
+		return
+	}
 	if r.Method != http.MethodPost {
 		methodNotAllowed(w)
 		return
@@ -273,6 +277,10 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.HasPrefix(r.URL.Path, "/api/") || isPublicAPIPath(r.URL.Path) {
 			next.ServeHTTP(w, r)
+			return
+		}
+		if r.TLS == nil && !requestIsLoopback(r) {
+			writeError(w, http.StatusForbidden, errors.New("远程访问必须使用 HTTPS 地址"))
 			return
 		}
 		token := requestSessionToken(r)
