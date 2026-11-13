@@ -162,6 +162,16 @@ func (s *Server) recognizePreparedImage(
 	personDetections []person.Detection,
 	detections []face.Detection,
 ) {
+	lowLightMode, settingsErr := s.store.LowLightRecognitionMode(r.Context())
+	if settingsErr != nil {
+		s.logger.Warn("read low-light recognition setting failed; using normal mode", "error", settingsErr)
+		lowLightMode = false
+	}
+	qualityThreshold := minRecognitionFaceQuality
+	if lowLightMode {
+		qualityThreshold = 0.38
+	}
+
 	personDetections = addFaceFallbackPersons(personDetections, detections, img.Bounds())
 	tracks := s.personTracker.Observe(sessionID, personDetections, now)
 	personResults := make([]recognitionPerson, len(tracks))
@@ -191,7 +201,7 @@ func (s *Server) recognizePreparedImage(
 	candidates := make([]matchCandidate, 0, len(detections)*2)
 
 	for i, detected := range detections {
-		quality := scoreFaceQuality(img, detected)
+		quality := scoreFaceQualityWithThreshold(img, detected, qualityThreshold)
 		qualities[i] = quality
 		result := recognitionFace{
 			Status:        "等待清晰人脸",
@@ -213,7 +223,7 @@ func (s *Server) recognizePreparedImage(
 			}
 		}
 
-		if quality.Score < minRecognitionFaceQuality {
+		if quality.Score < qualityThreshold {
 			if student, similarity, best := s.personTracker.Identity(sessionID, result.TrackID); student != nil {
 				result.Matched = true
 				result.Student = student
@@ -352,7 +362,8 @@ func (s *Server) recognizePreparedImage(
 			Similarity: match.Similarity,
 			LiveScore:  score,
 			Exposure:   qualities[match.DetectionIndex].Exposure,
-			Sharpness:  qualities[match.DetectionIndex].Sharpness,
+			Sharpness:    qualities[match.DetectionIndex].Sharpness,
+			LowLightMode: lowLightMode,
 		})
 		observationDetectionIndexes = append(observationDetectionIndexes, match.DetectionIndex)
 	}
@@ -415,7 +426,7 @@ func (s *Server) recognizePreparedImage(
 	unregisteredCount := 0
 	unregisteredTrackIDs := make([]string, 0, len(results))
 	for _, result := range results {
-		if !result.Matched && result.QualityScore >= minRecognitionFaceQuality {
+		if !result.Matched && result.QualityScore >= qualityThreshold {
 			unregisteredCount++
 			if result.TrackID != "" {
 				unregisteredTrackIDs = append(unregisteredTrackIDs, result.TrackID)
@@ -430,7 +441,7 @@ func (s *Server) recognizePreparedImage(
 
 	waitingFaceCount := 0
 	for _, item := range personResults {
-		if !item.FaceVisible || item.FaceQuality < minRecognitionFaceQuality {
+		if !item.FaceVisible || item.FaceQuality < qualityThreshold {
 			waitingFaceCount++
 		}
 	}
@@ -451,13 +462,14 @@ func (s *Server) recognizePreparedImage(
 		"spoof_count":             spoofCount,
 		"unregistered_count":      unregisteredCount,
 		"threshold":               s.matchThreshold,
-		"face_quality_threshold":  minRecognitionFaceQuality,
+		"face_quality_threshold":  qualityThreshold,
+		"low_light_mode_enabled":  lowLightMode,
 		"liveness_threshold":      livenessPassThreshold,
 		"liveness_fast_threshold": livenessFastPassThreshold,
 		"liveness_fast_frames":    livenessFastFrames,
 		"liveness_min_frames":     livenessMinFrames,
-		"liveness_max_frames":     livenessMaxFrames,
-		"liveness_timeout_ms":     livenessDecisionTimeout.Milliseconds(),
+		"liveness_max_frames":     livenessMaxFramesForMode(lowLightMode),
+		"liveness_timeout_ms":     livenessDecisionTimeoutForMode(lowLightMode).Milliseconds(),
 	}
 	if statsErr == nil {
 		response["verified_total"] = cumulativeStats.Verified
