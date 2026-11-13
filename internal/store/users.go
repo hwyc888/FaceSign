@@ -137,6 +137,11 @@ func (s *Store) UpdateUserAccess(ctx context.Context, id int64, user User, passw
 		}
 		return sql.ErrNoRows
 	}
+	if passwordHash != "" {
+		if _, err := s.db.ExecContext(ctx, "DELETE FROM auth_sessions WHERE user_id=?", id); err != nil {
+			return err
+		}
+	}
 	return nil
 }
 
