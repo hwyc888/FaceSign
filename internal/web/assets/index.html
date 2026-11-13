@@ -670,9 +670,12 @@
           </form>
         </div>
         <div class="card table-card">
-          <div class="card-head">
+          <div class="card-head user-list-head">
             <h2>现有账号与权限</h2>
-            <button id="refreshUsers" type="button">刷新</button>
+            <div class="user-list-actions">
+              <button id="openUserCloneBatch" type="button">批量复制账号</button>
+              <button id="refreshUsers" type="button">刷新</button>
+            </div>
           </div>
           <div class="table-wrap">
             <table class="user-table">
@@ -753,6 +756,74 @@
         <div class="modal-actions">
           <button data-close="changePasswordModal" type="button">取消</button>
           <button class="primary" type="submit">更新密码</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-backdrop hidden" id="userCloneModal">
+    <div class="modal user-clone-modal">
+      <div class="modal-head">
+        <div>
+          <h2>复制普通用户账号</h2>
+          <p class="muted compact">复制来源账号的权限配置，并为新账号设置统一密码。</p>
+        </div>
+        <button class="icon-button" data-close="userCloneModal" type="button">×</button>
+      </div>
+      <form id="userCloneForm" class="form user-clone-form">
+        <label>复制来源
+          <select id="userCloneSource" required></select>
+        </label>
+        <label>生成方式
+          <select id="userCloneMode">
+            <option value="single">单个复制（自定义用户名）</option>
+            <option value="batch">批量生成用户名</option>
+          </select>
+        </label>
+
+        <div id="userCloneSingleFields">
+          <label>新用户名
+            <input id="userCloneUsername" minlength="3" maxlength="32" autocomplete="off" placeholder="输入新的用户名">
+          </label>
+        </div>
+
+        <div id="userCloneBatchFields" class="user-clone-batch-fields hidden">
+          <label>用户名固定前缀
+            <input id="userClonePrefix" maxlength="24" autocomplete="off" value="user" placeholder="例如：cz">
+          </label>
+          <label>起始编号
+            <input id="userCloneStart" type="number" min="0" max="99999999" value="1">
+          </label>
+          <label>生成数量（最多 100 个）
+            <input id="userCloneCount" type="number" min="1" max="100" value="10">
+          </label>
+          <label>编号位数
+            <input id="userCloneDigits" type="number" min="1" max="8" value="2">
+          </label>
+          <div class="user-clone-preview">
+            <strong>用户名预览</strong>
+            <p id="userClonePreview">user01、user02、user03……</p>
+            <span id="userClonePreviewHint">请确认生成规则和数量。</span>
+          </div>
+        </div>
+
+        <div class="user-clone-password-grid">
+          <label>统一初始密码
+            <input id="userClonePassword" type="password" required minlength="10" maxlength="72" autocomplete="new-password" placeholder="至少 10 个字符">
+          </label>
+          <label>确认统一密码
+            <input id="userClonePasswordConfirm" type="password" required minlength="10" maxlength="72" autocomplete="new-password" placeholder="再次输入密码">
+          </label>
+        </div>
+
+        <div class="user-clone-permissions">
+          <strong>将继承来源账号的权限</strong>
+          <div id="userClonePermissionPreview"></div>
+        </div>
+        <p class="user-clone-security-note">原账号密码采用单向加密，系统无法读取。所有新账号将使用上方设置的统一密码，每个账号仍会单独加密保存。</p>
+        <div class="modal-actions">
+          <button data-close="userCloneModal" type="button">取消</button>
+          <button class="primary" id="userCloneSubmit" type="submit">创建复制账号</button>
         </div>
       </form>
     </div>
