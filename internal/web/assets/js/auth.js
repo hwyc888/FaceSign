@@ -1,5 +1,6 @@
 let currentUser = null;
 let authAppStarted = false;
+let authExpiredHandling = false;
 
 function hasPermission(name) {
   return Boolean(currentUser && (currentUser.is_admin || currentUser[name]));
@@ -40,6 +41,7 @@ function applyUserPermissions() {
 
 function enterAuthenticatedApp() {
   if (!currentUser) return;
+  authExpiredHandling = false;
   $('#authScreen').classList.add('hidden');
   $('#appShell').classList.remove('hidden');
   applyUserPermissions();
@@ -65,6 +67,8 @@ async function initializeAuth() {
 }
 
 function handleAuthExpired() {
+  if (authExpiredHandling) return;
+  authExpiredHandling = true;
   currentUser = null;
   authAppStarted = false;
   if (typeof stopAutoRecognition === 'function') stopAutoRecognition();
