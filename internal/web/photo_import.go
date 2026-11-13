@@ -510,7 +510,13 @@ func (s *Server) photoImportCommit(w http.ResponseWriter, r *http.Request, sessi
 				results = append(results, map[string]any{"id": item.ID, "status": "skipped", "message": "与已有样本几乎完全相同，无需重复保存"})
 				continue
 			}
-			if strings.TrimSpace(item.Existing.ClassName) != className &&
+			currentStudent, err := s.store.StudentByID(r.Context(), targetID)
+			if err != nil {
+				failed++
+				results = append(results, map[string]any{"id": item.ID, "status": "failed", "message": err.Error()})
+				continue
+			}
+			if strings.TrimSpace(currentStudent.ClassName) != className &&
 				!requirePermission(w, r, authUser(r).CanEditStudents, "没有修改学生班级的权限") {
 				failed++
 				results = append(results, map[string]any{"id": item.ID, "status": "failed", "message": "没有修改学生班级的权限"})
