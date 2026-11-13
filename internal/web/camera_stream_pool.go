@@ -366,6 +366,54 @@ func (s *Server) ensureNetworkCameraStreamForPurpose(camera store.Camera, purpos
 	return stream
 }
 
+// Preview streams are shared across browser clients. A client closing its
+// camera must not stop the physical capture while another client is viewing it.
+func (s *Server) acquireNetworkCameraPreviewClient(cameraID int64) {
+	if cameraID <= 0 {
+		return
+	}
+	s.networkCameraStreamMu.Lock()
+	if s.networkCameraPreviewClients == nil {
+		s.networkCameraPreviewClients = make(map[int64]int)
+	}
+	s.networkCameraPreviewClients[cameraID]++
+	s.networkCameraStreamMu.Unlock()
+}
+
+func (s *Server) releaseNetworkCameraPreviewClient(cameraID int64) {
+	if cameraID <= 0 {
+		return
+	}
+	s.networkCameraStreamMu.Lock()
+	count := s.networkCameraPreviewClients[cameraID]
+	if count > 1 {
+		s.networkCameraPreviewClients[cameraID] = count - 1
+		s.networkCameraStreamMu.Unlock()
+		return
+	}
+	delete(s.networkCameraPreviewClients, cameraID)
+	stream := s.networkCameraPreviewStreams[cameraID]
+	delete(s.networkCameraPreviewStreams, cameraID)
+	s.networkCameraStreamMu.Unlock()
+	stream.stop()
+}
+
+func (s *Server) releaseNetworkCameraPreviewIfUnused(cameraID int64) bool {
+	if cameraID <= 0 {
+		return true
+	}
+	s.networkCameraStreamMu.Lock()
+	if s.networkCameraPreviewClients[cameraID] > 0 {
+		s.networkCameraStreamMu.Unlock()
+		return false
+	}
+	stream := s.networkCameraPreviewStreams[cameraID]
+	delete(s.networkCameraPreviewStreams, cameraID)
+	s.networkCameraStreamMu.Unlock()
+	stream.stop()
+	return true
+}
+
 func (s *Server) watchNetworkCameraRecognitionIdle(ctx context.Context, cameraID int64, stream *networkCameraStream) {
 	ticker := time.NewTicker(time.Second)
 	defer ticker.Stop()
