@@ -358,6 +358,8 @@ func scoreFaceQuality(img image.Image, detected face.Detection) faceQualityResul
 
 	status := "等待清晰人脸"
 	switch {
+	case hint != "":
+		status = "需调整画面"
 	case score >= 0.78:
 		status = "优秀"
 	case score >= 0.62:
