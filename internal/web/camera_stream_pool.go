@@ -392,24 +392,31 @@ func (s *Server) releaseNetworkCameraPreviewClient(cameraID int64) {
 		return
 	}
 	delete(s.networkCameraPreviewClients, cameraID)
-	stream := s.networkCameraPreviewStreams[cameraID]
-	delete(s.networkCameraPreviewStreams, cameraID)
 	s.networkCameraStreamMu.Unlock()
-	stream.stop()
+	s.releaseNetworkCameraPreviewIfUnused(cameraID)
 }
 
 func (s *Server) releaseNetworkCameraPreviewIfUnused(cameraID int64) bool {
 	if cameraID <= 0 {
 		return true
 	}
+	// A host USB capture is shared by preview and recognition. Do not close
+	// it while an in-flight recognition request is still reading a frame.
+	s.cameraRecognitionMu.Lock()
+	if s.cameraRecognitionBusy[cameraID] {
+		s.cameraRecognitionMu.Unlock()
+		return false
+	}
 	s.networkCameraStreamMu.Lock()
 	if s.networkCameraPreviewClients[cameraID] > 0 {
 		s.networkCameraStreamMu.Unlock()
+		s.cameraRecognitionMu.Unlock()
 		return false
 	}
 	stream := s.networkCameraPreviewStreams[cameraID]
 	delete(s.networkCameraPreviewStreams, cameraID)
 	s.networkCameraStreamMu.Unlock()
+	s.cameraRecognitionMu.Unlock()
 	stream.stop()
 	return true
 }
