@@ -23,7 +23,7 @@ func TestAdminBootstrapIsLocalOnlyAndCreatesLoginSession(t *testing.T) {
 	defer st.Close()
 	s := &Server{store: st, logger: slog.Default()}
 
-	body := strings.NewReader(\`{"username":"school-admin","password":"secure-pass-123"}\`)
+	body := strings.NewReader(`{"username":"school-admin","password":"secure-pass-123"}`)
 	remote := httptest.NewRequest(http.MethodPost, "/api/auth/setup", body)
 	remote.RemoteAddr = "192.0.2.20:12345"
 	remoteRec := httptest.NewRecorder()
@@ -32,7 +32,7 @@ func TestAdminBootstrapIsLocalOnlyAndCreatesLoginSession(t *testing.T) {
 		t.Fatalf("remote setup status=%d body=%s", remoteRec.Code, remoteRec.Body.String())
 	}
 
-	body = strings.NewReader(\`{"username":"school-admin","password":"secure-pass-123"}\`)
+	body = strings.NewReader(`{"username":"school-admin","password":"secure-pass-123"}`)
 	local := httptest.NewRequest(http.MethodPost, "/api/auth/setup", body)
 	local.RemoteAddr = "127.0.0.1:12345"
 	localRec := httptest.NewRecorder()
@@ -124,7 +124,7 @@ func TestStudentProfileUpdateRequiresPermission(t *testing.T) {
 	}
 	s := &Server{store: st, logger: slog.Default()}
 
-	body := strings.NewReader(\`{"name":"新姓名"}\`)
+	body := strings.NewReader(`{"name":"新姓名"}`)
 	req := httptest.NewRequest(http.MethodPut, "/api/students/1", body)
 	req = req.WithContext(context.WithValue(req.Context(), authContextKey{}, store.User{}))
 	rec := httptest.NewRecorder()
@@ -140,7 +140,7 @@ func TestStudentProfileUpdateRequiresPermission(t *testing.T) {
 		t.Fatalf("unauthorized request changed student name to %q", current.Name)
 	}
 
-	body = strings.NewReader(\`{"student_no":"S002","name":"新姓名","class_name":"一班"}\`)
+	body = strings.NewReader(`{"student_no":"S002","name":"新姓名","class_name":"一班"}`)
 	req = httptest.NewRequest(http.MethodPut, "/api/students/1", body)
 	req = req.WithContext(context.WithValue(req.Context(), authContextKey{}, store.User{CanEditStudents:true}))
 	rec = httptest.NewRecorder()
@@ -165,7 +165,7 @@ func TestSeatAssignmentRequiresSeparatePermission(t *testing.T) {
 		t.Fatal(err)
 	}
 	s := &Server{store: st, logger: slog.Default()}
-	body := strings.NewReader(\`{"seat_no":2}\`)
+	body := strings.NewReader(`{"seat_no":2}`)
 	req := httptest.NewRequest(http.MethodPut, "/api/students/1", body)
 	req = req.WithContext(context.WithValue(req.Context(), authContextKey{}, store.User{CanEditStudents:true}))
 	rec := httptest.NewRecorder()
