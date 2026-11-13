@@ -181,3 +181,11 @@ func TestSeatAssignmentRequiresSeparatePermission(t *testing.T) {
 		t.Fatalf("unauthorized request changed seat to %d", current.SeatNo)
 	}
 }
+
+
+func withTestAdmin(r *http.Request) *http.Request {
+	return r.WithContext(context.WithValue(r.Context(), authContextKey{}, store.User{
+		IsAdmin: true, CanEditStudents: true, CanAddStudents: true,
+		CanResampleFaces: true, CanArrangeSeats: true,
+	}))
+}
