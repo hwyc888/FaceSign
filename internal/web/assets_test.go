@@ -1412,8 +1412,8 @@ func TestLowLightRecognitionSettingIsAdminConfigurableAndKeepsLivenessEnabled(t 
 		`id="lowLightRecognitionMode"`,
 		`id="lowLightRecognitionModeState"`,
 		"夜间低光识别模式",
-		"不会跳过活体验证",
-		"照片 / 屏幕攻击检测保持不变",
+		"低光、模糊导致活体无法判断时",
+		"管理员现场核验",
 	} {
 		if !strings.Contains(string(index), want) {
 			t.Fatalf("low-light recognition settings UI missing %q", want)
