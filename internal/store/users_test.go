@@ -111,3 +111,38 @@ func TestUserSessionsExpireAndAreRemovedWithAccount(t *testing.T) {
 		t.Fatal("deleting a user must invalidate its sessions")
 	}
 }
+
+
+func TestPasswordResetExpiresSessionsButKeepsCameraReleaseToken(t *testing.T) {
+	st, err := Open(filepath.Join(t.TempDir(), "user-reset-sessions.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	ctx := context.Background()
+	admin, err := st.CreateInitialAdmin(ctx, "admin", "hash")
+	if err != nil {
+		t.Fatal(err)
+	}
+	user, err := st.CreateUser(ctx, "operator", "old-hash", User{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	expires := time.Now().Add(time.Hour)
+	if err := st.CreateAuthSession(ctx, "operator-token", user.ID, expires); err != nil {
+		t.Fatal(err)
+	}
+	if err := st.UpdateUserAccess(ctx, user.ID, User{}, "new-hash"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := st.UserBySession(ctx, "operator-token", time.Now()); err == nil {
+		t.Fatal("password reset must revoke normal API access")
+	}
+	if _, err := st.UserBySessionForRelease(ctx, "operator-token"); err != nil {
+		t.Fatalf("revoked session should remain available for camera release: %v", err)
+	}
+	if _, err := st.UserBySession(ctx, "admin-token", time.Now()); err == nil {
+		t.Fatal("unexpected admin session")
+	}
+	_ = admin
+}
