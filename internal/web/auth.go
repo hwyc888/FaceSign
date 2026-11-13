@@ -229,6 +229,10 @@ func (s *Server) authPassword(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
+	if err := s.store.DeleteOtherAuthSessions(r.Context(), user.ID, sessionTokenHash(requestSessionToken(r))); err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
