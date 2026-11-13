@@ -1382,3 +1382,22 @@ func TestUserCloneUIProvidesSingleAndBatchGeneration(t *testing.T) {
 		}
 	}
 }
+
+
+func TestRecognitionUIRetriesBusySharedCameraFrames(t *testing.T) {
+	data, err := assets.ReadFile("assets/js/recognition.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(data)
+	for _, want := range []string{
+		"if (r?.skipped && r?.busy) return r;",
+		"if (result.skipped && result.busy)",
+		"const retryDelay = Math.max(100, recognitionFrameIntervalMS())",
+		"continue;",
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("shared camera busy retry missing %q", want)
+		}
+	}
+}
