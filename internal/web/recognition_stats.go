@@ -14,6 +14,9 @@ func (s *Server) recognitionStats(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, stats)
 	case http.MethodDelete:
+		if !requireAdmin(w, r) {
+			return
+		}
 		if err := s.store.ClearRecognitionStats(r.Context()); err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
