@@ -433,8 +433,8 @@
             <input id="lowLightRecognitionMode" type="checkbox">
             启用夜间低光识别模式
           </label>
-          <p class="muted camera-settings-help">开启后会适度放宽人脸画面质量门槛、降低暗光帧过滤条件，并延长活体采样时间，帮助摄像头收集更多有效画面。</p>
-          <p class="low-light-security-note">安全说明：清晰画面仍按原阈值拒绝照片 / 屏幕攻击；低光、模糊导致活体无法判断时，不自动签到，改由管理员现场核验。</p>
+          <p class="muted camera-settings-help">开启后会适度放宽人脸画面质量门槛，并在连续匹配的人脸没有可信照片/屏幕攻击证据时自动签到，无需管理员核验。</p>
+          <p class="low-light-security-note">安全说明：清晰画面检测到照片 / 屏幕攻击仍拒绝签到；过暗或模糊到无法获得有效人脸时继续等待改善画面。普通摄像头无法保证拦截所有伪造照片或屏幕。</p>
         </div>
 
         <div class="card settings-secondary-card">
