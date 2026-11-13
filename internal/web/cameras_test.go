@@ -751,3 +751,44 @@ func TestCameraReleaseActionStopsServerCapture(t *testing.T) {
 		t.Fatal("release endpoint did not cancel host USB capture context")
 	}
 }
+
+
+func TestCameraTrackActionReturnsEarlyPersonPayload(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "image/jpeg")
+		img := image.NewRGBA(image.Rect(0, 0, 32, 24))
+		if err := jpeg.Encode(w, img, nil); err != nil {
+			t.Error(err)
+		}
+	}))
+	defer upstream.Close()
+
+	st, err := store.Open(filepath.Join(t.TempDir(), "camera-track.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	camera, err := st.CreateCamera(context.Background(), store.CameraInput{
+		Name: "Track snapshot", Kind: "network", Protocol: "http_snapshot",
+		SnapshotURL: upstream.URL, AuthMode: "none",
+		Width: 1280, Height: 720, FPS: 5, TimeoutMS: 2000,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	s := &Server{store: st, logger: slog.Default(), personTracker: newPersonTracker()}
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest(http.MethodPost, fmt.Sprintf("/api/cameras/%d/track", camera.ID), nil)
+	s.cameraAction(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("track status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	body := rec.Body.String()
+	if !strings.Contains(body, `"persons":[]`) ||
+		!strings.Contains(body, `"frame_width":32`) ||
+		!strings.Contains(body, `"frame_height":24`) ||
+		!strings.Contains(body, `"tracked_person_count":0`) {
+		t.Fatalf("unexpected early tracking response: %s", body)
+	}
+}

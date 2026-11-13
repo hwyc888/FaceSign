@@ -38,11 +38,11 @@ func normalizeRecognitionLoadLevel(value string) string {
 func personDetectionReuseFramesForLoad(loadLevel string) int {
 	switch normalizeRecognitionLoadLevel(loadLevel) {
 	case recognitionLoadProtect:
-		return 4
-	case recognitionLoadReduced:
 		return 3
-	default:
+	case recognitionLoadReduced:
 		return 2
+	default:
+		return 1
 	}
 }
 

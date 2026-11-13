@@ -544,7 +544,7 @@ func (s *Server) cameraAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if len(parts) == 2 && (parts[1] == "frame" || parts[1] == "stream" || parts[1] == "webrtc" || parts[1] == "audio-webrtc" || parts[1] == "recognize" || parts[1] == "release") {
+	if len(parts) == 2 && (parts[1] == "frame" || parts[1] == "stream" || parts[1] == "webrtc" || parts[1] == "audio-webrtc" || parts[1] == "track" || parts[1] == "recognize" || parts[1] == "release") {
 		item, err := s.store.CameraByID(r.Context(), id)
 		if err != nil {
 			writeCameraStoreError(w, err)
@@ -581,6 +581,9 @@ func (s *Server) cameraAction(w http.ResponseWriter, r *http.Request) {
 			return
 		case "audio-webrtc":
 			s.cameraWebRTCAudioOffer(w, r, item)
+			return
+		case "track":
+			s.trackCameraPeople(w, r, item)
 			return
 		case "release":
 			if r.Method != http.MethodPost {

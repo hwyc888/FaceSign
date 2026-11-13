@@ -112,3 +112,64 @@ func TestUnknownFaceRetriesSoonWithoutBusyLoop(t *testing.T) {
 		t.Fatal("unknown face should retry within about 600ms")
 	}
 }
+
+
+func TestPersonTrackerPredictsBetweenReusedDetectionFrames(t *testing.T) {
+	tracker := newPersonTracker()
+	now := time.Now()
+	firstRect := image.Rect(100, 80, 260, 500)
+	movedRect := image.Rect(120, 80, 280, 500)
+	first := tracker.Observe("moving", []person.Detection{{Rectangle: firstRect, Score: 0.9}}, now)[0]
+	tracker.Observe("moving", []person.Detection{{Rectangle: movedRect, Score: 0.9}}, now.Add(200*time.Millisecond))
+	predicted := tracker.Observe("moving", []person.Detection{{Rectangle: movedRect, Score: 0.9}}, now.Add(300*time.Millisecond))[0]
+	if predicted.TrackID != first.TrackID || !predicted.Predicted || predicted.Rectangle.Min.X <= movedRect.Min.X {
+		t.Fatalf("reused detector frame did not advance the same moving track: %#v", predicted)
+	}
+}
+
+func TestPersonTrackerPreservesIDsWhenPeopleCross(t *testing.T) {
+	tracker := newPersonTracker()
+	now := time.Now()
+	first := tracker.Observe("crossing", []person.Detection{
+		{Rectangle: image.Rect(100, 80, 180, 360), Score: 0.9},
+		{Rectangle: image.Rect(300, 80, 380, 360), Score: 0.9},
+	}, now)
+	second := tracker.Observe("crossing", []person.Detection{
+		{Rectangle: image.Rect(160, 80, 240, 360), Score: 0.9},
+		{Rectangle: image.Rect(240, 80, 320, 360), Score: 0.9},
+	}, now.Add(200*time.Millisecond))
+	third := tracker.Observe("crossing", []person.Detection{
+		{Rectangle: image.Rect(220, 80, 300, 360), Score: 0.9},
+		{Rectangle: image.Rect(180, 80, 260, 360), Score: 0.9},
+	}, now.Add(400*time.Millisecond))
+	if len(first) != 2 || len(second) != 2 || len(third) != 2 ||
+		second[0].TrackID != first[0].TrackID || second[1].TrackID != first[1].TrackID ||
+		third[0].TrackID != first[0].TrackID || third[1].TrackID != first[1].TrackID {
+		t.Fatalf("track IDs changed while people crossed: first=%#v second=%#v third=%#v", first, second, third)
+	}
+}
+
+func TestPersonTrackerBrieflyKeepsABoxWhenDetectionIsMissed(t *testing.T) {
+	tracker := newPersonTracker()
+	now := time.Now()
+	first := tracker.Observe("missed", []person.Detection{{Rectangle: image.Rect(100, 80, 260, 500), Score: 0.9}}, now)[0]
+	predicted := tracker.Observe("missed", nil, now.Add(200*time.Millisecond))
+	if len(predicted) != 1 || predicted[0].TrackID != first.TrackID || !predicted[0].Predicted {
+		t.Fatalf("brief missed detection lost its predicted box: %#v", predicted)
+	}
+	expired := tracker.Observe("missed", nil, now.Add(personTrackPredictionGrace+100*time.Millisecond))
+	if len(expired) != 0 {
+		t.Fatalf("stale predicted box remained visible: %#v", expired)
+	}
+}
+
+func TestAssociateFaceToPersonRejectsOverlappingAmbiguousBodies(t *testing.T) {
+	body := image.Rect(100, 50, 300, 600)
+	tracks := []personTrackObservation{
+		{TrackID: "P1", Rectangle: body},
+		{TrackID: "P2", Rectangle: body},
+	}
+	if _, ok := associateFaceToPerson(image.Rect(180, 100, 220, 150), tracks); ok {
+		t.Fatal("face must not inherit a body track when two bodies are geometrically indistinguishable")
+	}
+}

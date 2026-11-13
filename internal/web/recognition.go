@@ -52,6 +52,7 @@ type recognitionPerson struct {
 	BestFaceQuality float64        `json:"best_face_quality,omitempty"`
 	Student         *store.Student `json:"student,omitempty"`
 	Similarity      float64        `json:"similarity,omitempty"`
+	Predicted       bool           `json:"predicted,omitempty"`
 }
 
 type matchCandidate struct {
@@ -146,6 +147,68 @@ func (s *Server) recognizeNetworkCameraImage(w http.ResponseWriter, r *http.Requ
 	s.recognizePreparedImage(w, r, personImg, now, sessionID, personDetections, detections)
 }
 
+func (s *Server) trackCameraPeople(w http.ResponseWriter, r *http.Request, camera store.Camera) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w)
+		return
+	}
+	frame, _, _, status, err := s.cameraSourceFrame(r.Context(), camera)
+	if err != nil {
+		writeError(w, status, err)
+		return
+	}
+	if camera.Kind == "network" && strings.EqualFold(strings.TrimSpace(camera.Protocol), "rtsp") {
+		if previewFrame, _, _, _, previewErr := s.cameraPreviewSourceFrame(r.Context(), camera); previewErr == nil {
+			frame = previewFrame
+		}
+	}
+	img, _, err := image.Decode(bytes.NewReader(frame))
+	if err != nil {
+		writeError(w, http.StatusBadGateway, fmt.Errorf("摄像头跟踪帧解码失败: %w", err))
+		return
+	}
+
+	now := time.Now()
+	sessionID := recognitionSessionID(r)
+	loadLevel := normalizeRecognitionLoadLevel(r.Header.Get("X-FaceSign-AI-Load"))
+	recoverSmallPeople := camera.Kind == "network" && strings.EqualFold(strings.TrimSpace(camera.Protocol), "rtsp")
+	detections, err := s.personDetectionsForRecognition(sessionID, img, now, loadLevel, recoverSmallPeople)
+	if err != nil {
+		s.logger.Warn("early person tracking failed", "camera_id", camera.ID, "error", err)
+		detections = nil
+	}
+	tracks := s.personTracker.Observe(sessionID, detections, now)
+	persons, _ := recognitionPeopleFromTracks(tracks)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"persons":              persons,
+		"frame_width":          img.Bounds().Dx(),
+		"frame_height":         img.Bounds().Dy(),
+		"tracked_person_count": len(persons),
+		"waiting_face_count":   len(persons),
+	})
+}
+
+func recognitionPeopleFromTracks(tracks []personTrackObservation) ([]recognitionPerson, map[string]int) {
+	persons := make([]recognitionPerson, len(tracks))
+	personIndex := make(map[string]int, len(tracks))
+	for i, track := range tracks {
+		status := personWaitingStatus(track.Rectangle)
+		if track.Predicted {
+			status = "跟踪中"
+		}
+		persons[i] = recognitionPerson{
+			TrackID:         track.TrackID,
+			Box:             boxFromRectangle(track.Rectangle),
+			Score:           track.Score,
+			Status:          status,
+			BestFaceQuality: track.BestQuality,
+			Predicted:       track.Predicted,
+		}
+		personIndex[track.TrackID] = i
+	}
+	return persons, personIndex
+}
+
 func (s *Server) recognizePreparedImage(
 	w http.ResponseWriter,
 	r *http.Request,
@@ -157,19 +220,7 @@ func (s *Server) recognizePreparedImage(
 ) {
 	personDetections = addFaceFallbackPersons(personDetections, detections, img.Bounds())
 	tracks := s.personTracker.Observe(sessionID, personDetections, now)
-	personResults := make([]recognitionPerson, len(tracks))
-	personIndex := make(map[string]int, len(tracks))
-	for i, track := range tracks {
-		status := personWaitingStatus(track.Rectangle)
-		personResults[i] = recognitionPerson{
-			TrackID:         track.TrackID,
-			Box:             boxFromRectangle(track.Rectangle),
-			Score:           track.Score,
-			Status:          status,
-			BestFaceQuality: track.BestQuality,
-		}
-		personIndex[track.TrackID] = i
-	}
+	personResults, personIndex := recognitionPeopleFromTracks(tracks)
 
 	results := make([]recognitionFace, len(detections))
 	qualities := make([]faceQualityResult, len(detections))

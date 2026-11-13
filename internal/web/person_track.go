@@ -14,22 +14,28 @@ import (
 )
 
 const (
-	personTrackTTL              = 2 * time.Second
-	minRecognitionFaceQuality   = 0.45
-	bestFaceImprovement         = 0.04
-	unknownFaceRetryInterval    = 600 * time.Millisecond
+	personTrackTTL               = 2 * time.Second
+	personTrackPredictionHorizon = 450 * time.Millisecond
+	personTrackPredictionGrace   = 500 * time.Millisecond
+	minRecognitionFaceQuality    = 0.45
+	bestFaceImprovement          = 0.04
+	unknownFaceRetryInterval     = 600 * time.Millisecond
 )
 
 type personTrack struct {
-	ID            string
-	Rectangle     image.Rectangle
-	Score         float64
-	FirstSeen     time.Time
-	LastSeen      time.Time
-	BestQuality   float64
-	LastFeatureAt time.Time
-	Student       *store.Student
-	Similarity    float64
+	ID                     string
+	Rectangle              image.Rectangle
+	LastDetectionRectangle image.Rectangle
+	VelocityX              float64
+	VelocityY              float64
+	LastDetectionAt        time.Time
+	Score                  float64
+	FirstSeen              time.Time
+	LastSeen               time.Time
+	BestQuality            float64
+	LastFeatureAt          time.Time
+	Student                *store.Student
+	Similarity             float64
 }
 
 type personTrackSession struct {
@@ -43,12 +49,13 @@ type personTracker struct {
 }
 
 type personTrackObservation struct {
-	TrackID    string
-	Rectangle  image.Rectangle
-	Score      float64
+	TrackID     string
+	Rectangle   image.Rectangle
+	Score       float64
 	BestQuality float64
-	Student    *store.Student
-	Similarity float64
+	Student     *store.Student
+	Similarity  float64
+	Predicted   bool
 }
 
 type faceQualityResult struct {
@@ -91,13 +98,21 @@ func (t *personTracker) Observe(sessionID string, detections []person.Detection,
 	candidates := make([]candidate, 0, len(detections)*len(session.Tracks))
 	for i, detection := range detections {
 		for id, track := range session.Tracks {
-			score := personAssociationScore(track.Rectangle, detection.Rectangle)
-			if score >= 0.20 {
+			score := personAssociationScore(predictPersonRectangle(track, now), detection.Rectangle)
+			if score >= 0.28 {
 				candidates = append(candidates, candidate{detection: i, trackID: id, score: score})
 			}
 		}
 	}
-	sort.Slice(candidates, func(i, j int) bool { return candidates[i].score > candidates[j].score })
+	sort.Slice(candidates, func(i, j int) bool {
+		if candidates[i].score == candidates[j].score {
+			if candidates[i].detection == candidates[j].detection {
+				return candidates[i].trackID < candidates[j].trackID
+			}
+			return candidates[i].detection < candidates[j].detection
+		}
+		return candidates[i].score > candidates[j].score
+	})
 
 	matchedDetection := make(map[int]string)
 	usedTracks := make(map[string]bool)
@@ -109,38 +124,122 @@ func (t *personTracker) Observe(sessionID string, detections []person.Detection,
 		usedTracks[candidate.trackID] = true
 	}
 
-	out := make([]personTrackObservation, len(detections))
+	out := make([]personTrackObservation, 0, len(detections)+len(session.Tracks))
 	for i, detection := range detections {
 		trackID := matchedDetection[i]
 		track := session.Tracks[trackID]
+		predicted := false
 		if track == nil {
 			session.NextID++
 			trackID = fmt.Sprintf("%s-P%d", sessionID, session.NextID)
 			track = &personTrack{
-				ID:        trackID,
-				FirstSeen: now,
+				ID:                     trackID,
+				Rectangle:              detection.Rectangle,
+				LastDetectionRectangle: detection.Rectangle,
+				LastDetectionAt:        now,
+				FirstSeen:              now,
 			}
 			session.Tracks[trackID] = track
+		} else {
+			predictedRectangle := predictPersonRectangle(track, now)
+			if detection.Rectangle == track.LastDetectionRectangle {
+				track.Rectangle = predictedRectangle
+				track.VelocityX *= 0.85
+				track.VelocityY *= 0.85
+				predicted = predictedRectangle != detection.Rectangle
+			} else {
+				elapsed := now.Sub(track.LastDetectionAt).Seconds()
+				if elapsed >= 0.05 && elapsed <= 1.5 {
+					oldX, oldY := rectangleCenter(track.LastDetectionRectangle)
+					newX, newY := rectangleCenter(detection.Rectangle)
+					maxSpeed := math.Max(40, float64(maxInt(track.LastDetectionRectangle.Dx(), track.LastDetectionRectangle.Dy()))*3)
+					measuredX := clampTrackVelocity((newX-oldX)/elapsed, maxSpeed)
+					measuredY := clampTrackVelocity((newY-oldY)/elapsed, maxSpeed)
+					track.VelocityX = track.VelocityX*0.35 + measuredX*0.65
+					track.VelocityY = track.VelocityY*0.35 + measuredY*0.65
+				} else if elapsed > 1.5 {
+					track.VelocityX = 0
+					track.VelocityY = 0
+				}
+				track.Rectangle = blendRectangle(predictedRectangle, detection.Rectangle, 0.78)
+				track.LastDetectionRectangle = detection.Rectangle
+				track.LastDetectionAt = now
+			}
 		}
-		track.Rectangle = detection.Rectangle
 		track.Score = detection.Score
 		track.LastSeen = now
+		usedTracks[trackID] = true
 
 		var student *store.Student
 		if track.Student != nil {
 			copy := *track.Student
 			student = &copy
 		}
-		out[i] = personTrackObservation{
-			TrackID:     track.ID,
-			Rectangle:   track.Rectangle,
-			Score:       track.Score,
-			BestQuality: track.BestQuality,
-			Student:     student,
-			Similarity:  track.Similarity,
-		}
+		out = append(out, personTrackObservation{
+			TrackID: track.ID, Rectangle: track.Rectangle, Score: track.Score,
+			BestQuality: track.BestQuality, Student: student, Similarity: track.Similarity,
+			Predicted: predicted,
+		})
 	}
-	return out
+
+	predictedTracks := make([]personTrackObservation, 0, len(session.Tracks)-len(usedTracks))
+	for id, track := range session.Tracks {
+		if usedTracks[id] {
+			continue
+		}
+		age := now.Sub(track.LastSeen)
+		if age < 0 || age > personTrackPredictionGrace {
+			continue
+		}
+		rectangle := predictPersonRectangle(track, now)
+		if rectangle.Empty() {
+			continue
+		}
+		var student *store.Student
+		if track.Student != nil {
+			copy := *track.Student
+			student = &copy
+		}
+		confidence := 1 - age.Seconds()/personTrackPredictionGrace.Seconds()
+		predictedTracks = append(predictedTracks, personTrackObservation{
+			TrackID: track.ID, Rectangle: rectangle, Score: track.Score * confidence,
+			BestQuality: track.BestQuality, Student: student, Similarity: track.Similarity,
+			Predicted: true,
+		})
+	}
+	sort.Slice(predictedTracks, func(i, j int) bool { return predictedTracks[i].TrackID < predictedTracks[j].TrackID })
+	return append(out, predictedTracks...)
+}
+
+func clampTrackVelocity(value, limit float64) float64 {
+	if value > limit {
+		return limit
+	}
+	if value < -limit {
+		return -limit
+	}
+	return value
+}
+
+func predictPersonRectangle(track *personTrack, now time.Time) image.Rectangle {
+	if track == nil {
+		return image.Rectangle{}
+	}
+	anchor := track.LastDetectionRectangle
+	if anchor.Empty() {
+		anchor = track.Rectangle
+	}
+	if anchor.Empty() || track.LastDetectionAt.IsZero() || !now.After(track.LastDetectionAt) {
+		return anchor
+	}
+	elapsed := now.Sub(track.LastDetectionAt)
+	if elapsed > personTrackPredictionHorizon {
+		elapsed = personTrackPredictionHorizon
+	}
+	maxShift := float64(maxInt(anchor.Dx(), anchor.Dy())) * 0.85
+	dx := clampTrackVelocity(track.VelocityX*elapsed.Seconds(), maxShift)
+	dy := clampTrackVelocity(track.VelocityY*elapsed.Seconds(), maxShift)
+	return anchor.Add(image.Pt(int(math.Round(dx)), int(math.Round(dy))))
 }
 
 func (t *personTracker) NeedFeature(sessionID, trackID string, quality float64, now time.Time) bool {
@@ -230,8 +329,11 @@ func personAssociationScore(a, b image.Rectangle) float64 {
 	if scale <= 0 {
 		return iou
 	}
-	centerScore := 1 - math.Min(1, distance/(scale*1.25))
-	return iou*0.70 + centerScore*0.30
+	centerScore := 1 - math.Min(1, distance/(scale*1.5))
+	widthRatio := float64(minInt(a.Dx(), b.Dx())) / float64(maxInt(a.Dx(), b.Dx()))
+	heightRatio := float64(minInt(a.Dy(), b.Dy())) / float64(maxInt(a.Dy(), b.Dy()))
+	sizeScore := math.Sqrt(widthRatio * heightRatio)
+	return iou*0.60 + centerScore*0.25 + sizeScore*0.15
 }
 
 func rectangleIoU(a, b image.Rectangle) float64 {
@@ -274,6 +376,7 @@ func associateFaceToPerson(rect image.Rectangle, tracks []personTrackObservation
 	cx, cy := rectangleCenter(rect)
 	bestIndex := -1
 	bestScore := -1.0
+	secondScore := -1.0
 	for i, track := range tracks {
 		body := track.Rectangle
 		if body.Empty() {
@@ -290,11 +393,17 @@ func associateFaceToPerson(rect image.Rectangle, tracks []personTrackObservation
 		normalizedY := math.Abs(cy-float64(body.Min.Y)-bodyHeight*0.18) / bodyHeight
 		score := 1 - normalizedX - normalizedY*0.5
 		if score > bestScore {
+			secondScore = bestScore
 			bestScore = score
 			bestIndex = i
+		} else if score > secondScore {
+			secondScore = score
 		}
 	}
-	return bestIndex, bestIndex >= 0
+	if bestIndex < 0 || (secondScore >= 0 && bestScore-secondScore < 0.08) {
+		return -1, false
+	}
+	return bestIndex, true
 }
 
 func addFaceFallbackPersons(people []person.Detection, faces []face.Detection, bounds image.Rectangle) []person.Detection {

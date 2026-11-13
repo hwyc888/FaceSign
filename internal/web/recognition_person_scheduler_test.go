@@ -54,7 +54,7 @@ func TestPersonDetectionCacheExpiresAtMaxAge(t *testing.T) {
 	}
 }
 
-func TestPersonDetectionCacheReusesOnlyTwoRecognitionFrames(t *testing.T) {
+func TestPersonDetectionCacheReusesOnePairedRecognitionFrame(t *testing.T) {
 	now := time.Now()
 	s := &Server{
 		personDetectionCache: map[string]personDetectionCacheEntry{
@@ -87,10 +87,10 @@ func TestPersonDetectionReuseAdaptsToVideoLoad(t *testing.T) {
 		level string
 		want  int
 	}{
-		{recognitionLoadNormal, 2},
-		{recognitionLoadReduced, 3},
-		{recognitionLoadProtect, 4},
-		{"invalid", 2},
+		{recognitionLoadNormal, 1},
+		{recognitionLoadReduced, 2},
+		{recognitionLoadProtect, 3},
+		{"invalid", 1},
 	}
 	for _, tc := range cases {
 		if got := personDetectionReuseFramesForLoad(tc.level); got != tc.want {
