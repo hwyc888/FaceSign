@@ -49,7 +49,7 @@ func TestAppSettingsAPI(t *testing.T) {
 	put := httptest.NewRequest(http.MethodPut, "/api/settings", strings.NewReader(`{"auto_start_checkin":true}`))
 	put.Header.Set("Content-Type", "application/json")
 	putRec := httptest.NewRecorder()
-	s.settings(putRec, put)
+	s.settings(putRec, withTestAdmin(put))
 	if putRec.Code != http.StatusOK {
 		t.Fatalf("PUT status=%d body=%s", putRec.Code, putRec.Body.String())
 	}
@@ -68,7 +68,7 @@ func TestAppSettingsAPI(t *testing.T) {
 	statusPut := httptest.NewRequest(http.MethodPut, "/api/settings", strings.NewReader(`{"realtime_status_enabled":false}`))
 	statusPut.Header.Set("Content-Type", "application/json")
 	statusRec := httptest.NewRecorder()
-	s.settings(statusRec, statusPut)
+	s.settings(statusRec, withTestAdmin(statusPut))
 	if statusRec.Code != http.StatusOK {
 		t.Fatalf("realtime status PUT status=%d body=%s", statusRec.Code, statusRec.Body.String())
 	}
@@ -87,7 +87,7 @@ func TestAppSettingsAPI(t *testing.T) {
 	fieldPut := httptest.NewRequest(http.MethodPut, "/api/settings", strings.NewReader(`{"realtime_status_network":false}`))
 	fieldPut.Header.Set("Content-Type", "application/json")
 	fieldRec := httptest.NewRecorder()
-	s.settings(fieldRec, fieldPut)
+	s.settings(fieldRec, withTestAdmin(fieldPut))
 	if fieldRec.Code != http.StatusOK {
 		t.Fatalf("realtime field PUT status=%d body=%s", fieldRec.Code, fieldRec.Body.String())
 	}

@@ -20,6 +20,8 @@ func TestFrontendModulesAreEmbedded(t *testing.T) {
 		"assets/js/students.js",
 		"assets/js/photo_import.js",
 		"assets/js/attendance.js",
+		"assets/js/users.js",
+		"assets/js/auth.js",
 		"assets/js/boot.js",
 	}
 	for _, path := range modules {
@@ -1215,7 +1217,7 @@ func TestHostUSBCameraAndMobileCardLayoutAreEmbedded(t *testing.T) {
 	if err != nil { t.Fatal(err) }
 	css := string(cssData)
 	for _, want := range []string{
-		"grid-template-columns:repeat(6,minmax(0,1fr))",
+		"grid-template-columns:repeat(7,minmax(0,1fr))",
 		"content:attr(data-label)",
 		"position:fixed",
 	} {
@@ -1254,6 +1256,52 @@ func TestClosingCameraReleasesServerCapture(t *testing.T) {
 	} {
 		if !strings.Contains(settingsScript, want) {
 			t.Fatalf("camera settings release flow missing %q", want)
+		}
+	}
+}
+
+
+func TestAuthenticationAndUserManagementUI(t *testing.T) {
+	index, err := assets.ReadFile("assets/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`id="authScreen"`,
+		`id="authLoginForm"`,
+		`id="authSetupForm"`,
+		`data-page="users"`,
+		`id="userCreateForm"`,
+		`id="studentEditForm"`,
+		`id="changePasswordForm"`,
+	} {
+		if !strings.Contains(string(index), want) {
+			t.Fatalf("authentication and user management UI missing %q", want)
+		}
+	}
+	authScript, err := assets.ReadFile("assets/js/auth.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{"initializeAuth()", "applyUserPermissions()", "handleAuthExpired()"} {
+		if !strings.Contains(string(authScript), want) {
+			t.Fatalf("auth frontend missing %q", want)
+		}
+	}
+}
+
+func TestStudentProfileEditorIncludesAllBasicFields(t *testing.T) {
+	index, err := assets.ReadFile("assets/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`id="editStudentNo"`,
+		`id="editStudentName"`,
+		`id="editStudentClass"`,
+	} {
+		if !strings.Contains(string(index), want) {
+			t.Fatalf("student profile editor missing %q", want)
 		}
 	}
 }

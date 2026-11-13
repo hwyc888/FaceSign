@@ -23,6 +23,7 @@ async function showPage(name, options = {}) {
     }
   }
   if (name === 'attendance') loadAttendance();
+  if (name === 'users') await loadUsers();
   if (name === 'settings') {
     await Promise.all([loadClasses(), loadCameras(), loadAppSettings(), loadRecognitionStats()]);
     refreshLocalCameraDevices(false).catch(() => {});

@@ -39,10 +39,11 @@ const (
 )
 
 type photoImportSession struct {
-	mu        sync.Mutex
-	ID        string
-	CreatedAt time.Time
-	Items     []*photoImportItem
+	mu          sync.Mutex
+	ID          string
+	OwnerUserID int64
+	CreatedAt   time.Time
+	Items       []*photoImportItem
 }
 
 type photoImportItem struct {
@@ -89,6 +90,10 @@ type photoKnownFace struct {
 }
 
 func (s *Server) photoImportAnalyze(w http.ResponseWriter, r *http.Request) {
+	user := authUser(r)
+	if !requirePermission(w, r, user.CanAddStudents || user.CanResampleFaces, "没有新增人员或重新采样的权限") {
+		return
+	}
 	if r.Method != http.MethodPost {
 		methodNotAllowed(w)
 		return
@@ -148,7 +153,7 @@ func (s *Server) photoImportAnalyze(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	session := &photoImportSession{ID: sessionID, CreatedAt: time.Now()}
+	session := &photoImportSession{ID: sessionID, OwnerUserID: authUser(r).ID, CreatedAt: time.Now()}
 	ignored := 0
 	processed := 0
 	packageFeatures := make([]*photoImportItem, 0)
@@ -329,6 +334,10 @@ func (s *Server) photoImportAction(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusNotFound, errors.New("照片导入会话已过期，请重新上传 ZIP"))
 		return
 	}
+	if session.OwnerUserID != authUser(r).ID && !authUser(r).IsAdmin {
+		writeError(w, http.StatusNotFound, errors.New("照片导入会话不存在"))
+		return
+	}
 
 	if len(parts) == 3 && parts[1] == "thumbnail" && r.Method == http.MethodGet {
 		id, err := strconv.Atoi(parts[2])
@@ -427,6 +436,11 @@ func (s *Server) photoImportCommit(w http.ResponseWriter, r *http.Request, sessi
 
 		switch requested.Action {
 		case "new":
+			if !authUser(r).IsAdmin && !authUser(r).CanAddStudents {
+				failed++
+				results = append(results, map[string]any{"id": item.ID, "status": "failed", "message": "没有新增学生的权限"})
+				continue
+			}
 			if item.Status != "ready" {
 				failed++
 				results = append(results, map[string]any{"id": item.ID, "status": "failed", "message": "该照片不能建立新学生"})
@@ -466,6 +480,11 @@ func (s *Server) photoImportCommit(w http.ResponseWriter, r *http.Request, sessi
 			results = append(results, map[string]any{"id": item.ID, "status": "imported", "message": "已建立学生并录入正面样本", "student": student})
 
 		case "supplement":
+			if !authUser(r).IsAdmin && !authUser(r).CanResampleFaces {
+				failed++
+				results = append(results, map[string]any{"id": item.ID, "status": "failed", "message": "没有补充或重新采样人脸的权限"})
+				continue
+			}
 			if item.Existing == nil || item.Existing.ID <= 0 {
 				failed++
 				results = append(results, map[string]any{"id": item.ID, "status": "failed", "message": "没有可补充的已匹配学生"})
@@ -494,6 +513,18 @@ func (s *Server) photoImportCommit(w http.ResponseWriter, r *http.Request, sessi
 				skipped++
 				item.Committed = true
 				results = append(results, map[string]any{"id": item.ID, "status": "skipped", "message": "与已有样本几乎完全相同，无需重复保存"})
+				continue
+			}
+			currentStudent, err := s.store.StudentByID(r.Context(), targetID)
+			if err != nil {
+				failed++
+				results = append(results, map[string]any{"id": item.ID, "status": "failed", "message": err.Error()})
+				continue
+			}
+			if strings.TrimSpace(currentStudent.ClassName) != className &&
+				(!authUser(r).IsAdmin && !authUser(r).CanEditStudents) {
+				failed++
+				results = append(results, map[string]any{"id": item.ID, "status": "failed", "message": "没有修改学生班级的权限"})
 				continue
 			}
 			if err := s.store.UpdateStudentClass(r.Context(), targetID, className); err != nil {

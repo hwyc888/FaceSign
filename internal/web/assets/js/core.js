@@ -34,6 +34,7 @@ const titles = {
   seating: ['座位编排', '按班级管理学生座号，支持批量安排和拖动换位'],
   attendance: ['考勤记录', '每名学生每天首次识别记为签到'],
   settings: ['设置', '签到启动方式、摄像头管理、班级管理与基础数据设置'],
+  users: ['人员管理', '创建普通账号，并分别设置学生资料、人脸采样和座位编排权限'],
   status: ['系统状态', '检查人脸引擎、数据库和部署状态']
 };
 
@@ -48,6 +49,11 @@ async function api(url, opt = {}) {
   const r = await fetch(url, opt);
   const data = await r.json().catch(() => ({}));
   if (!r.ok) {
+    if (r.status === 401 &&
+      !['/api/auth/status', '/api/auth/login', '/api/auth/setup', '/api/auth/logout'].includes(url) &&
+      typeof handleAuthExpired === 'function') {
+      handleAuthExpired();
+    }
     const err = new Error(data.error || `HTTP ${r.status}`);
     err.status = r.status;
     err.data = data;

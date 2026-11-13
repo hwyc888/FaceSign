@@ -13,10 +13,14 @@ function photoImportStatusMeta(item) {
 
 function photoImportActionOptions(item) {
   if (item.status === 'ready') {
-    return '<option value="new" selected>新建学生 + 正面样本</option><option value="skip">跳过</option>';
+    return hasPermission('can_add_students')
+      ? '<option value="new" selected>新建学生 + 正面样本</option><option value="skip">跳过</option>'
+      : '<option value="skip" selected>跳过（无新增权限）</option>';
   }
   if (item.status === 'existing') {
-    return '<option value="skip" selected>跳过（已有）</option><option value="supplement">补充现有学生正面样本</option>';
+    return hasPermission('can_resample_faces')
+      ? '<option value="skip" selected>跳过（已有）</option><option value="supplement">补充现有学生正面样本</option>'
+      : '<option value="skip" selected>跳过（无采样权限）</option>';
   }
   return '<option value="skip" selected>跳过</option>';
 }

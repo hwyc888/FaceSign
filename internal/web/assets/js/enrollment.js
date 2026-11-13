@@ -54,6 +54,10 @@ function duplicateProfileChanges(next) {
 }
 
 $('#duplicateUpdateProfile').addEventListener('click', async () => {
+  if (!hasPermission('can_edit_students')) {
+    toast('没有修改学生资料的权限');
+    return;
+  }
   if (!duplicateStudent) return;
   try {
     await loadClasses();
@@ -175,6 +179,14 @@ function setEnrollmentAngle(angle) {
 
 async function captureEnrollment() {
   try {
+    if (supplementStudent && !hasPermission('can_resample_faces')) {
+      toast('没有补充或重新采样人脸的权限');
+      return;
+    }
+    if (!supplementStudent && !hasPermission('can_add_students')) {
+      toast('没有新增学生的权限');
+      return;
+    }
     await startCamera();
     setEnrollmentStatus('正在检测人脸', '请保持不动，系统正在检查人脸质量和重复记录。', 'working');
     const blob = await capture('#enrollCamera');
@@ -238,6 +250,10 @@ $('#captureEnrollment').addEventListener('click', captureEnrollment);
 
 $('#studentInfoForm').addEventListener('submit', async e => {
   e.preventDefault();
+  if (!hasPermission('can_add_students')) {
+    toast('没有新增学生的权限');
+    return;
+  }
   if (!pendingEnrollmentBlob) {
     toast('请重新拍摄人脸');
     closeModal('studentModal');

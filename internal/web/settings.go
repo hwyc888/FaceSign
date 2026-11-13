@@ -26,6 +26,9 @@ func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, settings)
 	case http.MethodPut:
+		if !requireAdmin(w, r) {
+			return
+		}
 		var in appSettingsRequest
 		if err := decodeJSON(r, &in); err != nil {
 			writeError(w, http.StatusBadRequest, err)

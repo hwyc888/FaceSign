@@ -18,6 +18,9 @@ func (s *Server) classes(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, items)
 	case http.MethodPost:
+		if !requireAdmin(w, r) {
+			return
+		}
 		var in struct {
 			Name        string `json:"name"`
 			SeatRows    int    `json:"seat_rows"`
@@ -56,6 +59,9 @@ func (s *Server) classAction(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(parts) == 1 {
+		if !requireAdmin(w, r) {
+			return
+		}
 		switch r.Method {
 		case http.MethodPut:
 			var in struct {
@@ -93,6 +99,9 @@ func (s *Server) classAction(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(parts) == 2 && parts[1] == "move" && r.Method == http.MethodPost {
+		if !requireAdmin(w, r) {
+			return
+		}
 		var in struct {
 			Direction string `json:"direction"`
 		}
@@ -109,6 +118,9 @@ func (s *Server) classAction(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(parts) == 2 && parts[1] == "layout" && r.Method == http.MethodPut {
+		if !requireAdmin(w, r) {
+			return
+		}
 		var in struct {
 			SeatRows    int `json:"seat_rows"`
 			SeatsPerRow int `json:"seats_per_row"`
@@ -127,6 +139,9 @@ func (s *Server) classAction(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(parts) == 2 && parts[1] == "settings" && r.Method == http.MethodPut {
+		if !requireAdmin(w, r) {
+			return
+		}
 		var in struct {
 			Name        string `json:"name"`
 			SeatRows    int    `json:"seat_rows"`
@@ -152,6 +167,9 @@ func (s *Server) classAction(w http.ResponseWriter, r *http.Request) {
 
 
 	if len(parts) == 2 && parts[1] == "arrange-selected" && r.Method == http.MethodPost {
+		if !requirePermission(w, r, authUser(r).CanArrangeSeats, "没有编排座位的权限") {
+			return
+		}
 		var in struct {
 			StudentIDs []int64 `json:"student_ids"`
 		}
@@ -169,6 +187,9 @@ func (s *Server) classAction(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(parts) == 2 && parts[1] == "arrange" && r.Method == http.MethodPost {
+		if !requirePermission(w, r, authUser(r).CanArrangeSeats, "没有编排座位的权限") {
+			return
+		}
 		count, err := s.store.AutoArrangeSeats(r.Context(), id)
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err)
@@ -179,6 +200,9 @@ func (s *Server) classAction(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(parts) == 2 && parts[1] == "seats" && r.Method == http.MethodPost {
+		if !requirePermission(w, r, authUser(r).CanArrangeSeats, "没有编排座位的权限") {
+			return
+		}
 		var in struct {
 			StudentID    int64 `json:"student_id"`
 			TargetSeatNo int   `json:"target_seat_no"`

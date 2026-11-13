@@ -345,6 +345,9 @@ func (s *Server) consumeHostCameraStream(ctx context.Context, stream *networkCam
 }
 
 func (s *Server) hostCameraDevices(w http.ResponseWriter, r *http.Request) {
+	if !requireAdmin(w, r) {
+		return
+	}
 	if r.Method != http.MethodGet {
 		methodNotAllowed(w)
 		return

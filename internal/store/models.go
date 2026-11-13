@@ -51,6 +51,17 @@ type Attendance struct {
 	Similarity       float64 `json:"similarity"`
 }
 
+type User struct {
+	ID               int64  `json:"id"`
+	Username         string `json:"username"`
+	IsAdmin          bool   `json:"is_admin"`
+	CanEditStudents  bool   `json:"can_edit_students"`
+	CanAddStudents   bool   `json:"can_add_students"`
+	CanResampleFaces bool   `json:"can_resample_faces"`
+	CanArrangeSeats  bool   `json:"can_arrange_seats"`
+	PasswordHash     string `json:"-"`
+}
+
 type Store struct { db *sql.DB }
 
 type SeatAttendance struct {
