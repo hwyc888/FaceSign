@@ -31,7 +31,6 @@ type recognitionFace struct {
 	FirstCheckinToday bool              `json:"first_checkin_today"`
 	Box               faceBox           `json:"box"`
 	TrackID           string            `json:"track_id,omitempty"`
-	LivenessTrackID   string            `json:"liveness_track_id,omitempty"`
 	QualityScore      float64           `json:"quality_score,omitempty"`
 	QualityStatus     string            `json:"quality_status,omitempty"`
 	QualityHint       string            `json:"quality_hint,omitempty"`
@@ -41,8 +40,6 @@ type recognitionFace struct {
 	LivenessFrames    int               `json:"liveness_frames,omitempty"`
 	RequiredFrames    int               `json:"required_frames,omitempty"`
 	LivenessTimedOut       bool              `json:"liveness_timed_out,omitempty"`
-	ManualReviewRequired  bool              `json:"manual_review_required,omitempty"`
-	ManualConfirmed       bool              `json:"manual_confirmed,omitempty"`
 }
 
 type recognitionPerson struct {
@@ -381,29 +378,16 @@ func (s *Server) recognizePreparedImage(
 		detectionIndex := observationDetectionIndexes[i]
 		result := &results[detectionIndex]
 		matchedCount++
-		result.LivenessTrackID = decision.TrackID
 		result.LivenessScore = decision.LiveScore
 		result.LivenessStatus = decision.LivenessStatus
 		result.LivenessFrames = decision.Frames
 		result.RequiredFrames = decision.RequiredFrames
 		result.LivenessTimedOut = decision.TimedOut
-		result.ManualReviewRequired = decision.NeedsManualReview
-		result.ManualConfirmed = decision.ManualConfirmed
 
 		switch {
-		case decision.ManualConfirmed:
-			result.Recognized = true
-			result.Status = "人工核验签到完成"
-			verifiedCount++
-			if result.Student != nil {
-				verifiedStudentIDs = append(verifiedStudentIDs, result.Student.ID)
-			}
 		case decision.Rejected:
 			result.Status = "疑似照片/屏幕"
 			spoofCount++
-		case decision.NeedsManualReview:
-			result.Status = decision.LivenessStatus
-			pendingCount++
 		case decision.Verified:
 			result.Recognized = true
 			result.Status = "签到通过"
@@ -503,8 +487,6 @@ func (s *Server) recognizePreparedImage(
 		response["liveness_frames"] = results[0].LivenessFrames
 		response["required_frames"] = results[0].RequiredFrames
 		response["liveness_timed_out"] = results[0].LivenessTimedOut
-		response["manual_review_required"] = results[0].ManualReviewRequired
-		response["manual_confirmed"] = results[0].ManualConfirmed
 		if results[0].Student != nil {
 			response["student"] = results[0].Student
 			if results[0].Attendance != nil {
