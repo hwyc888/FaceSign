@@ -115,7 +115,7 @@ func (t *recognitionTracker) Observe(sessionID string, observations []recognitio
 				Frames:          len(track.Scores),
 				RequiredFrames:  requiredLivenessFrames(track),
 				LiveScore:       averageScores(track.Scores),
-				Similarity:      track.SimilaritySum / maxFloat64(1, float64(track.Frames)),
+				Similarity:      track.SimilaritySum / maxLivenessFloat(1, float64(track.Frames)),
 				Verified:        track.Verified,
 				Rejected:        track.Rejected,
 				NeedsAttendance: track.Verified && !track.Committed,
@@ -244,7 +244,7 @@ func requiredLivenessFrames(track *recognitionTrack) int {
 	}
 }
 
-func maxFloat64(a, b float64) float64 {
+func maxLivenessFloat(a, b float64) float64 {
 	if a > b {
 		return a
 	}
