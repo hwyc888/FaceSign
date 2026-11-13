@@ -329,6 +329,10 @@ func (s *Store) AutoArrangeSelectedSeats(ctx context.Context, id int64, studentI
 		}
 		orderedIDs = append(orderedIDs, studentID)
 	}
+	if err := selectedRows.Err(); err != nil {
+		selectedRows.Close()
+		return 0, err
+	}
 	if err := selectedRows.Close(); err != nil {
 		return 0, err
 	}
@@ -353,6 +357,10 @@ func (s *Store) AutoArrangeSelectedSeats(ctx context.Context, id int64, studentI
 		if seatNo > 0 && seatNo <= capacity {
 			occupied[seatNo] = struct{}{}
 		}
+	}
+	if err := occupiedRows.Err(); err != nil {
+		occupiedRows.Close()
+		return 0, err
 	}
 	if err := occupiedRows.Close(); err != nil {
 		return 0, err
