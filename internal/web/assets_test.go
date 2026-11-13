@@ -1318,3 +1318,54 @@ func TestStudentProfileEditorIncludesAllBasicFields(t *testing.T) {
 		}
 	}
 }
+
+
+func TestUserCloneUIProvidesSingleAndBatchGeneration(t *testing.T) {
+	index, err := assets.ReadFile("assets/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`id="openUserCloneBatch"`,
+		`id="userCloneModal"`,
+		`id="userCloneSource"`,
+		`id="userCloneMode"`,
+		`id="userCloneUsername"`,
+		`id="userClonePrefix"`,
+		`id="userCloneCount"`,
+		`id="userClonePassword"`,
+		`id="userClonePasswordConfirm"`,
+	} {
+		if !strings.Contains(string(index), want) {
+			t.Fatalf("user clone UI missing %q", want)
+		}
+	}
+
+	scriptData, err := assets.ReadFile("assets/js/users.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(scriptData)
+	for _, want := range []string{
+		"data-user-clone",
+		"openUserCloneModal",
+		"buildUserCloneNames",
+		"findUserCloneCollision",
+		"/clone",
+		"renderUserClonePermissionPreview",
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("user clone frontend missing %q", want)
+		}
+	}
+
+	cssData, err := assets.ReadFile("assets/style.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{".user-clone-modal", ".user-clone-batch-fields", ".user-clone-permission"} {
+		if !strings.Contains(string(cssData), want) {
+			t.Fatalf("user clone styles missing %q", want)
+		}
+	}
+}
