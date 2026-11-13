@@ -162,6 +162,11 @@ func (s *Store) DeleteUser(ctx context.Context, id int64) error {
 	return nil
 }
 
+func (s *Store) DeleteOtherAuthSessions(ctx context.Context, userID int64, keepTokenHash string) error {
+	_, err := s.db.ExecContext(ctx, "DELETE FROM auth_sessions WHERE user_id=? AND token_hash<>?", userID, keepTokenHash)
+	return err
+}
+
 func (s *Store) UpdateUserPassword(ctx context.Context, id int64, passwordHash string) error {
 	result, err := s.db.ExecContext(ctx, "UPDATE users SET password_hash=?,updated_at=? WHERE id=?", passwordHash, time.Now().Unix(), id)
 	if err != nil {
