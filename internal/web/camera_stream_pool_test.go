@@ -379,7 +379,7 @@ func TestStopNetworkCameraStreamMarksStoppedAndCancels(t *testing.T) {
 func TestSharedCameraPreviewIsReleasedOnlyAfterLastBrowserLeaves(t *testing.T) {
 	const cameraID int64 = 502
 	previewCtx, cancelPreview := context.WithCancel(context.Background())
-	recognitionCtx, cancelRecognition := context.WithCancel(context.Background())
+	_, cancelRecognition := context.WithCancel(context.Background())
 	defer cancelRecognition()
 
 	preview := newNetworkCameraStreamForPurpose(store.Camera{ID: cameraID, Kind: "local"}, "shared-preview", "host-usb")
