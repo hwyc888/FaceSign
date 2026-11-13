@@ -20,6 +20,7 @@ import (
 const (
 	authCookieName = "facesign_session"
 	authSessionTTL = 12 * time.Hour
+	authReleaseGrace = 7 * 24 * time.Hour
 )
 
 type authContextKey struct{}
@@ -75,7 +76,9 @@ func (s *Server) issueSession(w http.ResponseWriter, r *http.Request, user store
 	if err := s.store.CreateAuthSession(r.Context(), hash, user.ID, expires); err != nil {
 		return err
 	}
-	setSessionCookie(w, r, token, expires)
+	// Keep the opaque cookie briefly after server-side expiry so the client can
+	// still release an active camera stream; all other APIs reject expired sessions.
+	setSessionCookie(w, r, token, expires.Add(authReleaseGrace))
 	return nil
 }
 
