@@ -1401,3 +1401,35 @@ func TestRecognitionUIRetriesBusySharedCameraFrames(t *testing.T) {
 		}
 	}
 }
+
+
+func TestLowLightRecognitionSettingIsAdminConfigurableAndKeepsLivenessEnabled(t *testing.T) {
+	index, err := assets.ReadFile("assets/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`id="lowLightRecognitionMode"`,
+		`id="lowLightRecognitionModeState"`,
+		"夜间低光识别模式",
+		"不会跳过活体验证",
+		"照片 / 屏幕攻击检测保持不变",
+	} {
+		if !strings.Contains(string(index), want) {
+			t.Fatalf("low-light recognition settings UI missing %q", want)
+		}
+	}
+	scriptData, err := assets.ReadFile("assets/js/settings.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"low_light_recognition_mode",
+		"lowLightRecognitionMode",
+		"保留活体与照片攻击检测",
+	} {
+		if !strings.Contains(string(scriptData), want) {
+			t.Fatalf("low-light recognition setting frontend missing %q", want)
+		}
+	}
+}
