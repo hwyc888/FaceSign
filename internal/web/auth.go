@@ -277,6 +277,12 @@ func isPublicAPIPath(path string) bool {
 	}
 }
 
+func isCameraReleaseRequest(r *http.Request) bool {
+	return r.Method == http.MethodPost &&
+		strings.HasPrefix(r.URL.Path, "/api/cameras/") &&
+		strings.HasSuffix(r.URL.Path, "/release")
+}
+
 func (s *Server) authMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.HasPrefix(r.URL.Path, "/api/") || isPublicAPIPath(r.URL.Path) {
@@ -292,7 +298,12 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 			writeError(w, http.StatusUnauthorized, errors.New("请先登录 FaceSign"))
 			return
 		}
-		user, err := s.store.UserBySession(r.Context(), sessionTokenHash(token), time.Now())
+		tokenHash := sessionTokenHash(token)
+		user, err := s.store.UserBySession(r.Context(), tokenHash, time.Now())
+		if err != nil && isCameraReleaseRequest(r) {
+			// An expired but otherwise valid session may still release a camera capture.
+			user, err = s.store.UserBySessionForRelease(r.Context(), tokenHash)
+		}
 		if err != nil {
 			clearSessionCookie(w, r)
 			writeError(w, http.StatusUnauthorized, errors.New("登录已过期，请重新登录"))
