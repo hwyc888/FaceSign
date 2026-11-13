@@ -30,6 +30,7 @@ type Server struct {
 	personDetectionMu    sync.Mutex
 	personDetectionCache map[string]personDetectionCacheEntry
 	cameraRecognitionMu     sync.Mutex
+	manualAttendanceMu      sync.Mutex
 	cameraRecognitionBusy   map[int64]bool
 	cameraRecognitionNextAt map[int64]time.Time
 	matchThreshold     float64
@@ -108,6 +109,7 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/recognize", s.recognize)
 	mux.HandleFunc("/api/recognition-stats", s.recognitionStats)
 	mux.HandleFunc("/api/attendance/seats", s.attendanceSeats)
+	mux.HandleFunc("/api/attendance/manual", s.manualAttendance)
 	mux.HandleFunc("/api/attendance", s.attendance)
 	mux.HandleFunc("/api/cameras", s.cameras)
 	mux.HandleFunc("/api/cameras/test", s.cameraTest)

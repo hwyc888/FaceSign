@@ -40,7 +40,8 @@ function renderRecognition(r) {
     return;
   }
 
-  const summary = `人体跟踪 ${r.tracked_person_count || persons.length} 人，检测人脸 ${r.detected_count || faces.length} 张，等待靠近/露脸/清晰 ${r.waiting_face_count || 0} 人，签到通过 ${r.verified_count || 0} 人，验证中 ${r.pending_count || 0} 人，需重新对准 ${r.timeout_count || 0} 人，疑似照片/屏幕 ${r.spoof_count || 0} 人，未录入 ${r.unregistered_count || 0} 人`;
+  const manualReviewCount = faces.filter(face => face.manual_review_required).length;
+  const summary = `人体跟踪 ${r.tracked_person_count || persons.length} 人，检测人脸 ${r.detected_count || faces.length} 张，等待靠近/露脸/清晰 ${r.waiting_face_count || 0} 人，签到通过 ${r.verified_count || 0} 人，验证中 ${r.pending_count || 0} 人，需人工核验 ${manualReviewCount} 人，需重新对准 ${r.timeout_count || 0} 人，疑似照片/屏幕 ${r.spoof_count || 0} 人，未录入 ${r.unregistered_count || 0} 人`;
 
   const faceHTML = faces.map((f, i) => {
     const quality = Number(f.quality_score || 0);
@@ -51,8 +52,18 @@ function renderRecognition(r) {
         ? ` | 首次 ${esc(String(f.attendance.checked_at || '').slice(-8))} | 最近 ${esc(String(f.attendance.last_seen_at || f.attendance.checked_at || '').slice(-8))} | 今日 ${Number(f.attendance.recognition_count || 1)}次`
         : '';
       return `<div class="face-result known">
-        <div class="face-title">${esc(f.student.name)} · ${f.first_checkin_today ? '签到成功' : '今日已签到'}</div>
+        <div class="face-title">${esc(f.student.name)} · ${f.manual_confirmed ? '人工核验签到成功' : (f.first_checkin_today ? '签到成功' : '今日已签到')}</div>
         <div class="face-meta">${esc(f.student.student_no)} | ${esc(f.student.class_name || '-')} | 身份 ${(f.similarity * 100).toFixed(1)}% | 活体 ${(Number(f.liveness_score || 0) * 100).toFixed(1)}% | ${qualityText}${attendanceMeta}</div>
+      </div>`;
+    }
+    if (f.matched && f.student && f.manual_review_required) {
+      const manualAction = typeof currentUser !== 'undefined' && currentUser?.is_admin
+        ? `<button class="manual-review-button" type="button" data-manual-attendance="${esc(f.liveness_track_id || '')}" data-student-name="${esc(f.student.name)}">现场核验并签到</button>`
+        : '<div class="face-meta manual-review-note">请管理员现场核对本人后人工签到</div>';
+      return `<div class="face-result pending warning manual-review-result">
+        <div class="face-title">${esc(f.student.name)} · 低光画面无法确认活体</div>
+        <div class="face-meta">身份 ${(f.similarity * 100).toFixed(1)}% | 活体 ${(Number(f.liveness_score || 0) * 100).toFixed(1)}% | ${qualityText} | 尚未写入考勤，请先确认摄像头前是本人</div>
+        ${manualAction}
       </div>`;
     }
     if (f.matched && f.student && f.status === '疑似照片/屏幕') {
@@ -100,6 +111,30 @@ function renderRecognition(r) {
   }).join('');
 
   el.innerHTML = `<div class="result-summary">${summary}</div>` + faceHTML + waitingHTML;
+  el.querySelectorAll('[data-manual-attendance]').forEach(button => {
+    button.addEventListener('click', async () => {
+      const studentName = button.dataset.studentName || '该学生';
+      if (!window.confirm(`请先确认摄像头前是 ${studentName} 本人。确认后将人工写入今天的签到记录。`)) return;
+      button.disabled = true;
+      try {
+        const result = await api('/api/attendance/manual', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-FaceSign-Session': recognitionSessionID
+          },
+          body: JSON.stringify({track_id: button.dataset.manualAttendance})
+        });
+        toast(result.first_checkin_today ? `${studentName} 已人工核验签到` : `${studentName} 今日已签到`);
+        loadToday();
+        if (typeof loadCheckinSeatBoard === 'function') loadCheckinSeatBoard();
+        if (cameraOpen) await recognizeFrame({silent: true});
+      } catch (error) {
+        toast(error.message);
+        button.disabled = false;
+      }
+    });
+  });
   drawFaceOverlay(faces, persons, r.frame_width, r.frame_height);
 }
 
@@ -148,6 +183,9 @@ function drawFaceOverlay(faces, persons = [], sourceWidth = 0, sourceHeight = 0)
     if (f.recognized && f.student) {
       color = '#22c55e';
       label = f.student.name + ' · 已签到';
+    } else if (f.matched && f.manual_review_required) {
+      color = '#f59e0b';
+      label = (f.student ? f.student.name + ' · ' : '') + '待人工核验';
     } else if (f.matched && f.status === '疑似照片/屏幕') {
       color = '#ef4444';
       label = (f.student ? f.student.name + ' · ' : '') + '疑似攻击';

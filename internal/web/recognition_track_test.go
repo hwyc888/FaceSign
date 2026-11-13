@@ -183,7 +183,7 @@ func TestRecognitionTrackerLowLightModeStillRejectsPhotoAndScreenScores(t *testi
 	for i := 0; i < livenessFastFrames; i++ {
 		decision = tracker.Observe("camera-low-light-spoof", []recognitionObservation{{
 			Student: student, Similarity: 0.94, LiveScore: 0.10,
-			Exposure: 0.25, Sharpness: 0.055, LowLightMode: true,
+			Exposure: 0.25, Sharpness: 0.15, LowLightMode: true,
 		}}, now.Add(time.Duration(i)*200*time.Millisecond))[0]
 	}
 	if !decision.Rejected || decision.Verified || decision.NeedsAttendance {
@@ -230,5 +230,70 @@ func TestLowLightModeUsesRelaxedQualityFloorButKeepsNormalFloor(t *testing.T) {
 	if livenessMaxFramesForMode(true) <= livenessMaxFrames ||
 		livenessDecisionTimeoutForMode(true) <= livenessDecisionTimeout {
 		t.Fatal("low-light mode should allow additional frames and sampling time")
+	}
+}
+
+
+func TestRecognitionTrackerLowLightBlurIsManualReviewNotPhotoRejection(t *testing.T) {
+	tracker := newRecognitionTracker()
+	now := time.Now()
+	student := store.Student{ID: 91, StudentNo: "S91", Name: "低光模糊测试"}
+	var decision trackDecision
+	for i := 0; i < livenessFastFrames; i++ {
+		decision = tracker.Observe("camera-low-light-blur", []recognitionObservation{{
+			Student: student, Similarity: 0.816, LiveScore: 0.007,
+			Exposure: 0.25, Sharpness: 0.055, LowLightMode: true,
+		}}, now.Add(time.Duration(i)*200*time.Millisecond))[0]
+	}
+	if decision.Rejected || !decision.NeedsManualReview || decision.Verified {
+		t.Fatalf("blurred low-light frames should request manual review, not be rejected: %#v", decision)
+	}
+	candidate, similarity, ok := tracker.ManualReviewCandidate("camera-low-light-blur", decision.TrackID, now.Add(time.Second))
+	if !ok || candidate.ID != student.ID || similarity < 0.81 {
+		t.Fatalf("manual review candidate missing or incorrect: student=%#v similarity=%v ok=%v", candidate, similarity, ok)
+	}
+
+	tracker.CommitManual("camera-low-light-blur", decision.TrackID)
+	confirmed := tracker.Observe("camera-low-light-blur", []recognitionObservation{{
+		Student: student, Similarity: 0.82, LiveScore: 0.01,
+		Exposure: 0.25, Sharpness: 0.055, LowLightMode: true,
+	}}, now.Add(1200*time.Millisecond))[0]
+	if !confirmed.ManualConfirmed || confirmed.NeedsManualReview || confirmed.Rejected {
+		t.Fatalf("manual confirmation was not retained safely: %#v", confirmed)
+	}
+	if _, _, ok := tracker.ManualReviewCandidate("camera-low-light-blur", decision.TrackID, now.Add(1300*time.Millisecond)); ok {
+		t.Fatal("a manually confirmed track must not be confirmed twice")
+	}
+}
+
+func TestRecognitionTrackerLowLightUnusableFramesCanRequestManualReview(t *testing.T) {
+	tracker := newRecognitionTracker()
+	now := time.Now()
+	student := store.Student{ID: 92, StudentNo: "S92", Name: "极暗画面测试"}
+	var decision trackDecision
+	for i := 0; i < livenessFastFrames; i++ {
+		decision = tracker.Observe("camera-low-light-too-dark", []recognitionObservation{{
+			Student: student, Similarity: 0.88, LiveScore: 0.01,
+			Exposure: 0.12, Sharpness: 0.04, LowLightMode: true,
+		}}, now.Add(time.Duration(i)*200*time.Millisecond))[0]
+	}
+	if decision.Rejected || !decision.NeedsManualReview {
+		t.Fatalf("unusable dark frames should not be spoof evidence: %#v", decision)
+	}
+}
+
+func TestRecognitionTrackerLowLightSpoofNeedsClearFrames(t *testing.T) {
+	tracker := newRecognitionTracker()
+	now := time.Now()
+	student := store.Student{ID: 93, StudentNo: "S93", Name: "清晰照片测试"}
+	var decision trackDecision
+	for i := 0; i < livenessFastFrames; i++ {
+		decision = tracker.Observe("camera-low-light-clear-spoof", []recognitionObservation{{
+			Student: student, Similarity: 0.93, LiveScore: 0.05,
+			Exposure: 0.25, Sharpness: 0.18, LowLightMode: true,
+		}}, now.Add(time.Duration(i)*180*time.Millisecond))[0]
+	}
+	if !decision.Rejected || decision.NeedsManualReview || decision.Verified {
+		t.Fatalf("clear low-light spoof evidence must still be rejected: %#v", decision)
 	}
 }
