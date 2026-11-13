@@ -25,9 +25,8 @@ const (
 	livenessLowLightDecisionTimeout = 3500 * time.Millisecond
 	livenessLowLightMinExposureScore = 0.20
 	livenessLowLightMinSharpnessScore = 0.05
-	// Match the face-quality blur warning so blurry frames cannot count as spoof evidence.
-	livenessLowLightManualReviewSharpnessScore = 0.12
-	livenessLowLightManualReviewTTL = 30 * time.Second
+	// Blurry low-light frames cannot reliably prove a photo/screen attack.
+	livenessLowLightSpoofMinSharpnessScore = 0.12
 )
 
 type recognitionObservation struct {
@@ -40,24 +39,18 @@ type recognitionObservation struct {
 }
 
 type recognitionTrack struct {
-	ID            string
-	StudentID     int64
-	FirstSeen     time.Time
-	LastSeen      time.Time
-	Frames        int
-	Scores        []float64
-	SimilaritySum float64
-	Verified      bool
-	Rejected      bool
-	Committed             bool
-	ManualConfirmed       bool
-	ManualReviewRequired  bool
-	ManualReviewUntil     time.Time
-	LowLightMode          bool
-	Student               store.Student
-	LowQualityFrames      int
-	LowQualitySpoofVotes  int
-	SpoofVotes            int
+	ID               string
+	FirstSeen        time.Time
+	LastSeen         time.Time
+	Frames           int
+	Scores           []float64
+	SimilaritySum    float64
+	Verified         bool
+	Rejected         bool
+	Committed        bool
+	LowLightMode     bool
+	LowLightAutoPass bool
+	SpoofVotes       int
 }
 
 type trackDecision struct {
@@ -69,10 +62,8 @@ type trackDecision struct {
 	Verified        bool
 	Rejected        bool
 	TimedOut        bool
-	NeedsAttendance      bool
-	NeedsManualReview    bool
-	ManualConfirmed      bool
-	LivenessStatus       string
+	NeedsAttendance bool
+	LivenessStatus  string
 }
 
 type recognitionTrackSession struct {
@@ -103,8 +94,7 @@ func (t *recognitionTracker) Observe(sessionID string, observations []recognitio
 	}
 
 	for studentID, track := range session.Tracks {
-		if now.Sub(track.LastSeen) > livenessTrackTTL &&
-			(!track.ManualReviewRequired || now.After(track.ManualReviewUntil)) {
+		if now.Sub(track.LastSeen) > livenessTrackTTL {
 			delete(session.Tracks, studentID)
 		}
 	}
@@ -113,63 +103,19 @@ func (t *recognitionTracker) Observe(sessionID string, observations []recognitio
 	for i, observation := range observations {
 		track := session.Tracks[observation.Student.ID]
 		if track != nil && track.Committed {
-			status := "人工核验签到完成"
-			if track.Verified {
-				status = "活体通过"
-			}
 			out[i] = trackDecision{
 				TrackID:        track.ID,
 				Verified:       track.Verified,
-				ManualConfirmed: track.ManualConfirmed,
-				LivenessStatus: status,
+				LivenessStatus: livenessVerifiedStatus(track),
 			}
 			continue
 		}
 		if !livenessObservationQualityUsable(observation) {
-			if observation.LowLightMode {
-				if track == nil {
-					session.NextID++
-					track = &recognitionTrack{
-						ID:        fmt.Sprintf("%s-%d", sessionID, session.NextID),
-						StudentID: observation.Student.ID,
-					}
-					session.Tracks[observation.Student.ID] = track
-				}
-				track.Student = observation.Student
-				track.LowLightMode = true
-				track.LastSeen = now
-				track.Frames++
-				track.SimilaritySum += observation.Similarity
-				track.LowQualityFrames++
-				if observation.LiveScore < livenessSpoofThreshold {
-					track.LowQualitySpoofVotes++
-				}
-				if !track.Verified && !track.Rejected &&
-					track.LowQualityFrames >= livenessFastFrames &&
-					track.LowQualitySpoofVotes >= 2 {
-					track.ManualReviewRequired = true
-					track.ManualReviewUntil = now.Add(livenessLowLightManualReviewTTL)
-				}
-				status := "光线不足或画面模糊，请调整摄像头"
-				if track.ManualReviewRequired {
-					track.ManualReviewUntil = now.Add(livenessLowLightManualReviewTTL)
-					status = "低光画面无法确认活体，请人工核验"
-				}
-				out[i] = trackDecision{
-					TrackID:           track.ID,
-					Frames:            track.LowQualityFrames,
-					RequiredFrames:    livenessFastFrames,
-					LiveScore:         observation.LiveScore,
-					Similarity:        track.SimilaritySum / maxLivenessFloat(1, float64(track.Frames)),
-					NeedsManualReview: track.ManualReviewRequired && now.Before(track.ManualReviewUntil),
-					LivenessStatus:    status,
-				}
-				continue
-			}
+			status := "光线不足或画面模糊，请调整摄像头"
 			if track == nil {
 				out[i] = trackDecision{
 					RequiredFrames: livenessFastFrames,
-					LivenessStatus: "光线不足或画面模糊，请调整摄像头",
+					LivenessStatus: status,
 				}
 				continue
 			}
@@ -177,9 +123,8 @@ func (t *recognitionTracker) Observe(sessionID string, observations []recognitio
 			if !track.Verified && !track.Rejected {
 				track.FirstSeen = now
 			}
-			status := "画面质量不足，请补光或靠近摄像头"
 			if track.Verified {
-				status = "活体通过"
+				status = livenessVerifiedStatus(track)
 			} else if track.Rejected {
 				status = "疑似照片/屏幕"
 			}
@@ -200,31 +145,19 @@ func (t *recognitionTracker) Observe(sessionID string, observations []recognitio
 			session.NextID++
 			track = &recognitionTrack{
 				ID:        fmt.Sprintf("%s-%d", sessionID, session.NextID),
-				StudentID: observation.Student.ID,
-				FirstSeen: now,
+								FirstSeen: now,
 				Scores:    make([]float64, 0, livenessMaxFramesForMode(observation.LowLightMode)),
 			}
 			session.Tracks[observation.Student.ID] = track
 		}
-		track.Student = observation.Student
 		track.LowLightMode = observation.LowLightMode
-		if livenessObservationSpoofQualityUsable(observation) {
-			track.ManualReviewRequired = false
-		}
 		maxFrames := livenessMaxFramesForMode(track.LowLightMode)
 		decisionTimeout := livenessDecisionTimeoutForMode(track.LowLightMode)
 		track.LastSeen = now
 		track.Frames++
 		track.SimilaritySum += observation.Similarity
-		if observation.LiveScore < livenessSpoofThreshold {
-			if livenessObservationSpoofQualityUsable(observation) {
-				track.SpoofVotes++
-			} else if observation.LowLightMode {
-				track.LowQualityFrames++
-				track.LowQualitySpoofVotes++
-			}
-		} else if observation.LowLightMode && !livenessObservationSpoofQualityUsable(observation) {
-			track.LowQualityFrames++
+		if observation.LiveScore < livenessSpoofThreshold && livenessObservationSpoofQualityUsable(observation) {
+			track.SpoofVotes++
 		}
 		track.Scores = append(track.Scores, observation.LiveScore)
 		if len(track.Scores) > maxFrames {
@@ -242,31 +175,27 @@ func (t *recognitionTracker) Observe(sessionID string, observations []recognitio
 		timedOut := false
 		if !track.Verified && !track.Rejected {
 			switch {
-			case len(track.Scores) >= 3 && average < livenessSpoofThreshold && track.SpoofVotes >= 2:
+			case len(track.Scores) >= livenessFastFrames &&
+				average < livenessSpoofThreshold && track.SpoofVotes >= 2:
 				track.Rejected = true
-				track.ManualReviewRequired = false
-			case len(track.Scores) >= 3 && average < livenessSpoofThreshold &&
-				track.LowLightMode && !livenessObservationSpoofQualityUsable(observation) &&
-				track.SpoofVotes == 0 && track.LowQualitySpoofVotes >= 2:
-				track.ManualReviewRequired = true
-				track.ManualReviewUntil = now.Add(livenessLowLightManualReviewTTL)
 			case len(track.Scores) >= livenessFastFrames &&
 				average >= livenessFastPassThreshold &&
 				liveVotes == len(track.Scores):
 				track.Verified = true
-				track.ManualReviewRequired = false
 			case len(track.Scores) >= livenessMinFrames &&
 				average >= livenessPassThreshold &&
 				liveVotes >= livenessMinFrames-1:
 				track.Verified = true
-				track.ManualReviewRequired = false
+			// Under low light, a consistently matched face may auto-check-in when
+			// there is no usable photo/screen attack evidence. Unusable frames
+			// never reach this decision.
+			case track.LowLightMode && len(track.Scores) >= livenessMinFrames &&
+				track.SpoofVotes == 0:
+				track.Verified = true
+				track.LowLightAutoPass = true
 			case now.Sub(track.FirstSeen) >= decisionTimeout || len(track.Scores) >= maxFrames:
 				timedOut = true
 			}
-		}
-
-		if track.ManualReviewRequired && !livenessObservationSpoofQualityUsable(observation) {
-			track.ManualReviewUntil = now.Add(livenessLowLightManualReviewTTL)
 		}
 		requiredFrames := requiredLivenessFrames(track)
 		if timedOut {
@@ -276,11 +205,9 @@ func (t *recognitionTracker) Observe(sessionID string, observations []recognitio
 		status := "活体验证中"
 		switch {
 		case track.Verified:
-			status = "活体通过"
+			status = livenessVerifiedStatus(track)
 		case track.Rejected:
 			status = "疑似照片/屏幕"
-		case track.ManualReviewRequired:
-			status = "低光画面无法确认活体，请人工核验"
 		case timedOut:
 			status = "活体超时，请重新对准"
 		case len(track.Scores) >= livenessFastFrames:
@@ -296,11 +223,10 @@ func (t *recognitionTracker) Observe(sessionID string, observations []recognitio
 			Verified:        track.Verified,
 			Rejected:        track.Rejected,
 			TimedOut:        timedOut,
-			NeedsAttendance:      track.Verified && !track.Committed,
-			NeedsManualReview:    track.ManualReviewRequired && now.Before(track.ManualReviewUntil),
-			LivenessStatus:       status,
+			NeedsAttendance: track.Verified && !track.Committed,
+			LivenessStatus:  status,
 		}
-		if timedOut && !track.ManualReviewRequired {
+		if timedOut {
 			delete(session.Tracks, observation.Student.ID)
 		}
 	}
@@ -317,43 +243,6 @@ func (t *recognitionTracker) Commit(sessionID, trackID string) {
 	for _, track := range session.Tracks {
 		if track.ID == trackID {
 			track.Committed = true
-			track.ManualReviewRequired = false
-			return
-		}
-	}
-}
-
-func (t *recognitionTracker) ManualReviewCandidate(sessionID, trackID string, now time.Time) (store.Student, float64, bool) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	session := t.sessions[sessionID]
-	if session == nil {
-		return store.Student{}, 0, false
-	}
-	for _, track := range session.Tracks {
-		if track.ID == trackID &&
-			track.ManualReviewRequired &&
-			now.Before(track.ManualReviewUntil) &&
-			!track.Rejected &&
-			!track.Committed {
-			return track.Student, track.SimilaritySum / maxLivenessFloat(1, float64(track.Frames)), true
-		}
-	}
-	return store.Student{}, 0, false
-}
-
-func (t *recognitionTracker) CommitManual(sessionID, trackID string) {
-	t.mu.Lock()
-	defer t.mu.Unlock()
-	session := t.sessions[sessionID]
-	if session == nil {
-		return
-	}
-	for _, track := range session.Tracks {
-		if track.ID == trackID {
-			track.Committed = true
-			track.ManualConfirmed = true
-			track.ManualReviewRequired = false
 			return
 		}
 	}
@@ -375,7 +264,14 @@ func livenessObservationSpoofQualityUsable(observation recognitionObservation) b
 		return true
 	}
 	return observation.Exposure >= livenessLowLightMinExposureScore &&
-		observation.Sharpness >= livenessLowLightManualReviewSharpnessScore
+		observation.Sharpness >= livenessLowLightSpoofMinSharpnessScore
+}
+
+func livenessVerifiedStatus(track *recognitionTrack) string {
+	if track.LowLightAutoPass {
+		return "低光自动识别通过"
+	}
+	return "活体通过"
 }
 
 func livenessMaxFramesForMode(lowLightMode bool) int {
