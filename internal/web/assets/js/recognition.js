@@ -44,7 +44,8 @@ function renderRecognition(r) {
 
   const faceHTML = faces.map((f, i) => {
     const quality = Number(f.quality_score || 0);
-    const qualityText = `人脸质量 ${(quality * 100).toFixed(0)}% · ${esc(f.quality_status || '等待清晰')}`;
+    const qualityHint = f.quality_hint ? ` · ${esc(f.quality_hint)}` : '';
+    const qualityText = `人脸质量 ${(quality * 100).toFixed(0)}% · ${esc(f.quality_status || '等待清晰')}${qualityHint}`;
     if (f.recognized && f.student) {
       const attendanceMeta = f.attendance
         ? ` | 首次 ${esc(String(f.attendance.checked_at || '').slice(-8))} | 最近 ${esc(String(f.attendance.last_seen_at || f.attendance.checked_at || '').slice(-8))} | 今日 ${Number(f.attendance.recognition_count || 1)}次`
