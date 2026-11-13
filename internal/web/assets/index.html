@@ -7,16 +7,43 @@
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
-  <div class="shell">
+  <div class="auth-screen" id="authScreen">
+    <div class="auth-card">
+      <div class="brand">FaceSign</div>
+      <p class="muted">校园人脸考勤管理系统</p>
+      <div id="authLoginPanel" class="hidden">
+        <h2>用户登录</h2>
+        <p class="muted compact">请使用管理员或已创建的用户账号登录。</p>
+        <form id="authLoginForm" class="auth-form">
+          <label>用户名<input id="authLoginUsername" required autocomplete="username"></label>
+          <label>密码<input id="authLoginPassword" type="password" required autocomplete="current-password"></label>
+          <button class="primary" type="submit">登录</button>
+        </form>
+      </div>
+      <div id="authSetupPanel" class="hidden">
+        <h2>首次初始化管理员</h2>
+        <p class="muted compact">请在运行 FaceSign 的电脑本机浏览器完成初始化。管理员创建后不可删除，普通用户不能创建或提升为管理员。</p>
+        <form id="authSetupForm" class="auth-form">
+          <label>管理员用户名<input id="authSetupUsername" required minlength="3" maxlength="32" autocomplete="username"></label>
+          <label>设置密码<input id="authSetupPassword" type="password" required minlength="10" autocomplete="new-password"></label>
+          <label>确认密码<input id="authSetupPasswordConfirm" type="password" required minlength="10" autocomplete="new-password"></label>
+          <button class="primary" type="submit">创建管理员并进入系统</button>
+        </form>
+      </div>
+      <p class="auth-error" id="authError"></p>
+    </div>
+  </div>
+  <div class="shell hidden" id="appShell">
     <aside class="sidebar">
       <div class="brand">FaceSign</div>
       <div class="brand-sub">校园人脸考勤</div>
       <nav>
         <button class="nav active" data-page="checkin">人脸签到</button>
         <button class="nav" data-page="students">学生管理</button>
-        <button class="nav" data-page="seating">座位编排</button>
+        <button class="nav" data-page="seating" data-permission="can_arrange_seats">座位编排</button>
         <button class="nav" data-page="attendance">考勤记录</button>
-        <button class="nav" data-page="settings">设置</button>
+        <button class="nav" data-page="settings" data-admin-only>设置</button>
+        <button class="nav" data-page="users" data-admin-only>人员管理</button>
         <button class="nav" data-page="status">系统状态</button>
       </nav>
     </aside>
@@ -27,7 +54,12 @@
           <h1 id="pageTitle">人脸签到</h1>
           <p id="pageHint">摄像头可同时识别多人并完成签到</p>
         </div>
-        <div class="pill" id="healthPill">正在检测...</div>
+        <div class="topbar-actions">
+          <div class="pill" id="healthPill">正在检测...</div>
+          <span class="current-user" id="currentUserLabel"></span>
+          <button id="changePasswordOpen" type="button">修改密码</button>
+          <button id="logoutButton" type="button">退出登录</button>
+        </div>
       </header>
 
       <section class="page active" id="page-checkin">
@@ -310,7 +342,7 @@
               <button id="closeSeatEditor" type="button">关闭编排</button>
             </div>
 
-            <form id="seatEditorSettingsForm" class="seat-editor-settings">
+            <form id="seatEditorSettingsForm" class="seat-editor-settings" data-admin-only>
               <label>班级名称<input id="seatEditorName" maxlength="40" required></label>
               <label>排数<input id="seatEditorRows" type="number" min="1" max="20" required></label>
               <label>每排人数<input id="seatEditorPerRow" type="number" min="1" max="20" required></label>
@@ -589,6 +621,40 @@
         </div>
       </section>
 
+      <section class="page" id="page-users" data-admin-only>
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h2>人员账号管理</h2>
+              <p class="muted compact">只有管理员可以创建普通账号和设置权限。普通账号不能创建管理员、不能提升自己或他人权限。</p>
+            </div>
+          </div>
+          <form id="userCreateForm" class="user-create-form">
+            <label>用户名<input id="newUserUsername" required minlength="3" maxlength="32" autocomplete="off"></label>
+            <label>初始密码<input id="newUserPassword" type="password" required minlength="10" autocomplete="new-password"></label>
+            <div class="user-permission-grid">
+              <label><input id="newUserCanEdit" type="checkbox"> 修改学生资料</label>
+              <label><input id="newUserCanAdd" type="checkbox"> 新增学生</label>
+              <label><input id="newUserCanResample" type="checkbox"> 补充 / 重新采样人脸</label>
+              <label><input id="newUserCanArrange" type="checkbox"> 编排座位</label>
+            </div>
+            <button class="primary" type="submit">创建普通用户</button>
+          </form>
+        </div>
+        <div class="card table-card">
+          <div class="card-head">
+            <h2>现有账号与权限</h2>
+            <button id="refreshUsers" type="button">刷新</button>
+          </div>
+          <div class="table-wrap">
+            <table class="user-table">
+              <thead><tr><th>账号</th><th>修改资料</th><th>新增学生</th><th>人脸采样</th><th>座位编排</th><th>操作</th></tr></thead>
+              <tbody id="usersBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
       <section class="page" id="page-status">
         <div class="card">
           <h2>系统状态</h2>
@@ -619,6 +685,46 @@
         <div class="modal-actions">
           <button data-close="studentModal" type="button">取消</button>
           <button class="primary" type="submit">保存并完成人脸录入</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-backdrop hidden" id="studentEditModal">
+    <div class="modal">
+      <div class="modal-head">
+        <div>
+          <h2>编辑学生资料</h2>
+          <p class="muted compact">可以修改学号、姓名和所属班级；跨班时原座位号会自动清空。</p>
+        </div>
+        <button class="icon-button" data-close="studentEditModal" type="button">×</button>
+      </div>
+      <form id="studentEditForm" class="form">
+        <input id="editStudentID" type="hidden">
+        <label>学号<input id="editStudentNo" required autocomplete="off"></label>
+        <label>姓名<input id="editStudentName" required autocomplete="off"></label>
+        <label>班级<select id="editStudentClass" required></select></label>
+        <div class="modal-actions">
+          <button data-close="studentEditModal" type="button">取消</button>
+          <button class="primary" type="submit">保存学生资料</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="modal-backdrop hidden" id="changePasswordModal">
+    <div class="modal">
+      <div class="modal-head">
+        <h2>修改登录密码</h2>
+        <button class="icon-button" data-close="changePasswordModal" type="button">×</button>
+      </div>
+      <form id="changePasswordForm" class="form">
+        <label>当前密码<input id="currentPassword" type="password" required autocomplete="current-password"></label>
+        <label>新密码<input id="newPassword" type="password" required minlength="10" autocomplete="new-password"></label>
+        <label>确认新密码<input id="newPasswordConfirm" type="password" required minlength="10" autocomplete="new-password"></label>
+        <div class="modal-actions">
+          <button data-close="changePasswordModal" type="button">取消</button>
+          <button class="primary" type="submit">更新密码</button>
         </div>
       </form>
     </div>
@@ -699,6 +805,8 @@
   <script src="/js/students.js"></script>
   <script src="/js/photo_import.js"></script>
   <script src="/js/attendance.js"></script>
+  <script src="/js/users.js"></script>
+  <script src="/js/auth.js"></script>
   <script src="/js/boot.js"></script>
 </body>
 </html>
