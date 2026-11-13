@@ -89,6 +89,10 @@ type photoKnownFace struct {
 }
 
 func (s *Server) photoImportAnalyze(w http.ResponseWriter, r *http.Request) {
+	user := authUser(r)
+	if !requirePermission(w, r, user.CanAddStudents || user.CanResampleFaces, "没有新增人员或重新采样的权限") {
+		return
+	}
 	if r.Method != http.MethodPost {
 		methodNotAllowed(w)
 		return
@@ -427,6 +431,11 @@ func (s *Server) photoImportCommit(w http.ResponseWriter, r *http.Request, sessi
 
 		switch requested.Action {
 		case "new":
+			if !requirePermission(w, r, authUser(r).CanAddStudents, "没有新增学生的权限") {
+				failed++
+				results = append(results, map[string]any{"id": item.ID, "status": "failed", "message": "没有新增学生的权限"})
+				continue
+			}
 			if item.Status != "ready" {
 				failed++
 				results = append(results, map[string]any{"id": item.ID, "status": "failed", "message": "该照片不能建立新学生"})
@@ -466,6 +475,11 @@ func (s *Server) photoImportCommit(w http.ResponseWriter, r *http.Request, sessi
 			results = append(results, map[string]any{"id": item.ID, "status": "imported", "message": "已建立学生并录入正面样本", "student": student})
 
 		case "supplement":
+			if !requirePermission(w, r, authUser(r).CanResampleFaces, "没有补充或重新采样人脸的权限") {
+				failed++
+				results = append(results, map[string]any{"id": item.ID, "status": "failed", "message": "没有补充或重新采样人脸的权限"})
+				continue
+			}
 			if item.Existing == nil || item.Existing.ID <= 0 {
 				failed++
 				results = append(results, map[string]any{"id": item.ID, "status": "failed", "message": "没有可补充的已匹配学生"})
