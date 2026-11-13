@@ -1403,7 +1403,7 @@ func TestRecognitionUIRetriesBusySharedCameraFrames(t *testing.T) {
 }
 
 
-func TestLowLightRecognitionSettingIsAdminConfigurableAndKeepsLivenessEnabled(t *testing.T) {
+func TestLowLightRecognitionSettingExplainsAutomaticCheckinAndSpoofProtection(t *testing.T) {
 	index, err := assets.ReadFile("assets/index.html")
 	if err != nil {
 		t.Fatal(err)
@@ -1412,8 +1412,9 @@ func TestLowLightRecognitionSettingIsAdminConfigurableAndKeepsLivenessEnabled(t 
 		`id="lowLightRecognitionMode"`,
 		`id="lowLightRecognitionModeState"`,
 		"夜间低光识别模式",
-		"低光、模糊导致活体无法判断时",
-		"管理员现场核验",
+		"连续匹配的人脸",
+		"无需管理员核验",
+		"照片 / 屏幕攻击仍拒绝签到",
 	} {
 		if !strings.Contains(string(index), want) {
 			t.Fatalf("low-light recognition settings UI missing %q", want)
@@ -1426,14 +1427,13 @@ func TestLowLightRecognitionSettingIsAdminConfigurableAndKeepsLivenessEnabled(t 
 	for _, want := range []string{
 		"low_light_recognition_mode",
 		"lowLightRecognitionMode",
-		"保留活体与照片攻击检测",
+		"连续匹配且无可信照片/屏幕攻击证据时自动签到",
 	} {
 		if !strings.Contains(string(scriptData), want) {
 			t.Fatalf("low-light recognition setting frontend missing %q", want)
 		}
 	}
 }
-
 
 func TestRecognitionUIUsesServerLivenessTimeoutForLowLightMode(t *testing.T) {
 	data, err := assets.ReadFile("assets/js/recognition.js")
@@ -1453,31 +1453,37 @@ func TestRecognitionUIUsesServerLivenessTimeoutForLowLightMode(t *testing.T) {
 	}
 }
 
-func TestLowLightManualReviewUIRequiresAdministratorConfirmation(t *testing.T) {
+func TestLowLightRecognitionUIHasNoManualAttendanceAction(t *testing.T) {
 	data, err := assets.ReadFile("assets/js/recognition.js")
 	if err != nil {
 		t.Fatal(err)
 	}
 	script := string(data)
-	for _, want := range []string{
+	for _, missing := range []string{
 		"manual_review_required",
 		"data-manual-attendance",
-		"currentUser?.is_admin",
 		"/api/attendance/manual",
-		"window.confirm",
-		"低光画面无法确认活体",
+		"待人工核验",
+		"现场核验并签到",
 	} {
-		if !strings.Contains(script, want) {
-			t.Fatalf("low-light manual review UI missing %q", want)
+		if strings.Contains(script, missing) {
+			t.Fatalf("manual operator action unexpectedly remains: %q", missing)
 		}
 	}
-	cssData, err := assets.ReadFile("assets/style.css")
+	for _, want := range []string{
+		"f.liveness_status === '低光自动识别通过'",
+		"疑似照片/屏幕，拒绝签到",
+		"Number(r.face_quality_threshold || 0.45)",
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("automatic recognition frontend missing %q", want)
+		}
+	}
+	css, err := assets.ReadFile("assets/style.css")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{".manual-review-result", ".manual-review-button"} {
-		if !strings.Contains(string(cssData), want) {
-			t.Fatalf("low-light manual review style missing %q", want)
-		}
+	if strings.Contains(string(css), ".manual-review-button") {
+		t.Fatal("unused manual review button styling remains")
 	}
 }
