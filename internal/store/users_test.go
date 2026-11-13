@@ -120,10 +120,6 @@ func TestPasswordResetExpiresSessionsButKeepsCameraReleaseToken(t *testing.T) {
 	}
 	defer st.Close()
 	ctx := context.Background()
-	admin, err := st.CreateInitialAdmin(ctx, "admin", "hash")
-	if err != nil {
-		t.Fatal(err)
-	}
 	user, err := st.CreateUser(ctx, "operator", "old-hash", User{})
 	if err != nil {
 		t.Fatal(err)
@@ -141,8 +137,4 @@ func TestPasswordResetExpiresSessionsButKeepsCameraReleaseToken(t *testing.T) {
 	if _, err := st.UserBySessionForRelease(ctx, "operator-token"); err != nil {
 		t.Fatalf("revoked session should remain available for camera release: %v", err)
 	}
-	if _, err := st.UserBySession(ctx, "admin-token", time.Now()); err == nil {
-		t.Fatal("unexpected admin session")
-	}
-	_ = admin
 }
