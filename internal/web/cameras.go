@@ -275,6 +275,9 @@ func cameraFromNormalizedInput(in store.CameraInput) store.Camera {
 }
 
 func (s *Server) cameraTest(w http.ResponseWriter, r *http.Request) {
+	if !requireAdmin(w, r) {
+		return
+	}
 	if r.Method != http.MethodPost {
 		methodNotAllowed(w)
 		return
@@ -452,6 +455,9 @@ func (s *Server) cameras(w http.ResponseWriter, r *http.Request) {
 		for i := range items { s.decorateCameraAgentState(&items[i]) }
 		writeJSON(w, http.StatusOK, items)
 	case http.MethodPost:
+		if !requireAdmin(w, r) {
+			return
+		}
 		var in cameraRequest
 		if err := decodeJSON(r, &in); err != nil {
 			writeError(w, http.StatusBadRequest, err)
@@ -478,6 +484,9 @@ func (s *Server) cameras(w http.ResponseWriter, r *http.Request) {
 }
 
 func (s *Server) cameraAction(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet && !requireAdmin(w, r) {
+		return
+	}
 	rest := strings.TrimPrefix(r.URL.Path, "/api/cameras/")
 	parts := strings.Split(strings.Trim(rest, "/"), "/")
 	if len(parts) == 0 || parts[0] == "" {
