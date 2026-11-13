@@ -1,6 +1,10 @@
 package web
 
-import "net/http"
+import (
+	"errors"
+	"net/http"
+	"time"
+)
 
 func (s *Server) attendance(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
