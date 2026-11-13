@@ -39,10 +39,11 @@ const (
 )
 
 type photoImportSession struct {
-	mu        sync.Mutex
-	ID        string
-	CreatedAt time.Time
-	Items     []*photoImportItem
+	mu          sync.Mutex
+	ID          string
+	OwnerUserID int64
+	CreatedAt   time.Time
+	Items       []*photoImportItem
 }
 
 type photoImportItem struct {
@@ -152,7 +153,7 @@ func (s *Server) photoImportAnalyze(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	session := &photoImportSession{ID: sessionID, CreatedAt: time.Now()}
+	session := &photoImportSession{ID: sessionID, OwnerUserID: authUser(r).ID, CreatedAt: time.Now()}
 	ignored := 0
 	processed := 0
 	packageFeatures := make([]*photoImportItem, 0)
@@ -331,6 +332,10 @@ func (s *Server) photoImportAction(w http.ResponseWriter, r *http.Request) {
 	session, ok := s.getPhotoImportSession(parts[0])
 	if !ok {
 		writeError(w, http.StatusNotFound, errors.New("照片导入会话已过期，请重新上传 ZIP"))
+		return
+	}
+	if session.OwnerUserID != authUser(r).ID && !authUser(r).IsAdmin {
+		writeError(w, http.StatusNotFound, errors.New("照片导入会话不存在"))
 		return
 	}
 
