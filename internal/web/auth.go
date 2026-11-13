@@ -300,14 +300,23 @@ func (s *Server) authMiddleware(next http.Handler) http.Handler {
 		}
 		tokenHash := sessionTokenHash(token)
 		user, err := s.store.UserBySession(r.Context(), tokenHash, time.Now())
-		if err != nil && isCameraReleaseRequest(r) {
-			// An expired but otherwise valid session may still release a camera capture.
-			user, err = s.store.UserBySessionForRelease(r.Context(), tokenHash)
-		}
 		if err != nil {
-			clearSessionCookie(w, r)
-			writeError(w, http.StatusUnauthorized, errors.New("登录已过期，请重新登录"))
-			return
+			// Keep an expired session cookie long enough for the browser to release any
+			// active camera capture; it is not accepted for any other API operation.
+			expiredUser, expiredErr := s.store.UserBySessionForRelease(r.Context(), tokenHash)
+			if expiredErr == nil {
+				if isCameraReleaseRequest(r) {
+					user = expiredUser
+					err = nil
+				} else {
+					writeError(w, http.StatusUnauthorized, errors.New("登录已过期，请重新登录"))
+					return
+				}
+			} else {
+				clearSessionCookie(w, r)
+				writeError(w, http.StatusUnauthorized, errors.New("登录已过期，请重新登录"))
+				return
+			}
 		}
 		ctx := context.WithValue(r.Context(), authContextKey{}, user)
 		next.ServeHTTP(w, r.WithContext(ctx))
