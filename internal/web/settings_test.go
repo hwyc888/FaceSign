@@ -118,10 +118,7 @@ func TestAppSettingsAPI(t *testing.T) {
 		!persisted.RealtimeStatusReason {
 		t.Fatal("partial realtime field update changed unrelated status fields")
 	}
-}
-
-
-	lowLightPut := httptest.NewRequest(http.MethodPut, "/api/settings", strings.NewReader(\`{"low_light_recognition_mode":true}\`))
+	lowLightPut := httptest.NewRequest(http.MethodPut, "/api/settings", strings.NewReader(`{"low_light_recognition_mode":true}`))
 	lowLightPut.Header.Set("Content-Type", "application/json")
 	lowLightRec := httptest.NewRecorder()
 	s.settings(lowLightRec, withTestAdmin(lowLightPut))
@@ -138,3 +135,4 @@ func TestAppSettingsAPI(t *testing.T) {
 	if !persisted.AutoStartCheckin || persisted.RealtimeStatusEnabled {
 		t.Fatal("partial low-light setting update changed unrelated application settings")
 	}
+}
