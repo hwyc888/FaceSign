@@ -59,6 +59,7 @@ type faceQualityResult struct {
 	Sharpness  float64
 	Exposure   float64
 	Detector   float64
+	Hint       string
 }
 
 func newPersonTracker() *personTracker {
