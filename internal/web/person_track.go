@@ -341,7 +341,18 @@ func scoreFaceQuality(img image.Image, detected face.Detection) faceQualityResul
 	sizeScore := clamp01((minSide - 45) / 95)
 	detectorScore := clamp01((float64(detected.Score) - 0.45) / 0.50)
 	poseScore := facePoseScore(detected.Landmarks)
-	sharpnessScore, exposureScore := faceImageQuality(img, rect)
+	sharpnessScore, exposureScore, brightness := faceImageQuality(img, rect)
+	hint := ""
+	switch {
+	case brightness < 35:
+		hint = "光线太暗，请增加正面补光"
+	case brightness > 235:
+		hint = "画面过曝，请避开强光直射"
+	case sharpnessScore < 0.12:
+		hint = "画面模糊，请擦拭镜头并保持静止"
+	case minSide < 65:
+		hint = "人脸太小，请靠近摄像头"
+	}
 	score := sizeScore*0.32 + poseScore*0.25 + sharpnessScore*0.18 + detectorScore*0.15 + exposureScore*0.10
 	score = clamp01(score)
 
@@ -362,6 +373,7 @@ func scoreFaceQuality(img image.Image, detected face.Detection) faceQualityResul
 		Sharpness: sharpnessScore,
 		Exposure:  exposureScore,
 		Detector:  detectorScore,
+		Hint:      hint,
 	}
 }
 
@@ -381,7 +393,7 @@ func facePoseScore(landmarks [5]image.Point) float64 {
 	return clamp01(eyeLevel*0.40 + noseCenter*0.40 + mouthCenter*0.20)
 }
 
-func faceImageQuality(img image.Image, rect image.Rectangle) (float64, float64) {
+func faceImageQuality(img image.Image, rect image.Rectangle) (float64, float64, float64) {
 	step := maxInt(1, minInt(rect.Dx(), rect.Dy())/42)
 	var brightnessSum float64
 	var differenceSum float64
@@ -403,7 +415,7 @@ func faceImageQuality(img image.Image, rect image.Rectangle) (float64, float64) 
 		}
 	}
 	if samples == 0 {
-		return 0, 0
+		return 0, 0, 0
 	}
 	brightness := brightnessSum / float64(samples)
 	exposure := 1.0
@@ -422,7 +434,7 @@ func faceImageQuality(img image.Image, rect image.Rectangle) (float64, float64) 
 		meanDifference := differenceSum / float64(differences)
 		sharpness = clamp01((meanDifference - 2.5) / 18)
 	}
-	return sharpness, clamp01(exposure)
+	return sharpness, clamp01(exposure), brightness
 }
 
 func luminanceAt(img image.Image, x, y int) float64 {
