@@ -1215,7 +1215,7 @@ func TestHostUSBCameraAndMobileCardLayoutAreEmbedded(t *testing.T) {
 	if err != nil { t.Fatal(err) }
 	css := string(cssData)
 	for _, want := range []string{
-		"grid-template-columns:repeat(6,minmax(0,1fr))",
+		"grid-template-columns:repeat(7,minmax(0,1fr))",
 		"content:attr(data-label)",
 		"position:fixed",
 	} {
