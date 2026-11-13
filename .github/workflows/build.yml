@@ -385,6 +385,15 @@ jobs:
             if (-not $ready) { throw 'FaceSign health check failed' }
             if (-not (Test-Path (Join-Path $tlsDir 'facesign-root-ca.crt') -PathType Leaf)) { throw 'Persistent root CA was not generated' }
             if (-not (Test-Path (Join-Path $tlsDir 'facesign-server.crt') -PathType Leaf)) { throw 'HTTPS server certificate was not generated' }
+            $webSession = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+            $setupBody = '{"username":"smoke-admin","password":"smoke-password-123"}'
+            $setup = Invoke-RestMethod -Method Post -Uri 'http://127.0.0.1:18082/api/auth/setup' -ContentType 'application/json' -Body $setupBody -WebSession $webSession
+            if (-not $setup.user.is_admin) { throw 'First-run smoke account was not initialized as administrator' }
+            $sessionCookie = $webSession.Cookies.GetCookies([uri]'http://127.0.0.1:18082/') |
+              Where-Object { $_.Name -eq 'facesign_session' } | Select-Object -First 1
+            if (-not $sessionCookie) { throw 'Administrator login session cookie was not issued' }
+            $curlAuthHeader = "Cookie: facesign_session=$($sessionCookie.Value)"
+            $PSDefaultParameterValues['Invoke-RestMethod:WebSession'] = $webSession
             $httpsVersionRaw = & curl.exe -k -fsS 'https://127.0.0.1:18084/api/version'
             if ($LASTEXITCODE -ne 0) { throw 'FaceSign HTTPS endpoint failed' }
             $httpsVersion = $httpsVersionRaw | ConvertFrom-Json
@@ -422,24 +431,24 @@ jobs:
             $photo = Join-Path $env:RUNNER_TEMP 'amy.jpg'
             Invoke-WebRequest -Uri 'https://raw.githubusercontent.com/leandroveronezi/go-onnxface/main/examples/fotos/amy.jpg' -OutFile $photo -UseBasicParsing
 
-            $checkRaw = & curl.exe -fsS -F "file=@$photo" 'http://127.0.0.1:18082/api/enrollment/check'
+            $checkRaw = & curl.exe -H $curlAuthHeader -fsS -F "file=@$photo" 'http://127.0.0.1:18082/api/enrollment/check'
             if ($LASTEXITCODE -ne 0) { throw 'Enrollment duplicate pre-check failed' }
             $check = $checkRaw | ConvertFrom-Json
             if ($check.duplicate) { throw 'Fresh face was incorrectly reported as duplicate' }
 
-            $createRaw = & curl.exe -fsS -F "file=@$photo" -F "student_no=SMOKE001" -F "name=Amy" -F "class_name=Test" -F "label=正面" 'http://127.0.0.1:18082/api/enrollment/create'
+            $createRaw = & curl.exe -H $curlAuthHeader -fsS -F "file=@$photo" -F "student_no=SMOKE001" -F "name=Amy" -F "class_name=Test" -F "label=正面" 'http://127.0.0.1:18082/api/enrollment/create'
             if ($LASTEXITCODE -ne 0) { throw 'Face-first enrollment creation failed' }
             $create = $createRaw | ConvertFrom-Json
             $student = $create.student
             if ($student.student_no -ne 'SMOKE001' -or $student.face_count -ne 1 -or $student.class_name -ne 'Test') { throw 'Face-first enrollment returned unexpected student data' }
-            $deleteUsedClassStatus = & curl.exe -sS -o NUL -w "%{http_code}" -X DELETE "http://127.0.0.1:18082/api/classes/$($classOne.id)"
+            $deleteUsedClassStatus = & curl.exe -H $curlAuthHeader -sS -o NUL -w "%{http_code}" -X DELETE "http://127.0.0.1:18082/api/classes/$($classOne.id)"
             if ($deleteUsedClassStatus -ne '400') { throw "Used class deletion should be blocked with 400, got $deleteUsedClassStatus" }
             $renameClass = Invoke-RestMethod -Method Put -Uri "http://127.0.0.1:18082/api/classes/$($classOne.id)" -ContentType 'application/json' -Body '{"name":"Test-Renamed"}'
             if ($renameClass.name -ne 'Test-Renamed' -or $renameClass.student_count -ne 1) { throw 'Class rename smoke test failed' }
             $studentAfterRename = (Invoke-RestMethod -Uri 'http://127.0.0.1:18082/api/students' -TimeoutSec 3 | Where-Object { $_.student_no -eq 'SMOKE001' } | Select-Object -First 1)
             if (-not $studentAfterRename -or $studentAfterRename.class_name -ne 'Test-Renamed') { throw 'Class rename did not update student record' }
 
-            $duplicateRaw = & curl.exe -fsS -F "file=@$photo" 'http://127.0.0.1:18082/api/enrollment/check'
+            $duplicateRaw = & curl.exe -H $curlAuthHeader -fsS -F "file=@$photo" 'http://127.0.0.1:18082/api/enrollment/check'
             if ($LASTEXITCODE -ne 0) { throw 'Duplicate enrollment re-check failed' }
             $duplicate = $duplicateRaw | ConvertFrom-Json
             if (-not $duplicate.duplicate -or $duplicate.student.student_no -ne 'SMOKE001') { throw 'Duplicate face was not linked to the existing student' }
@@ -457,7 +466,7 @@ jobs:
             $importZip = Join-Path $env:RUNNER_TEMP 'photo-import.zip'
             Compress-Archive -Path (Join-Path $importDir '*') -DestinationPath $importZip -Force
 
-            $analysisRaw = & curl.exe -fsS -F "file=@$importZip" 'http://127.0.0.1:18082/api/photo-import/analyze'
+            $analysisRaw = & curl.exe -H $curlAuthHeader -fsS -F "file=@$importZip" 'http://127.0.0.1:18082/api/photo-import/analyze'
             if ($LASTEXITCODE -ne 0) { throw 'Photo ZIP analysis failed' }
             $analysis = $analysisRaw | ConvertFrom-Json
             if (-not $analysis.session_id -or $analysis.items.Count -ne 2) { throw 'Unexpected photo import analysis result' }
@@ -484,7 +493,7 @@ jobs:
             $editedStudent = $studentsAfterEdit | Where-Object { $_.student_no -eq 'SMOKE002' } | Select-Object -First 1
             if (-not $editedStudent -or $editedStudent.class_name -ne 'Backup') { throw 'Imported student class edit failed' }
 
-            $importRecognizeRaw = & curl.exe -fsS -H 'X-FaceSign-Session: smoke-import' -F "file=@$importPhoto" 'http://127.0.0.1:18082/api/recognize'
+            $importRecognizeRaw = & curl.exe -H $curlAuthHeader -fsS -H 'X-FaceSign-Session: smoke-import' -F "file=@$importPhoto" 'http://127.0.0.1:18082/api/recognize'
             if ($LASTEXITCODE -ne 0) { throw 'Imported photo recognition failed' }
             $importRecognize = $importRecognizeRaw | ConvertFrom-Json
             if (-not $importRecognize.matched -or $importRecognize.student.student_no -ne 'SMOKE002') { throw 'Imported face sample identity did not match correctly' }
@@ -492,10 +501,10 @@ jobs:
             if (-not $importRecognize.liveness_status) { throw 'Passive liveness status was not returned' }
             Write-Host "Passive liveness score (import smoke): $($importRecognize.liveness_score) status=$($importRecognize.liveness_status)"
 
-            $sameSampleStatus = & curl.exe -sS -o NUL -w "%{http_code}" -F "file=@$photo" -F "label=左侧" "http://127.0.0.1:18082/api/students/$($student.id)/faces"
+            $sameSampleStatus = & curl.exe -H $curlAuthHeader -sS -o NUL -w "%{http_code}" -F "file=@$photo" -F "label=左侧" "http://127.0.0.1:18082/api/students/$($student.id)/faces"
             if ($sameSampleStatus -ne '409') { throw "Near-identical supplemental sample should be rejected with 409, got $sameSampleStatus" }
 
-            $recognizeRaw = & curl.exe -fsS -H 'X-FaceSign-Session: smoke-amy' -F "file=@$photo" 'http://127.0.0.1:18082/api/recognize'
+            $recognizeRaw = & curl.exe -H $curlAuthHeader -fsS -H 'X-FaceSign-Session: smoke-amy' -F "file=@$photo" 'http://127.0.0.1:18082/api/recognize'
             if ($LASTEXITCODE -ne 0) { throw 'Recognition smoke test failed' }
             $recognize = $recognizeRaw | ConvertFrom-Json
             if (-not $recognize.matched -or $recognize.student.student_no -ne 'SMOKE001') { throw 'Recognition identity did not match enrolled student' }
@@ -540,10 +549,10 @@ jobs:
               $unknownImage.Dispose()
             }
 
-            $groupEnrollStatus = & curl.exe -sS -o NUL -w "%{http_code}" -F "file=@$groupPhoto" "http://127.0.0.1:18082/api/students/$($student.id)/face"
+            $groupEnrollStatus = & curl.exe -H $curlAuthHeader -sS -o NUL -w "%{http_code}" -F "file=@$groupPhoto" "http://127.0.0.1:18082/api/students/$($student.id)/face"
             if ($groupEnrollStatus -ne '422') { throw "Multi-face enrollment should be rejected with 422, got $groupEnrollStatus" }
 
-            $groupRecognizeRaw = & curl.exe -fsS -H 'X-FaceSign-Session: smoke-group' -F "file=@$groupPhoto" 'http://127.0.0.1:18082/api/recognize'
+            $groupRecognizeRaw = & curl.exe -H $curlAuthHeader -fsS -H 'X-FaceSign-Session: smoke-group' -F "file=@$groupPhoto" 'http://127.0.0.1:18082/api/recognize'
             if ($LASTEXITCODE -ne 0) { throw 'Multi-face recognition smoke test failed' }
             $groupRecognize = $groupRecognizeRaw | ConvertFrom-Json
             if ($groupRecognize.detected_count -lt 2) { throw "Expected at least 2 detected faces, got $($groupRecognize.detected_count)" }
