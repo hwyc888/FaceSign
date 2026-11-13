@@ -33,4 +33,5 @@ func (s *Server) endCameraRecognition(cameraID int64) {
 	}
 	s.cameraRecognitionNextAt[cameraID] = time.Now().Add(cameraRecognitionMinIdle)
 	s.cameraRecognitionMu.Unlock()
+	s.releaseNetworkCameraPreviewIfUnused(cameraID)
 }
