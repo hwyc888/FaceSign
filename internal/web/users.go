@@ -3,6 +3,7 @@ package web
 import (
 	"database/sql"
 	"errors"
+	"fmt"
 	"net/http"
 	"strconv"
 	"strings"
@@ -71,9 +72,72 @@ func (s *Server) userAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	rest := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/users/"), "/")
-	id, err := strconv.ParseInt(rest, 10, 64)
-	if err != nil || id <= 0 || strings.Contains(rest, "/") {
+	parts := strings.Split(rest, "/")
+	if len(parts) == 0 || parts[0] == "" {
 		writeError(w, http.StatusBadRequest, errors.New("用户编号不正确"))
+		return
+	}
+	id, err := strconv.ParseInt(parts[0], 10, 64)
+	if err != nil || id <= 0 || len(parts) > 2 || (len(parts) == 2 && parts[1] != "clone") {
+		writeError(w, http.StatusBadRequest, errors.New("用户编号不正确"))
+		return
+	}
+	if len(parts) == 2 && parts[1] == "clone" {
+		if r.Method != http.MethodPost {
+			methodNotAllowed(w)
+			return
+		}
+		var in struct {
+			Usernames []string `json:"usernames"`
+			Password  string   `json:"password"`
+		}
+		if err := decodeJSON(r, &in); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		if len(in.Usernames) == 0 || len(in.Usernames) > 100 {
+			writeError(w, http.StatusBadRequest, errors.New("一次只能复制 1 到 100 个账号"))
+			return
+		}
+		if err := validatePassword(in.Password); err != nil {
+			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		seen := make(map[string]struct{}, len(in.Usernames))
+		credentials := make([]store.UserCloneCredential, 0, len(in.Usernames))
+		for _, rawUsername := range in.Usernames {
+			username := strings.TrimSpace(rawUsername)
+			if err := validateUsername(username); err != nil {
+				writeError(w, http.StatusBadRequest, err)
+				return
+			}
+			key := strings.ToLower(username)
+			if _, exists := seen[key]; exists {
+				writeError(w, http.StatusBadRequest, fmt.Errorf("批量生成的用户名重复: %s", username))
+				return
+			}
+			seen[key] = struct{}{}
+			hash, err := bcrypt.GenerateFromPassword([]byte(in.Password), bcrypt.DefaultCost)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err)
+				return
+			}
+			credentials = append(credentials, store.UserCloneCredential{
+				Username: username, PasswordHash: string(hash),
+			})
+		}
+		created, err := s.store.CloneUsers(r.Context(), id, credentials)
+		if err != nil {
+			status := http.StatusBadRequest
+			if errors.Is(err, sql.ErrNoRows) {
+				status = http.StatusNotFound
+			}
+			writeError(w, status, err)
+			return
+		}
+		writeJSON(w, http.StatusCreated, map[string]any{
+			"ok": true, "created": len(created), "users": created,
+		})
 		return
 	}
 	switch r.Method {

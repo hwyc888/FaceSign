@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -124,6 +125,91 @@ func (s *Store) CreateUser(ctx context.Context, username, passwordHash string, u
 	user.Username = username
 	user.IsAdmin = false
 	return user, nil
+}
+
+func (s *Store) CloneUsers(ctx context.Context, sourceID int64, credentials []UserCloneCredential) ([]User, error) {
+	if sourceID <= 0 {
+		return nil, errors.New("无效的源用户")
+	}
+	if len(credentials) == 0 || len(credentials) > 100 {
+		return nil, errors.New("一次只能复制 1 到 100 个账号")
+	}
+
+	seen := make(map[string]struct{}, len(credentials))
+	for _, credential := range credentials {
+		username := strings.TrimSpace(credential.Username)
+		if username == "" || username != credential.Username || credential.PasswordHash == "" {
+			return nil, errors.New("复制账号信息不完整")
+		}
+		key := strings.ToLower(username)
+		if _, exists := seen[key]; exists {
+			return nil, fmt.Errorf("用户名重复: %s", username)
+		}
+		seen[key] = struct{}{}
+	}
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer tx.Rollback()
+
+	var source User
+	err = tx.QueryRowContext(ctx, `
+		SELECT id,username,is_admin,can_edit_students,can_add_students,can_resample_faces,can_arrange_seats
+		FROM users WHERE id=?`, sourceID).Scan(
+		&source.ID, &source.Username, &source.IsAdmin,
+		&source.CanEditStudents, &source.CanAddStudents,
+		&source.CanResampleFaces, &source.CanArrangeSeats,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if source.IsAdmin {
+		return nil, errors.New("不能复制管理员账号")
+	}
+
+	now := time.Now().Unix()
+	created := make([]User, 0, len(credentials))
+	for _, credential := range credentials {
+		var exists int
+		if err := tx.QueryRowContext(ctx,
+			"SELECT COUNT(*) FROM users WHERE username=? COLLATE NOCASE",
+			credential.Username,
+		).Scan(&exists); err != nil {
+			return nil, err
+		}
+		if exists > 0 {
+			return nil, fmt.Errorf("用户名已存在: %s", credential.Username)
+		}
+
+		result, err := tx.ExecContext(ctx, `
+			INSERT INTO users(username,password_hash,is_admin,can_edit_students,can_add_students,can_resample_faces,can_arrange_seats,created_at,updated_at)
+			VALUES(?,?,0,?,?,?,?,?,?)`,
+			credential.Username, credential.PasswordHash,
+			source.CanEditStudents, source.CanAddStudents,
+			source.CanResampleFaces, source.CanArrangeSeats, now, now,
+		)
+		if err != nil {
+			return nil, fmt.Errorf("复制用户 %s 失败: %w", credential.Username, err)
+		}
+		id, err := result.LastInsertId()
+		if err != nil {
+			return nil, err
+		}
+		created = append(created, User{
+			ID: id, Username: credential.Username, IsAdmin: false,
+			CanEditStudents: source.CanEditStudents,
+			CanAddStudents: source.CanAddStudents,
+			CanResampleFaces: source.CanResampleFaces,
+			CanArrangeSeats: source.CanArrangeSeats,
+		})
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return created, nil
 }
 
 func (s *Store) UpdateUserAccess(ctx context.Context, id int64, user User, passwordHash string) error {

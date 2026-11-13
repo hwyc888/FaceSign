@@ -62,6 +62,11 @@ type User struct {
 	PasswordHash     string `json:"-"`
 }
 
+type UserCloneCredential struct {
+	Username     string
+	PasswordHash string
+}
+
 type Store struct { db *sql.DB }
 
 type SeatAttendance struct {
