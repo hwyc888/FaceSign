@@ -8,8 +8,8 @@ require (
 	github.com/pion/rtp v1.10.5
 	github.com/pion/webrtc/v4 v4.2.20
 	github.com/yalue/onnxruntime_go v1.31.0
-	golang.org/x/image v0.44.0
 	golang.org/x/crypto v0.57.0
+	golang.org/x/image v0.44.0
 	modernc.org/sqlite v1.59.0
 )
 
