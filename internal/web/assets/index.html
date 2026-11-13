@@ -14,6 +14,7 @@
       <nav>
         <button class="nav active" data-page="checkin">人脸签到</button>
         <button class="nav" data-page="students">学生管理</button>
+        <button class="nav" data-page="seating">座位编排</button>
         <button class="nav" data-page="attendance">考勤记录</button>
         <button class="nav" data-page="settings">设置</button>
         <button class="nav" data-page="status">系统状态</button>
@@ -287,6 +288,63 @@
         </div>
       </section>
 
+      <section class="page" id="page-seating">
+        <div class="card">
+          <div class="card-head">
+            <div>
+              <h2>学生座位编排</h2>
+              <p class="muted compact">选择班级后管理学生座号，支持批量安排、拖动移动和交换座位。</p>
+            </div>
+            <label class="seat-class-filter">选择班级
+              <select id="seatArrangementClass"><option value="">请选择班级</option></select>
+            </label>
+          </div>
+          <p class="muted compact">批量编排时，只会重新安排你勾选的学生；未勾选学生原有座位不会改变。班级排数、每排人数及考勤时间仍在“设置 → 班级编排”中管理。</p>
+        </div>
+          <div class="class-seat-editor hidden" id="classSeatEditor">
+            <div class="card-head">
+              <div>
+                <h2 id="seatEditorTitle">座位编排</h2>
+                <p class="muted compact">上方是讲台。可拖动学生移动或交换座位，也可在下方筛选并批量编排；批量操作只调整选中的学生。</p>
+              </div>
+              <button id="closeSeatEditor" type="button">关闭编排</button>
+            </div>
+
+            <form id="seatEditorSettingsForm" class="seat-editor-settings">
+              <label>班级名称<input id="seatEditorName" maxlength="40" required></label>
+              <label>排数<input id="seatEditorRows" type="number" min="1" max="20" required></label>
+              <label>每排人数<input id="seatEditorPerRow" type="number" min="1" max="20" required></label>
+              <label>迟到时间<input id="seatEditorLateAfter" type="time"></label>
+              <label>签到截止<input id="seatEditorDeadline" type="time"></label>
+              <button class="primary" type="submit">保存班级设置</button>
+            </form>
+
+            <div class="seat-editor-toolbar">
+              <button id="seatEditorClearSeat" type="button" disabled>清空所选学生座位</button>
+              <span id="seatEditorSelection">尚未选择学生</span>
+            </div>
+            <div class="seat-editor-bulk-panel">
+              <div class="seat-editor-bulk-filters">
+                <button class="seat-editor-filter active" type="button" data-seat-student-filter="all">全部学生 <strong data-seat-student-count="all">0</strong></button>
+                <button class="seat-editor-filter" type="button" data-seat-student-filter="assigned">已编排 <strong data-seat-student-count="assigned">0</strong></button>
+                <button class="seat-editor-filter" type="button" data-seat-student-filter="unassigned">未编排 <strong data-seat-student-count="unassigned">0</strong></button>
+              </div>
+              <div class="seat-editor-bulk-actions">
+                <label class="seat-editor-select-visible"><input id="seatEditorSelectVisible" type="checkbox"> 选择当前筛选学生</label>
+                <span id="seatEditorBulkSelectionCount">已选择 0 人</span>
+                <button id="seatEditorClearSelection" type="button" disabled>清空选择</button>
+                <button class="primary" id="seatEditorArrangeSelected" type="button" disabled>批量编排选中学生</button>
+              </div>
+              <p class="muted compact">按学号顺序安排选中的学生。未选中学生的座位保持不变；可用座位不足时不会执行任何修改。</p>
+              <div class="seat-editor-student-list" id="seatEditorStudentList"></div>
+            </div>
+
+            <div class="classroom-stage">讲台 / 黑板（前方）</div>
+            <div class="seat-editor-board" id="seatEditorBoard"></div>
+            <div class="seat-editor-unassigned" id="seatEditorUnassigned"></div>
+          </div>
+      </section>
+
       <section class="page" id="page-settings">
         <div class="card">
           <div class="card-head">
@@ -527,34 +585,7 @@
             </table>
           </div>
 
-          <div class="class-seat-editor hidden" id="classSeatEditor">
-            <div class="card-head">
-              <div>
-                <h2 id="seatEditorTitle">座位编排</h2>
-                <p class="muted compact">上方是讲台。可直接拖动学生到目标座位：拖到空位即移动，拖到已有学生的位置会自动交换；也保留点击选择方式。</p>
-              </div>
-              <button id="closeSeatEditor" type="button">关闭编排</button>
-            </div>
 
-            <form id="seatEditorSettingsForm" class="seat-editor-settings">
-              <label>班级名称<input id="seatEditorName" maxlength="40" required></label>
-              <label>排数<input id="seatEditorRows" type="number" min="1" max="20" required></label>
-              <label>每排人数<input id="seatEditorPerRow" type="number" min="1" max="20" required></label>
-              <label>迟到时间<input id="seatEditorLateAfter" type="time"></label>
-              <label>签到截止<input id="seatEditorDeadline" type="time"></label>
-              <button class="primary" type="submit">保存班级设置</button>
-            </form>
-
-            <div class="seat-editor-toolbar">
-              <button id="seatEditorAutoArrange" type="button">按学号自动顺排</button>
-              <button id="seatEditorClearSeat" type="button" disabled>清空所选学生座位</button>
-              <span id="seatEditorSelection">尚未选择学生</span>
-            </div>
-
-            <div class="classroom-stage">讲台 / 黑板（前方）</div>
-            <div class="seat-editor-board" id="seatEditorBoard"></div>
-            <div class="seat-editor-unassigned" id="seatEditorUnassigned"></div>
-          </div>
         </div>
       </section>
 
