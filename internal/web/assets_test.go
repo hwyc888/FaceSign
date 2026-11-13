@@ -1358,6 +1358,14 @@ func TestUserCloneUIProvidesSingleAndBatchGeneration(t *testing.T) {
 			t.Fatalf("user clone frontend missing %q", want)
 		}
 	}
+	for _, selector := range []string{"$$('[data-user-clone]').forEach", "$$('[data-user-save]').forEach"} {
+		if !strings.Contains(script, selector) {
+			t.Fatalf("user row actions must use querySelectorAll: %q", selector)
+		}
+	}
+	if strings.Contains(script, "$('[data-user-clone]').forEach") || strings.Contains(script, "$('[data-user-save]').forEach") {
+		t.Fatal("user row action handlers must not call forEach on a single querySelector result")
+	}
 
 	cssData, err := assets.ReadFile("assets/style.css")
 	if err != nil {
