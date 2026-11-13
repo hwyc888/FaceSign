@@ -14,13 +14,14 @@ async function loadStudents() {
       <tr>
         <td>${esc(s.student_no)}</td>
         <td>${esc(s.name)}</td>
-        <td><select class="table-class-select" data-student-class="${s.id}">${classOptionsHTML(s.class_name, false)}</select></td>
-        <td><input class="seat-number-input" data-student-seat="${s.id}" type="number" min="0" value="${s.seat_no || ''}" placeholder="未编排"></td>
+        <td><select class="table-class-select" data-student-class="${s.id}" ${hasPermission('can_edit_students') ? '' : 'disabled'}>${classOptionsHTML(s.class_name, false)}</select></td>
+        <td><input class="seat-number-input" data-student-seat="${s.id}" type="number" min="0" value="${s.seat_no || ''}" placeholder="未编排" ${hasPermission('can_arrange_seats') ? '' : 'disabled'}></td>
         <td><span class="badge ${s.face_count > 0 ? 'yes' : 'no'}">${s.face_count > 0 ? s.face_count + ' 个样本' : '未录入'}</span></td>
         <td>
           <div class="student-actions">
+            ${hasPermission('can_edit_students') ? '<button data-edit-student="' + s.id + '">编辑资料</button>' : ''}
             <button data-faces="${s.id}">人脸样本</button>
-            <button class="danger" data-del="${s.id}">删除</button>
+            ${currentUser && currentUser.is_admin ? '<button class="danger" data-del="' + s.id + '">删除</button>' : ''}
           </div>
         </td>
       </tr>
@@ -75,6 +76,9 @@ async function loadStudents() {
       };
     });
 
+    $$('[data-edit-student]').forEach(button => {
+      button.onclick = () => openStudentEdit(Number(button.dataset.editStudent));
+    });
     $$('[data-faces]').forEach(button => {
       button.onclick = () => openSamplesPanel(Number(button.dataset.faces));
     });
@@ -96,6 +100,55 @@ async function loadStudents() {
     toast(e.message);
   }
 }
+
+async function openStudentEdit(studentID) {
+  const student = studentsCache.find(item => Number(item.id) === Number(studentID));
+  if (!student || !hasPermission('can_edit_students')) return;
+  try {
+    await loadClasses();
+    $('#editStudentID').value = String(student.id);
+    $('#editStudentNo').value = student.student_no || '';
+    $('#editStudentName').value = student.name || '';
+    $('#editStudentClass').innerHTML = classOptionsHTML(student.class_name, false);
+    openModal('studentEditModal');
+  } catch (error) {
+    toast(error.message);
+  }
+}
+
+$('#studentEditForm').addEventListener('submit', async event => {
+  event.preventDefault();
+  const studentID = Number($('#editStudentID').value);
+  const button = $('#studentEditForm').querySelector('button[type="submit"]');
+  button.disabled = true;
+  try {
+    const result = await api('/api/students/' + studentID, {
+      method: 'PUT',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        student_no: $('#editStudentNo').value.trim(),
+        name: $('#editStudentName').value.trim(),
+        class_name: $('#editStudentClass').value
+      })
+    });
+    closeModal('studentEditModal');
+    toast('学生资料已更新');
+    await loadStudents();
+    if (samplesStudent && Number(samplesStudent.id) === studentID) {
+      samplesStudent = result.student || studentsCache.find(item => Number(item.id) === studentID);
+      if (samplesStudent) {
+        $('#sampleStudentName').textContent = samplesStudent.name;
+        $('#sampleStudentNo').textContent = samplesStudent.student_no;
+        $('#sampleStudentClass').textContent = samplesStudent.class_name || '-';
+      }
+    }
+    if (typeof loadCheckinSeatBoard === 'function') await loadCheckinSeatBoard();
+  } catch (error) {
+    toast(error.message);
+  } finally {
+    button.disabled = false;
+  }
+});
 
 function renderSampleChecklist(samples) {
   const expected = ['正面', '左侧', '右侧', '轻微抬头', '轻微低头'];
@@ -133,7 +186,7 @@ async function openSamplesPanel(studentID, options = {}) {
   $('#sampleStudentClass').textContent = student.class_name || '-';
   $('#sampleStudentCard').classList.remove('hidden');
   $('#clearSampleSelection').classList.remove('hidden');
-  $('#sampleControls').classList.remove('hidden');
+  $('#sampleControls').classList.toggle('hidden', !hasPermission('can_resample_faces'));
 
   try {
     const samples = await api(`/api/students/${student.id}/faces`);
@@ -145,7 +198,7 @@ async function openSamplesPanel(studentID, options = {}) {
           <strong>${esc(sample.label || '补充')}</strong>
           <span>${esc(sample.created_at)}</span>
         </div>
-        <button class="danger sample-delete" data-delete-sample="${sample.id}">删除</button>
+        ${hasPermission('can_resample_faces') ? '<button class="danger sample-delete" data-delete-sample="' + sample.id + '">删除</button>' : ''}
       </div>
     `).join('') || '<div class="sample-empty">该学生还没有人脸样本，可以从下方选择角度开始补充。</div>';
 
@@ -171,6 +224,10 @@ async function openSamplesPanel(studentID, options = {}) {
 }
 
 $('#startSupplement').addEventListener('click', async () => {
+  if (!hasPermission('can_resample_faces')) {
+    toast('没有补充或重新采样人脸的权限');
+    return;
+  }
   if (!samplesStudent) return;
   supplementStudent = samplesStudent;
   const angle = $('#sampleAngle').value;
