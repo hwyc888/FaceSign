@@ -726,8 +726,7 @@ func TestListClassesSyncsStudentsAddedAfterStoreStartup(t *testing.T) {
 	}
 	defer s.Close()
 
-	student, err := s.CreateStudent(ctx, "RUNTIME-001", "运行时新增学生", "运行时新增班")
-	if err != nil {
+	if _, err := s.CreateStudent(ctx, "RUNTIME-001", "运行时新增学生", "运行时新增班"); err != nil {
 		t.Fatal(err)
 	}
 
