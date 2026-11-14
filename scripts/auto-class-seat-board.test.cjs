@@ -165,3 +165,22 @@ test('recognized person track selects its class when no face result is visible i
   assert.deepEqual(renders, ['二班']);
 });
 
+test('manual class selection loads its seat board without any recognition result', async () => {
+  let resolveBoard;
+  const {select, calls, renders, elements} = checkinContext(
+    ['一班', '二班'],
+    () => new Promise(resolve => { resolveBoard = resolve; })
+  );
+
+  select.value = '二班';
+  const loading = select.change();
+  assert.equal(calls.length, 1);
+  assert.equal(new URL(calls[0], 'http://localhost').searchParams.get('class_name'), '二班');
+  assert.match(elements['#checkinSeatSummary'].innerHTML, /正在加载 二班 班签到状态/);
+  assert.match(elements['#checkinSeatBoard'].innerHTML, /正在加载 二班 班座位图/);
+
+  resolveBoard({class: {name: '二班'}});
+  await loading;
+  assert.deepEqual(renders, ['二班']);
+});
+
