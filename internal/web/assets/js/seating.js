@@ -221,7 +221,7 @@ async function loadCheckinSeatBoard(selectedClassName = '') {
   if (!className) {
     lastRenderedCheckinSeatClass = '';
     $('#checkinSeatSummary').innerHTML = '<span class="seat-stat">暂无班级</span>';
-    $('#checkinSeatBoard').innerHTML = '<div class="seat-board-empty">当前没有可选择的班级，请先在设置中创建班级。</div>';
+    $('#checkinSeatBoard').innerHTML = '<div class="seat-board-empty">当前没有可用班级。请在“设置”中创建班级，或在“学生管理”中为学生指定所属班级；已有学生班级会自动同步到这里。</div>';
     $('#checkinSeatUnassigned').classList.add('hidden');
     return;
   }

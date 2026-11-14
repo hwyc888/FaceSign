@@ -7,9 +7,9 @@ function startAuthenticatedApp() {
   $('#attendanceDay').value = today();
   updateCameraControls();
   loadHealth();
-  loadClasses().then(() => {
+  loadClasses().then(classesLoaded => {
     loadStudents();
-    if (typeof loadCheckinSeatBoard === 'function') loadCheckinSeatBoard();
+    if (classesLoaded && typeof loadCheckinSeatBoard === 'function') loadCheckinSeatBoard();
   });
   loadAttendance();
 }
