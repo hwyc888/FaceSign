@@ -13,6 +13,7 @@ import (
 const (
 	personFaceProbeEstimatedPixels = 28.0
 	personFaceReadyEstimatedPixels = 45.0
+	personROIFaceDetectionThreshold = 0.65
 )
 
 func estimatedFacePixels(rect image.Rectangle) float64 {
@@ -74,11 +75,11 @@ func personHeadROI(personRect, bounds image.Rectangle) image.Rectangle {
 	w := float64(personRect.Dx())
 	h := float64(personRect.Dy())
 	cx := float64(personRect.Min.X+personRect.Max.X) / 2
-	roiW := math.Max(48, w*0.92)
-	roiH := math.Max(56, math.Min(h*0.46, w*1.45))
+	roiW := math.Max(64, w*1.05)
+	roiH := math.Max(72, math.Min(h*0.62, w*1.80))
 	x1 := int(math.Round(cx - roiW/2))
 	x2 := int(math.Round(cx + roiW/2))
-	y1 := int(math.Round(float64(personRect.Min.Y) - h*0.04))
+	y1 := int(math.Round(float64(personRect.Min.Y) - h*0.05))
 	y2 := int(math.Round(float64(y1) + roiH))
 	return image.Rect(x1, y1, x2, y2).Intersect(bounds)
 }
@@ -114,7 +115,7 @@ func (s *Server) detectFacesInPersonROIs(img image.Image, people []person.Detect
 		if cropped == nil {
 			continue
 		}
-		detected, err := s.engine.DetectAll(cropped, s.detectionThreshold)
+		detected, err := s.engine.DetectAll(cropped, math.Min(s.detectionThreshold, personROIFaceDetectionThreshold))
 		if err != nil {
 			if errors.Is(err, face.ErrNoFace) {
 				continue
