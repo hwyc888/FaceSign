@@ -37,6 +37,9 @@ func TestAppSettingsAPI(t *testing.T) {
 	if current.LowLightRecognitionMode {
 		t.Fatal("low-light recognition mode should default off")
 	}
+	if current.DisableLivenessDetection {
+		t.Fatal("liveness detection should remain enabled by default")
+	}
 
 	nonAdminPut := httptest.NewRequest(http.MethodPut, "/api/settings", strings.NewReader(`{"low_light_recognition_mode":true}`))
 	nonAdminPut.Header.Set("Content-Type", "application/json")
@@ -45,6 +48,14 @@ func TestAppSettingsAPI(t *testing.T) {
 	s.settings(nonAdminRec, nonAdminPut)
 	if nonAdminRec.Code != http.StatusForbidden {
 		t.Fatalf("non-admin low-light setting update status=%d body=%s", nonAdminRec.Code, nonAdminRec.Body.String())
+	}
+	disableNonAdminPut := httptest.NewRequest(http.MethodPut, "/api/settings", strings.NewReader(`{"disable_liveness_detection":true}`))
+	disableNonAdminPut.Header.Set("Content-Type", "application/json")
+	disableNonAdminPut = disableNonAdminPut.WithContext(context.WithValue(disableNonAdminPut.Context(), authContextKey{}, store.User{ID: 99}))
+	disableNonAdminRec := httptest.NewRecorder()
+	s.settings(disableNonAdminRec, disableNonAdminPut)
+	if disableNonAdminRec.Code != http.StatusForbidden {
+		t.Fatalf("non-admin disable-liveness update status=%d body=%s", disableNonAdminRec.Code, disableNonAdminRec.Body.String())
 	}
 	if !current.RealtimeStatusEnabled {
 		t.Fatal("realtime status should default on")
@@ -134,5 +145,22 @@ func TestAppSettingsAPI(t *testing.T) {
 	}
 	if !persisted.AutoStartCheckin || persisted.RealtimeStatusEnabled {
 		t.Fatal("partial low-light setting update changed unrelated application settings")
+	}
+	disableLivenessPut := httptest.NewRequest(http.MethodPut, "/api/settings", strings.NewReader(`{"disable_liveness_detection":true}`))
+	disableLivenessPut.Header.Set("Content-Type", "application/json")
+	disableLivenessRec := httptest.NewRecorder()
+	s.settings(disableLivenessRec, withTestAdmin(disableLivenessPut))
+	if disableLivenessRec.Code != http.StatusOK {
+		t.Fatalf("disable-liveness setting PUT status=%d body=%s", disableLivenessRec.Code, disableLivenessRec.Body.String())
+	}
+	persisted, err = st.AppSettings(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !persisted.DisableLivenessDetection {
+		t.Fatal("disable-liveness setting was not persisted")
+	}
+	if !persisted.LowLightRecognitionMode || !persisted.AutoStartCheckin || persisted.RealtimeStatusEnabled {
+		t.Fatal("partial disable-liveness update changed unrelated application settings")
 	}
 }
