@@ -40,11 +40,11 @@ function renderAppSettings() {
   if (lowLightCheckbox) lowLightCheckbox.checked = lowLightEnabled;
   if (lowLightState) lowLightState.textContent = lowLightEnabled ? '已开启 · 全局生效' : '已关闭';
 
-  const disableLivenessCheckbox = $('#disableLivenessDetection');
-  const disableLivenessState = $('#disableLivenessDetectionState');
-  const livenessDisabled = Boolean(appSettingsCache.disable_liveness_detection);
-  if (disableLivenessCheckbox) disableLivenessCheckbox.checked = livenessDisabled;
-  if (disableLivenessState) disableLivenessState.textContent = livenessDisabled ? '已关闭 · 全局生效' : '已启用';
+  const enableLivenessCheckbox = $('#enableLivenessDetection');
+  const livenessState = $('#livenessDetectionState');
+  const livenessEnabled = !Boolean(appSettingsCache.disable_liveness_detection);
+  if (enableLivenessCheckbox) enableLivenessCheckbox.checked = livenessEnabled;
+  if (livenessState) livenessState.textContent = livenessEnabled ? '已启用 · 全局生效' : '已关闭 · 全局生效';
 
   const realtimeFields = {};
   REALTIME_STATUS_FIELDS.forEach(([id, key, field]) => {
@@ -108,22 +108,22 @@ $('#autoStartCheckin').addEventListener('change', async event => {
   }
 });
 
-$('#disableLivenessDetection').addEventListener('change', async event => {
-  const disabled = event.target.checked;
+$('#enableLivenessDetection').addEventListener('change', async event => {
+  const enabled = event.target.checked;
   event.target.disabled = true;
   try {
     appSettingsCache = await api('/api/settings', {
       method: 'PUT',
       headers: {'Content-Type': 'application/json'},
-      body: JSON.stringify({disable_liveness_detection: disabled})
+      body: JSON.stringify({disable_liveness_detection: !enabled})
     });
     appSettingsLoaded = true;
     renderAppSettings();
-    toast(disabled
-      ? '活体检测已关闭：匹配成功后直接签到，照片/屏幕防伪也会关闭'
-      : '活体检测已恢复：重新启用活体与照片/屏幕防伪');
+    toast(enabled
+      ? '活体检测已启用：必须通过活体检测；疑似照片/视频/屏幕攻击或不确定结果不签到'
+      : '活体检测已关闭：跳过活体与照片/视频/屏幕防伪；身份匹配成功且画面质量达标即可签到');
   } catch (e) {
-    event.target.checked = !disabled;
+    event.target.checked = !enabled;
     toast(e.message);
   } finally {
     event.target.disabled = false;
@@ -142,7 +142,7 @@ $('#lowLightRecognitionMode').addEventListener('change', async event => {
     appSettingsLoaded = true;
     renderAppSettings();
     toast(enabled
-      ? '夜间低光识别已开启：连续匹配且无可信照片/屏幕攻击证据时自动签到'
+      ? '夜间低光识别已开启：放宽画面质量门槛，但仍须通过活体检测；不确定结果不签到'
       : '夜间低光识别已关闭：恢复标准识别参数');
   } catch (e) {
     event.target.checked = !enabled;
