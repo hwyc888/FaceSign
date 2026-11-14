@@ -33,7 +33,8 @@ const (
 	wmSetFont         = 0x0030
 	wmAsyncDone        = 0x8001
 	wmUpgradeSelected  = 0x8002
-	wmUpgradeLaunchDone = 0x8003
+	wmUpgradeLaunchDone   = 0x8003
+	wmUninstallLaunchDone = 0x8004
 
 	wsVisible      = 0x10000000
 	wsChild        = 0x40000000
@@ -63,6 +64,7 @@ const (
 	idExit           = 1010
 	idUpgrade        = 1011
 	idInstall        = 1012
+	idUninstall      = 1013
 )
 
 var (
@@ -78,6 +80,8 @@ var (
 	upgradeSelection   *upgradeSelectionResult
 	upgradeLaunchMu    sync.Mutex
 	upgradeLaunch      *upgradeLaunchResult
+	uninstallLaunchMu  sync.Mutex
+	uninstallLaunch    *uninstallLaunchResult
 
 	queryTaskStateFn = queryTaskState
 	faceSignPIDsFn    = faceSignPIDs
@@ -162,6 +166,10 @@ type upgradeSelectionResult struct {
 }
 
 type upgradeLaunchResult struct {
+	Err error
+}
+
+type uninstallLaunchResult struct {
 	Err error
 }
 
@@ -260,7 +268,7 @@ func runGUI() error {
 		return fmt.Errorf("注册管理窗口失败: %v", err)
 	}
 
-	width, height := 720, 510
+	width, height := 720, 560
 	screenW, _, _ := procGetSystemMetrics.Call(0)
 	screenH, _, _ := procGetSystemMetrics.Call(1)
 	x := (int(screenW) - width) / 2
@@ -327,6 +335,8 @@ func windowProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 			beginUpgradeSelection()
 		case idInstall:
 			beginAsyncUIAction("安装/注册本目录", installCurrentDirectory)
+		case idUninstall:
+			beginUninstallLaunch()
 		case idExit:
 			procDestroyWindow.Call(hwnd)
 		}
@@ -339,6 +349,9 @@ func windowProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		return 0
 	case wmUpgradeLaunchDone:
 		finishUpgradeLaunch(syscall.Handle(hwnd))
+		return 0
+	case wmUninstallLaunchDone:
+		finishUninstallLaunch(syscall.Handle(hwnd))
 		return 0
 	case wmDestroy:
 		procPostQuitMessage.Call(0)
@@ -372,7 +385,8 @@ func createControls(hwnd syscall.Handle) {
 		{idOpenDir, "打开当前目录", 24, 402, 150},
 		{idUpgrade, "升级 FaceSign", 190, 402, 150},
 		{idInstall, "安装/注册本目录", 356, 402, 150},
-		{idExit, "关闭管理工具", 522, 402, 150},
+		{idUninstall, "卸载 FaceSign", 522, 402, 150},
+		{idExit, "关闭管理工具", 522, 448, 150},
 	}
 	for _, b := range buttons {
 		h := createControl("BUTTON", b.text, uintptr(wsChild|wsVisible|wsTabStop|bsPushButton), b.x, b.y, b.w, 34, hwnd, b.id)
@@ -404,7 +418,7 @@ func createControl(class, text string, style uintptr, x, y, w, h int, parent sys
 
 func isAsyncActionButton(id int) bool {
 	switch id {
-	case idStart, idStop, idRestart, idEnableStartup, idDisableStartup, idOpenWeb, idOpenLog, idOpenDir, idRefresh, idUpgrade, idInstall:
+	case idStart, idStop, idRestart, idEnableStartup, idDisableStartup, idOpenWeb, idOpenLog, idOpenDir, idRefresh, idUpgrade, idInstall, idUninstall:
 		return true
 	default:
 		return false
@@ -733,6 +747,90 @@ func installPowerShellCommand(installDir string) string {
 		powerShellLiteral(script),
 		powerShellLiteral(installDir),
 	)
+}
+
+func uninstallPowerShellCommand(installDir string, managerPID int) string {
+	script := filepath.Join(installDir, "scripts", "uninstall.ps1")
+	return fmt.Sprintf(
+		"$ErrorActionPreference='Stop'; Wait-Process -Id %d -ErrorAction SilentlyContinue; & %s -InstallDir %s -RemoveProgramFiles",
+		managerPID,
+		powerShellLiteral(script),
+		powerShellLiteral(installDir),
+	)
+}
+
+func launchUninstallHelper() error {
+	required := []string{
+		filepath.Join(installDirFlag, "FaceSign.exe"),
+		filepath.Join(installDirFlag, "FaceSignManager.exe"),
+		filepath.Join(installDirFlag, "scripts", "uninstall.ps1"),
+	}
+	for _, path := range required {
+		if info, err := os.Stat(path); err != nil || info.IsDir() {
+			return fmt.Errorf("当前目录缺少卸载所需文件：%s", filepath.Base(path))
+		}
+	}
+
+	cmd := exec.Command(
+		"powershell.exe",
+		"-NoProfile",
+		"-NonInteractive",
+		"-ExecutionPolicy", "Bypass",
+		"-Command", uninstallPowerShellCommand(installDirFlag, os.Getpid()),
+	)
+	cmd.Dir = installDirFlag
+	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
+	if err := cmd.Start(); err != nil {
+		return fmt.Errorf("无法启动 FaceSign 卸载程序：%w", err)
+	}
+	if err := cmd.Process.Release(); err != nil {
+		return fmt.Errorf("卸载程序已启动，但释放进程句柄失败：%w", err)
+	}
+	return nil
+}
+
+func beginUninstallLaunch() {
+	if asyncBusy {
+		return
+	}
+	message := "确定卸载 FaceSign？\r\n\r\n将停止服务，删除开机任务、防火墙规则、开始菜单快捷方式和 FaceSign 程序文件。\r\n\r\n为保护已有资料，会保留 data（学生、人脸和签到数据库）以及 tls（证书）目录。\r\n\r\n卸载后管理工具将自动关闭。"
+	if !confirmBox(mainWindow, message, "卸载 FaceSign") {
+		setStatusText("已取消卸载。")
+		return
+	}
+
+	asyncBusy = true
+	setActionButtonsEnabled(false)
+	setStatusText("正在启动 FaceSign 卸载程序……\r\n\r\n管理工具将在卸载程序接管后自动关闭。")
+	target := mainWindow
+	go func() {
+		err := launchUninstallHelper()
+		uninstallLaunchMu.Lock()
+		uninstallLaunch = &uninstallLaunchResult{Err: err}
+		uninstallLaunchMu.Unlock()
+		procPostMessageW.Call(uintptr(target), wmUninstallLaunchDone, 0, 0)
+	}()
+}
+
+func finishUninstallLaunch(hwnd syscall.Handle) {
+	uninstallLaunchMu.Lock()
+	result := uninstallLaunch
+	uninstallLaunch = nil
+	uninstallLaunchMu.Unlock()
+
+	asyncBusy = false
+	if result == nil {
+		setActionButtonsEnabled(true)
+		return
+	}
+	if result.Err != nil {
+		setActionButtonsEnabled(true)
+		setStatusText("启动卸载程序失败。")
+		showError(result.Err)
+		return
+	}
+	setStatusText("卸载程序已启动。管理工具即将关闭，程序文件将被清理；data 和 tls 目录会保留。")
+	procDestroyWindow.Call(uintptr(hwnd))
 }
 
 func installCurrentDirectory() error {
