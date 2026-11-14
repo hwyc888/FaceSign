@@ -717,3 +717,38 @@ func TestAppSettingsPersistAutoStartCheckin(t *testing.T) {
 		t.Fatal("disable-liveness setting was not persisted")
 	}
 }
+
+func TestListClassesSyncsStudentsAddedAfterStoreStartup(t *testing.T) {
+	ctx := context.Background()
+	s, err := Open(filepath.Join(t.TempDir(), "runtime-class-sync.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer s.Close()
+
+	student, err := s.CreateStudent(ctx, "RUNTIME-001", "运行时新增学生", "运行时新增班")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	classes, err := s.ListClasses(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(classes) != 1 || classes[0].Name != "运行时新增班" || classes[0].StudentCount != 1 {
+		t.Fatalf("student class added after startup was not synchronized: %#v", classes)
+	}
+
+	boardStudent, err := s.CreateStudent(ctx, "RUNTIME-002", "按需同步学生", "按需同步班")
+	if err != nil {
+		t.Fatal(err)
+	}
+	board, err := s.AttendanceSeatBoardAt(ctx, boardStudent.ClassName, "2026-11-14", time.Now())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if board.Class.Name != boardStudent.ClassName || board.Total != 1 || board.Students[0].StudentID != boardStudent.ID {
+		t.Fatalf("seat board lookup should sync a missing student class on demand: %#v", board)
+	}
+}
+
