@@ -247,6 +247,10 @@ func (t *recognitionTracker) IsCommitted(sessionID string, studentID int64, now 
 	if track == nil {
 		return false
 	}
+	if now.Sub(track.LastSeen) > livenessTrackTTL {
+		delete(session.Tracks, studentID)
+		return false
+	}
 	track.LastSeen = now
 	return track.Committed
 }
