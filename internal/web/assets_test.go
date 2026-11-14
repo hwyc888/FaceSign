@@ -1079,11 +1079,15 @@ func TestRecognitionOverlayHiddenWhenAutoRecognitionDisabled(t *testing.T) {
 	script := string(data)
 
 	drawStart := strings.Index(script, "function drawFaceOverlay(")
-	drawEnd := strings.Index(script, "\nasync function recognizeFrame", drawStart)
-	if drawStart < 0 || drawEnd <= drawStart {
+	if drawStart < 0 {
 		t.Fatal("drawFaceOverlay function not found")
 	}
-	draw := script[drawStart:drawEnd]
+	drawRemainder := script[drawStart:]
+	drawEnd := strings.Index(drawRemainder, "\nasync function recognizeFrame")
+	if drawEnd <= 0 {
+		t.Fatal("drawFaceOverlay function end not found")
+	}
+	draw := drawRemainder[:drawEnd]
 	clearIndex := strings.Index(draw, "ctx.clearRect(0, 0, overlay.width, overlay.height);")
 	disabledIndex := strings.Index(draw, "if (!$('#autoScan')?.checked) return;")
 	if clearIndex < 0 || disabledIndex <= clearIndex {
@@ -1091,11 +1095,15 @@ func TestRecognitionOverlayHiddenWhenAutoRecognitionDisabled(t *testing.T) {
 	}
 
 	stopStart := strings.Index(script, "function stopAutoRecognition()")
-	stopEnd := strings.Index(script, "\nasync function setAutoRecognitionEnabled", stopStart)
-	if stopStart < 0 || stopEnd <= stopStart {
+	if stopStart < 0 {
 		t.Fatal("stopAutoRecognition function not found")
 	}
-	stop := script[stopStart:stopEnd]
+	stopRemainder := script[stopStart:]
+	stopEnd := strings.Index(stopRemainder, "\nasync function setAutoRecognitionEnabled")
+	if stopEnd <= 0 {
+		t.Fatal("stopAutoRecognition function end not found")
+	}
+	stop := stopRemainder[:stopEnd]
 	uncheckIndex := strings.Index(stop, "if (checkbox) checkbox.checked = false;")
 	clearOverlayIndex := strings.Index(stop, "drawFaceOverlay([], []);")
 	if uncheckIndex < 0 || clearOverlayIndex <= uncheckIndex {
