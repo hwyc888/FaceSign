@@ -1497,8 +1497,9 @@ func TestDisableLivenessDetectionSettingUI(t *testing.T) {
 		`id="disableLivenessDetection"`,
 		`id="disableLivenessDetectionState"`,
 		"关闭活体检测",
-		"照片 / 屏幕防伪",
-		"人脸身份比对和画面质量门槛仍保留",
+		"照片 / 屏幕视频回放防伪",
+		"画面质量门槛",
+		"夜间低光模式也不会因身份匹配稳定而绕过活体验证",
 	} {
 		if !strings.Contains(string(index), want) {
 			t.Fatalf("disable-liveness setting UI missing %q", want)
@@ -1513,6 +1514,7 @@ func TestDisableLivenessDetectionSettingUI(t *testing.T) {
 		"disable_liveness_detection",
 		"disableLivenessDetection",
 		"活体检测已关闭：匹配成功后直接签到",
+		"重新完成连续帧活体验证",
 	} {
 		if !strings.Contains(string(settingsData), want) {
 			t.Fatalf("disable-liveness setting handler missing %q", want)
