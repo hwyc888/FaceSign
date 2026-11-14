@@ -36,11 +36,11 @@ func TestRecognitionTrackerFastPassesThreeStrongLiveFrames(t *testing.T) {
 	}
 }
 
-func TestRecognitionTrackerNormalPassesFourModerateLiveFrames(t *testing.T) {
+func TestRecognitionTrackerNormalPassesThreeModerateLiveFrames(t *testing.T) {
 	tracker := newRecognitionTracker()
 	now := time.Now()
 	student := store.Student{ID: 2, StudentNo: "S2", Name: "乙"}
-	scores := []float64{0.70, 0.69, 0.67, 0.71}
+	scores := []float64{0.70, 0.69, 0.67}
 	var decision trackDecision
 	for i, score := range scores {
 		decision = tracker.Observe("camera-normal", []recognitionObservation{{
@@ -50,7 +50,7 @@ func TestRecognitionTrackerNormalPassesFourModerateLiveFrames(t *testing.T) {
 			t.Fatalf("moderate track verified before normal frame %d", i+1)
 		}
 	}
-	if !decision.Verified || decision.Frames != livenessMinFrames || decision.TimedOut {
+	if !decision.Verified || decision.Frames != 3 || decision.TimedOut {
 		t.Fatalf("moderate live track did not pass on frame %d: %#v", livenessMinFrames, decision)
 	}
 }
@@ -75,11 +75,11 @@ func TestRecognitionTrackerTimesOutWithinTwoSecondsAndResets(t *testing.T) {
 	now := time.Now()
 	student := store.Student{ID: 4, StudentNo: "S4", Name: "丁"}
 	var decision trackDecision
-	for i, offset := range []time.Duration{0, 600 * time.Millisecond, 1200 * time.Millisecond, 2050 * time.Millisecond} {
+	for i, offset := range []time.Duration{0, 300 * time.Millisecond, 600 * time.Millisecond} {
 		decision = tracker.Observe("camera-timeout", []recognitionObservation{{
 			Student: student, Similarity: 0.91, LiveScore: 0.55, Exposure: 1, Sharpness: 1,
 		}}, now.Add(offset))[0]
-		if i < 3 && decision.TimedOut {
+		if i < 2 && decision.TimedOut {
 			t.Fatalf("track timed out too early at observation %d: %#v", i+1, decision)
 		}
 	}
@@ -89,7 +89,7 @@ func TestRecognitionTrackerTimesOutWithinTwoSecondsAndResets(t *testing.T) {
 
 	next := tracker.Observe("camera-timeout", []recognitionObservation{{
 		Student: student, Similarity: 0.91, LiveScore: 0.90, Exposure: 1, Sharpness: 1,
-	}}, now.Add(2200*time.Millisecond))[0]
+	}}, now.Add(700*time.Millisecond))[0]
 	if next.TrackID == decision.TrackID || next.Frames != 1 {
 		t.Fatalf("timed-out track was not reset: old=%#v new=%#v", decision, next)
 	}
@@ -219,9 +219,9 @@ func TestLowLightModeUsesRelaxedQualityFloorButKeepsNormalFloor(t *testing.T) {
 	if !livenessObservationQualityUsable(observation) {
 		t.Fatal("low-light mode should accept dim but still measurable frames")
 	}
-	if livenessMaxFramesForMode(true) <= livenessMaxFrames ||
-		livenessDecisionTimeoutForMode(true) <= livenessDecisionTimeout {
-		t.Fatal("low-light mode should allow additional frames and sampling time")
+	if livenessMaxFramesForMode(true) != 3 || livenessMaxFramesForMode(false) != 3 ||
+		livenessDecisionTimeoutForMode(true) != livenessDecisionTimeout {
+		t.Fatal("low-light mode must use the same three-frame verification limit")
 	}
 }
 
