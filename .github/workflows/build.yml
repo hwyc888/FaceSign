@@ -58,6 +58,15 @@ jobs:
           if ($taskSettingsSmoke.MultipleInstances -ne 'IgnoreNew') {
             throw "Scheduled-task MultipleInstances smoke test failed: $($taskSettingsSmoke.MultipleInstances)"
           }
+          $uninstallText = Get-Content 'scripts\uninstall.ps1' -Raw
+          if ($uninstallText -notmatch '(?i)\[switch\]\s*\$RemoveProgramFiles') {
+            throw 'Uninstaller must expose an explicit switch before deleting program files'
+          }
+          $programItemsMatch = [regex]::Match($uninstallText, '(?s)\$programItems\s*=\s*@\((.*?)\)')
+          if (-not $programItemsMatch.Success) { throw 'Uninstaller is missing its explicit program-file cleanup list' }
+          if ($programItemsMatch.Groups[1].Value -match '(?im)^\s*''(?:data|tls)''\s*,?\s*$') {
+            throw 'Uninstaller must preserve the data and tls directories'
+          }
           $installText = Get-Content 'scripts\install.ps1' -Raw
           if ($installText -match '(?i)ProgramData\\FaceSign') {
             throw 'Installer must not default to C:\ProgramData\FaceSign; installation must stay in the selected/current directory'
@@ -103,7 +112,7 @@ jobs:
           $env:GOARCH = 'amd64'
           $env:CC = $gcc
           $env:CGO_LDFLAGS = '-static-libgcc'
-          go build -trimpath -ldflags "-s -w -X main.version=$env:GITHUB_SHA" -o dist\FaceSign.exe ./cmd/facesign
+          go build -trimpath -ldflags "-s -w -H=windowsgui -X main.version=$env:GITHUB_SHA" -o dist\FaceSign.exe ./cmd/facesign
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           go build -trimpath -ldflags "-s -w -H=windowsgui -X main.version=$env:GITHUB_SHA" -o dist\FaceSignManager.exe ./cmd/facesign-manager
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
@@ -257,6 +266,12 @@ jobs:
           }
 
           $fullExe = (Get-FileHash 'dist-full\FaceSign.exe' -Algorithm SHA256).Hash
+          $objdump = Join-Path $env:MINGW_BIN 'objdump.exe'
+          $faceSignPE = (& $objdump -p 'dist-full\FaceSign.exe' | Out-String)
+          if ($LASTEXITCODE -ne 0) { throw 'Could not inspect FaceSign.exe PE subsystem' }
+          if ($faceSignPE -notmatch '(?im)^\s*Subsystem\s+00000002\s+\(Windows GUI\)') {
+            throw 'FaceSign.exe must use the Windows GUI subsystem so startup never creates a CMD window'
+          }
           $liteExe = (Get-FileHash 'dist-lite\FaceSign.exe' -Algorithm SHA256).Hash
           if ($fullExe -ne $liteExe) { throw 'Full and lightweight packages must contain the same FaceSign.exe' }
           if (-not (Test-Path 'dist-full\FaceSignManager.exe' -PathType Leaf)) { throw 'Full package is missing FaceSignManager.exe' }
@@ -264,6 +279,9 @@ jobs:
           foreach ($variant in @('dist-full','dist-lite','dist-full-no-ffmpeg','dist-no-models-no-ffmpeg')) {
             if (-not (Test-Path (Join-Path $variant 'scripts\upgrade.ps1') -PathType Leaf)) {
               throw "$variant is missing scripts\upgrade.ps1"
+            }
+            if (-not (Test-Path (Join-Path $variant 'scripts\uninstall.ps1') -PathType Leaf)) {
+              throw "$variant is missing scripts\uninstall.ps1"
             }
           }
           $fullManager = (Get-FileHash 'dist-full\FaceSignManager.exe' -Algorithm SHA256).Hash
