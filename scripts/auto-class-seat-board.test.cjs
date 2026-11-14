@@ -53,7 +53,7 @@ test('matched student selects and loads the corresponding class without a manual
 });
 
 test('switches for a newly arrived student but stays stable when two classes remain visible', async () => {
-  const {context, select, calls} = checkinContext();
+  const {context, select, calls, renders} = checkinContext();
   assert.equal(await context.selectCheckinSeatClassFromRecognition({faces: [face(1, '一班')]}), true);
   assert.deepEqual(renders, ['一班']);
   assert.equal(await context.selectCheckinSeatClassFromRecognition({faces: [face(1, '一班'), face(2, '二班')]}), true);
@@ -90,7 +90,6 @@ test('recognition refreshes class options when the class list has not loaded yet
   assert.equal(select.value, '二班');
   assert.equal(calls[0], '/api/classes');
   assert.deepEqual(renders, ['二班']);
-  assert.equal(select.value, '二班');
   select.value = '一班';
   select.change();
   context.renderCheckinSeatClassOptions();
