@@ -104,16 +104,25 @@ func (s *Store) AttendanceSeatBoardAt(ctx context.Context, className, day string
 	}
 
 	var class Class
-	err := s.db.QueryRowContext(ctx, `
-		SELECT c.id,c.name,c.sort_order,c.seat_rows,c.seats_per_row,c.late_after,c.attendance_deadline,COUNT(s.id)
-		FROM classes c
-		LEFT JOIN students s ON TRIM(s.class_name)=c.name
-		WHERE c.name=?
-		GROUP BY c.id,c.name,c.sort_order,c.seat_rows,c.seats_per_row,c.late_after,c.attendance_deadline`, className,
-	).Scan(
-		&class.ID, &class.Name, &class.SortOrder, &class.SeatRows, &class.SeatsPerRow,
-		&class.LateAfter, &class.Deadline, &class.StudentCount,
-	)
+	loadClass := func() error {
+		return s.db.QueryRowContext(ctx, `
+			SELECT c.id,c.name,c.sort_order,c.seat_rows,c.seats_per_row,c.late_after,c.attendance_deadline,COUNT(s.id)
+			FROM classes c
+			LEFT JOIN students s ON TRIM(s.class_name)=c.name
+			WHERE c.name=?
+			GROUP BY c.id,c.name,c.sort_order,c.seat_rows,c.seats_per_row,c.late_after,c.attendance_deadline`, className,
+		).Scan(
+			&class.ID, &class.Name, &class.SortOrder, &class.SeatRows, &class.SeatsPerRow,
+			&class.LateAfter, &class.Deadline, &class.StudentCount,
+		)
+	}
+	err := loadClass()
+	if errors.Is(err, sql.ErrNoRows) {
+		if syncErr := s.syncExistingClasses(ctx); syncErr != nil {
+			return AttendanceBoard{}, fmt.Errorf("sync student classes: %w", syncErr)
+		}
+		err = loadClass()
+	}
 	if errors.Is(err, sql.ErrNoRows) {
 		return AttendanceBoard{}, errors.New("班级不存在")
 	}
