@@ -29,7 +29,20 @@ type Detection struct {
 
 type engineWorker struct {
 	input   *ort.Tensor[float32]
-	output  *ort.Tensor[float3func New(modelPath string) (*Engine, error) {
+	output  *ort.Tensor[float32]
+	session *ort.AdvancedSession
+}
+
+type Engine struct {
+	mu        sync.RWMutex
+	workers   []*engineWorker
+	available chan *engineWorker
+	closed    bool
+}
+
+const engineWorkerCount = inference.MaxConcurrent
+
+func New(modelPath string) (*Engine, error) {
 	info, err := os.Stat(modelPath)
 	if err != nil || info.IsDir() {
 		return nil, fmt.Errorf("person detector model not found: %s", modelPath)
