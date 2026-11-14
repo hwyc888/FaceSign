@@ -42,7 +42,7 @@ func TestPersonTrackerExpiresAndCreatesNewID(t *testing.T) {
 	}
 }
 
-func TestPersonTrackerUsesBestFaceAndCachesIdentity(t *testing.T) {
+func TestPersonTrackerRevalidatesKnownIdentityOnEveryUsableFrame(t *testing.T) {
 	tracker := newPersonTracker()
 	now := time.Now()
 	obs := tracker.Observe("camera", []person.Detection{{
@@ -55,18 +55,37 @@ func TestPersonTrackerUsesBestFaceAndCachesIdentity(t *testing.T) {
 	if !tracker.NeedFeature("camera", obs.TrackID, 0.62, now) {
 		t.Fatal("first usable face should trigger SFace")
 	}
+	first := store.Student{ID: 7, StudentNo: "S007", Name: "甲"}
+	tracker.RecordFeature("camera", obs.TrackID, 0.62, &first, 0.91, now)
+
+	if !tracker.NeedFeature("camera", obs.TrackID, 0.60, now.Add(150*time.Millisecond)) {
+		t.Fatal("known identity must be revalidated on the next usable frame")
+	}
+	second := store.Student{ID: 8, StudentNo: "S008", Name: "乙"}
+	tracker.RecordFeature("camera", obs.TrackID, 0.60, &second, 0.75, now.Add(150*time.Millisecond))
+	got, similarity, best := tracker.Identity("camera", obs.TrackID)
+	if got == nil || got.ID != second.ID || similarity != 0.75 || best != 0.62 {
+		t.Fatalf("fresh identity did not replace stale identity: student=%#v similarity=%v best=%v", got, similarity, best)
+	}
+
+	tracker.RecordFeature("camera", obs.TrackID, 0.60, nil, 0, now.Add(300*time.Millisecond))
+	got, similarity, best = tracker.Identity("camera", obs.TrackID)
+	if got != nil || similarity != 0 || best != 0.62 {
+		t.Fatalf("unmatched fresh frame must clear the previous identity: student=%#v similarity=%v best=%v", got, similarity, best)
+	}
+}
+
+func TestPersonTrackerDoesNotExposeCachedIdentityInNewObservation(t *testing.T) {
+	tracker := newPersonTracker()
+	now := time.Now()
+	detection := person.Detection{Rectangle: image.Rect(100, 80, 260, 500), Score: 0.9}
+	obs := tracker.Observe("camera", []person.Detection{detection}, now)[0]
 	student := store.Student{ID: 7, StudentNo: "S007", Name: "甲"}
 	tracker.RecordFeature("camera", obs.TrackID, 0.62, &student, 0.91, now)
 
-	if tracker.NeedFeature("camera", obs.TrackID, 0.60, now.Add(150*time.Millisecond)) {
-		t.Fatal("worse face should reuse cached identity")
-	}
-	if !tracker.NeedFeature("camera", obs.TrackID, 0.72, now.Add(300*time.Millisecond)) {
-		t.Fatal("materially better face should refresh best-frame identity")
-	}
-	got, similarity, best := tracker.Identity("camera", obs.TrackID)
-	if got == nil || got.ID != student.ID || similarity != 0.91 || best != 0.62 {
-		t.Fatalf("unexpected cached identity: student=%#v similarity=%v best=%v", got, similarity, best)
+	next := tracker.Observe("camera", []person.Detection{detection}, now.Add(100*time.Millisecond))[0]
+	if next.Student != nil || next.Similarity != 0 {
+		t.Fatalf("person observation must not reuse an identity without a fresh face feature: %#v", next)
 	}
 }
 
