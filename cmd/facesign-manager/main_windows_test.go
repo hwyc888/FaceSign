@@ -168,6 +168,7 @@ func TestPotentiallyBlockingManagerActionsAreAsync(t *testing.T) {
 		idRefresh,
 		idUpgrade,
 		idInstall,
+		idUninstall,
 	} {
 		if !isAsyncActionButton(id) {
 			t.Fatalf("manager action id=%d can block the UI thread", id)
@@ -647,3 +648,19 @@ func TestCommandErrorMessageHidesInvalidWindowsCodePageOutput(t *testing.T) {
 		t.Fatalf("unexpected fallback command error: %q", message)
 	}
 }
+
+func TestUninstallPowerShellCommandWaitsForManagerAndPreservesInstallDir(t *testing.T) {
+	dir := "D:\\FaceSign Portable\\Teacher's"
+	command := uninstallPowerShellCommand(dir, 4321)
+	for _, want := range []string{
+		"Wait-Process -Id 4321 -ErrorAction SilentlyContinue",
+		"& " + powerShellLiteral(filepath.Join(dir, "scripts", "uninstall.ps1")),
+		"-InstallDir " + powerShellLiteral(dir),
+		"-RemoveProgramFiles",
+	} {
+		if !strings.Contains(command, want) {
+			t.Fatalf("uninstall command missing %q: %s", want, command)
+		}
+	}
+}
+
