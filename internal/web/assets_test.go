@@ -1071,6 +1071,38 @@ func TestRecognitionOverlayScalesAIBoxesToPreviewResolution(t *testing.T) {
 	}
 }
 
+func TestRecognitionOverlayHiddenWhenAutoRecognitionDisabled(t *testing.T) {
+	data, err := assets.ReadFile("assets/js/recognition.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(data)
+
+	drawStart := strings.Index(script, "function drawFaceOverlay(")
+	drawEnd := strings.Index(script, "\nasync function recognizeFrame", drawStart)
+	if drawStart < 0 || drawEnd <= drawStart {
+		t.Fatal("drawFaceOverlay function not found")
+	}
+	draw := script[drawStart:drawEnd]
+	clearIndex := strings.Index(draw, "ctx.clearRect(0, 0, overlay.width, overlay.height);")
+	disabledIndex := strings.Index(draw, "if (!$('#autoScan')?.checked) return;")
+	if clearIndex < 0 || disabledIndex <= clearIndex {
+		t.Fatal("face overlay must be cleared before checking whether automatic recognition is enabled")
+	}
+
+	stopStart := strings.Index(script, "function stopAutoRecognition()")
+	stopEnd := strings.Index(script, "\nasync function setAutoRecognitionEnabled", stopStart)
+	if stopStart < 0 || stopEnd <= stopStart {
+		t.Fatal("stopAutoRecognition function not found")
+	}
+	stop := script[stopStart:stopEnd]
+	uncheckIndex := strings.Index(stop, "if (checkbox) checkbox.checked = false;")
+	clearOverlayIndex := strings.Index(stop, "drawFaceOverlay([], []);")
+	if uncheckIndex < 0 || clearOverlayIndex <= uncheckIndex {
+		t.Fatal("stopping automatic recognition must immediately clear the face overlay")
+	}
+}
+
 
 func TestAdaptiveRecognitionKeepsMonitoringWhenRealtimeOverlayHidden(t *testing.T) {
 	data, err := assets.ReadFile("assets/js/camera.js")
