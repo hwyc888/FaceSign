@@ -691,7 +691,10 @@ func TestAppSettingsPersistAutoStartCheckin(t *testing.T) {
 	if settings.AutoStartCheckin {
 		t.Fatal("auto start check-in must default to disabled")
 	}
-	if err := s.UpdateAppSettings(ctx, AppSettings{AutoStartCheckin: true}); err != nil {
+	if settings.DisableLivenessDetection {
+		t.Fatal("liveness detection must remain enabled by default")
+	}
+	if err := s.UpdateAppSettings(ctx, AppSettings{AutoStartCheckin: true, DisableLivenessDetection: true}); err != nil {
 		t.Fatal(err)
 	}
 	if err := s.Close(); err != nil {
@@ -709,5 +712,8 @@ func TestAppSettingsPersistAutoStartCheckin(t *testing.T) {
 	}
 	if !settings.AutoStartCheckin {
 		t.Fatal("auto start check-in setting was not persisted")
+	}
+	if !settings.DisableLivenessDetection {
+		t.Fatal("disable-liveness setting was not persisted")
 	}
 }
