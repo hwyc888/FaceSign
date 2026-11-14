@@ -219,3 +219,43 @@ test('class API failure does not overwrite the visible error with an empty seat 
   assert.deepEqual(await openCheckinPage(false), ['classes', 'camera']);
 });
 
+function loadClassList(request) {
+  const elements = {
+    '#checkinSeatClass': {innerHTML: ''},
+    '#checkinSeatSummary': {innerHTML: ''},
+    '#checkinSeatBoard': {innerHTML: ''}
+  };
+  const toasts = [];
+  const context = vm.createContext({
+    $: selector => elements[selector] || null,
+    $$: () => [],
+    classesCache: [],
+    api: request,
+    esc: value => String(value),
+    toast: message => toasts.push(message),
+    renderCheckinSeatClassOptions() {}
+  });
+  const source = fs.readFileSync(path.join(jsDir, 'classes.js'), 'utf8');
+  const start = source.indexOf('function renderClassOptions');
+  const end = source.indexOf('async function moveClass');
+  vm.runInContext(source.slice(start, end), context);
+  return {context, elements, toasts};
+}
+
+test('class list API failure is visible in the check-in seat board', async () => {
+  const {context, elements, toasts} = loadClassList(async () => {
+    throw new Error('班级接口连接失败');
+  });
+  assert.equal(await context.loadClasses(), false);
+  assert.match(elements['#checkinSeatClass'].innerHTML, /班级列表加载失败/);
+  assert.match(elements['#checkinSeatSummary'].innerHTML, /班级列表加载失败/);
+  assert.match(elements['#checkinSeatBoard'].innerHTML, /班级接口连接失败/);
+  assert.deepEqual(toasts, ['班级接口连接失败']);
+});
+
+test('an empty class list is a successful load and can show the no-class state', async () => {
+  const {context} = loadClassList(async () => []);
+  assert.equal(await context.loadClasses(), true);
+  assert.deepEqual(context.classesCache, []);
+});
+
