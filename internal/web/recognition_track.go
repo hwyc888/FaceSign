@@ -49,7 +49,6 @@ type recognitionTrack struct {
 	Rejected         bool
 	Committed        bool
 	LowLightMode     bool
-	LowLightAutoPass  bool
 	LivenessDisabled bool
 	SpoofVotes        int
 }
@@ -104,12 +103,19 @@ func (t *recognitionTracker) Observe(sessionID string, observations []recognitio
 	for i, observation := range observations {
 		track := session.Tracks[observation.Student.ID]
 		if track != nil && track.Committed {
-			out[i] = trackDecision{
-				TrackID:        track.ID,
-				Verified:       track.Verified,
-				LivenessStatus: livenessVerifiedStatus(track),
+			if track.LivenessDisabled {
+				// A direct check-in made while liveness was disabled must never
+				// satisfy a later request after liveness has been re-enabled.
+				delete(session.Tracks, observation.Student.ID)
+				track = nil
+			} else {
+				out[i] = trackDecision{
+					TrackID:        track.ID,
+					Verified:       track.Verified,
+					LivenessStatus: livenessVerifiedStatus(track),
+				}
+				continue
 			}
-			continue
 		}
 		if !livenessObservationQualityUsable(observation) {
 			status := "光线不足或画面模糊，请调整摄像头"
@@ -187,13 +193,6 @@ func (t *recognitionTracker) Observe(sessionID string, observations []recognitio
 				average >= livenessPassThreshold &&
 				liveVotes >= livenessMinFrames-1:
 				track.Verified = true
-			// Under low light, a consistently matched face may auto-check-in when
-			// there is no usable photo/screen attack evidence. Unusable frames
-			// never reach this decision.
-			case track.LowLightMode && len(track.Scores) >= livenessMinFrames &&
-				track.SpoofVotes == 0:
-				track.Verified = true
-				track.LowLightAutoPass = true
 			case now.Sub(track.FirstSeen) >= decisionTimeout || len(track.Scores) >= maxFrames:
 				timedOut = true
 			}
@@ -319,9 +318,6 @@ func livenessObservationSpoofQualityUsable(observation recognitionObservation) b
 func livenessVerifiedStatus(track *recognitionTrack) string {
 	if track.LivenessDisabled {
 		return "活体检测已关闭"
-	}
-	if track.LowLightAutoPass {
-		return "低光自动识别通过"
 	}
 	return "活体通过"
 }
