@@ -50,9 +50,11 @@ function renderRecognition(r) {
       const attendanceMeta = f.attendance
         ? ` | 首次 ${esc(String(f.attendance.checked_at || '').slice(-8))} | 最近 ${esc(String(f.attendance.last_seen_at || f.attendance.checked_at || '').slice(-8))} | 今日 ${Number(f.attendance.recognition_count || 1)}次`
         : '';
-      const livenessText = f.liveness_status === '低光自动识别通过'
-        ? '低光自动识别'
-        : `活体 ${(Number(f.liveness_score || 0) * 100).toFixed(1)}%`;
+      const livenessText = f.liveness_status === '活体检测已关闭'
+        ? '活体检测已关闭'
+        : (f.liveness_status === '低光自动识别通过'
+          ? '低光自动识别'
+          : `活体 ${(Number(f.liveness_score || 0) * 100).toFixed(1)}%`);
       return `<div class="face-result known">
         <div class="face-title">${esc(f.student.name)} · ${f.first_checkin_today ? '签到成功' : '今日已签到'}</div>
         <div class="face-meta">${esc(f.student.student_no)} | ${esc(f.student.class_name || '-')} | 身份 ${(f.similarity * 100).toFixed(1)}% | ${livenessText} | ${qualityText}${attendanceMeta}</div>

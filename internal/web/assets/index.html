@@ -421,6 +421,22 @@
           <p class="muted camera-settings-help">关闭时仍可在签到页面手动打开摄像头和“自动识别”；离开签到页面后自动识别会停止，避免后台误签到。</p>
         </div>
 
+        <div class="card settings-secondary-card">
+          <div class="card-head">
+            <div>
+              <h2>活体检测</h2>
+              <p class="muted compact">可选择跳过活体检测，使用人脸身份比对结果直接签到。</p>
+            </div>
+            <span class="mode-pill" id="disableLivenessDetectionState">正在读取...</span>
+          </div>
+          <label class="camera-check">
+            <input id="disableLivenessDetection" type="checkbox">
+            关闭活体检测
+          </label>
+          <p class="muted camera-settings-help">开启后不再运行活体模型；已录入人脸匹配成功且画面质量达标时直接签到。</p>
+          <p class="low-light-security-note">重要：当前照片 / 屏幕防伪与活体检测共用同一个模型。关闭活体检测也会同时关闭照片 / 屏幕攻击检测；人脸身份比对和画面质量门槛仍保留。</p>
+        </div>
+
         <div class="card settings-secondary-card low-light-settings-card">
           <div class="card-head">
             <div>

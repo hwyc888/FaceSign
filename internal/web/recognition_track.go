@@ -49,8 +49,9 @@ type recognitionTrack struct {
 	Rejected         bool
 	Committed        bool
 	LowLightMode     bool
-	LowLightAutoPass bool
-	SpoofVotes       int
+	LowLightAutoPass  bool
+	LivenessDisabled bool
+	SpoofVotes        int
 }
 
 type trackDecision struct {
@@ -233,6 +234,54 @@ func (t *recognitionTracker) Observe(sessionID string, observations []recognitio
 	return out
 }
 
+func (t *recognitionTracker) IsCommitted(sessionID string, studentID int64, now time.Time) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if sessionID == "" {
+		sessionID = "default"
+	}
+	session := t.sessions[sessionID]
+	if session == nil {
+		return false
+	}
+	track := session.Tracks[studentID]
+	if track == nil {
+		return false
+	}
+	if now.Sub(track.LastSeen) > livenessTrackTTL {
+		delete(session.Tracks, studentID)
+		return false
+	}
+	track.LastSeen = now
+	return track.Committed
+}
+
+func (t *recognitionTracker) CommitDirect(sessionID string, studentID int64, now time.Time) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if sessionID == "" {
+		sessionID = "default"
+	}
+	session := t.sessions[sessionID]
+	if session == nil {
+		session = &recognitionTrackSession{Tracks: make(map[int64]*recognitionTrack)}
+		t.sessions[sessionID] = session
+	}
+	track := session.Tracks[studentID]
+	if track == nil {
+		session.NextID++
+		track = &recognitionTrack{
+			ID:        fmt.Sprintf("%s-%d", sessionID, session.NextID),
+			FirstSeen: now,
+		}
+		session.Tracks[studentID] = track
+	}
+	track.Verified = true
+	track.Committed = true
+	track.LivenessDisabled = true
+	track.LastSeen = now
+}
+
 func (t *recognitionTracker) Commit(sessionID, trackID string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
@@ -268,6 +317,9 @@ func livenessObservationSpoofQualityUsable(observation recognitionObservation) b
 }
 
 func livenessVerifiedStatus(track *recognitionTrack) string {
+	if track.LivenessDisabled {
+		return "活体检测已关闭"
+	}
 	if track.LowLightAutoPass {
 		return "低光自动识别通过"
 	}
