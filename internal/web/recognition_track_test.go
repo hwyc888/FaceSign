@@ -55,6 +55,25 @@ func TestRecognitionTrackerNormalPassesThreeModerateLiveFrames(t *testing.T) {
 	}
 }
 
+func TestRecognitionTrackerPassesWhenTwoOfThreeFramesMeetRelaxedThreshold(t *testing.T) {
+	tracker := newRecognitionTracker()
+	now := time.Now()
+	student := store.Student{ID: 22, StudentNo: "S22", Name: "阈值测试"}
+	scores := []float64{0.50, 0.65, 0.65}
+	var decision trackDecision
+	for i, score := range scores {
+		decision = tracker.Observe("camera-relaxed", []recognitionObservation{{
+			Student: student, Similarity: 0.91, LiveScore: score, Exposure: 1, Sharpness: 1,
+		}}, now.Add(time.Duration(i)*180*time.Millisecond))[0]
+		if i < 2 && decision.Verified {
+			t.Fatalf("track verified before all three frames: %#v", decision)
+		}
+	}
+	if !decision.Verified || decision.Rejected || decision.TimedOut || decision.Frames != 3 {
+		t.Fatalf("two acceptable frames with a 0.60 average should pass: %#v", decision)
+	}
+}
+
 func TestRecognitionTrackerRejectsLowLivenessInThreeFrames(t *testing.T) {
 	tracker := newRecognitionTracker()
 	now := time.Now()
@@ -102,7 +121,7 @@ func TestRecognitionTrackerStopsUncertainTrackAtMaxFrames(t *testing.T) {
 	var decision trackDecision
 	for i := 0; i < livenessMaxFrames; i++ {
 		decision = tracker.Observe("camera-max", []recognitionObservation{{
-			Student: student, Similarity: 0.90, LiveScore: 0.62, Exposure: 1, Sharpness: 1,
+			Student: student, Similarity: 0.90, LiveScore: 0.50, Exposure: 1, Sharpness: 1,
 		}}, now.Add(time.Duration(i)*150*time.Millisecond))[0]
 	}
 	if !decision.TimedOut || decision.Frames != livenessMaxFrames || decision.Verified || decision.Rejected {
