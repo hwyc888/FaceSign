@@ -8,6 +8,8 @@ import (
 	"os"
 	"sync"
 
+	"github.com/hwyc888/FaceSign/internal/inference"
+
 	ort "github.com/yalue/onnxruntime_go"
 	xdraw "golang.org/x/image/draw"
 )
@@ -16,12 +18,20 @@ const inputSize = 128
 
 var ErrInvalidFace = errors.New("invalid face crop")
 
-type Engine struct {
-	mu      sync.Mutex
+type engineWorker struct {
 	input   *ort.Tensor[float32]
 	output  *ort.Tensor[float32]
 	session *ort.AdvancedSession
 }
+
+type Engine struct {
+	mu        sync.RWMutex
+	workers   []*engineWorker
+	available chan *engineWorker
+	closed    bool
+}
+
+const engineWorkerCount = inference.MaxConcurrent
 
 func New(modelPath string) (*Engine, error) {
 	info, err := os.Stat(modelPath)
@@ -32,6 +42,22 @@ func New(modelPath string) (*Engine, error) {
 		return nil, errors.New("ONNX Runtime environment is not initialized")
 	}
 
+	engine := &Engine{available: make(chan *engineWorker, engineWorkerCount)}
+	for i := 0; i < engineWorkerCount; i++ {
+		worker, err := newEngineWorker(modelPath)
+		if err != nil {
+			for _, existing := range engine.workers {
+				existing.close()
+			}
+			return nil, fmt.Errorf("load anti-spoof worker %d: %w", i+1, err)
+		}
+		engine.workers = append(engine.workers, worker)
+		engine.available <- worker
+	}
+	return engine, nil
+}
+
+func newEngineWorker(modelPath string) (*engineWorker, error) {
 	input, err := ort.NewEmptyTensor[float32](ort.NewShape(1, 3, inputSize, inputSize))
 	if err != nil {
 		return nil, fmt.Errorf("create anti-spoof input tensor: %w", err)
@@ -41,20 +67,70 @@ func New(modelPath string) (*Engine, error) {
 		input.Destroy()
 		return nil, fmt.Errorf("create anti-spoof output tensor: %w", err)
 	}
+	options, err := ort.NewSessionOptions()
+	if err != nil {
+		output.Destroy()
+		input.Destroy()
+		return nil, fmt.Errorf("create anti-spoof session options: %w", err)
+	}
+	if err := options.SetIntraOpNumThreads(1); err != nil {
+		_ = options.Destroy()
+		output.Destroy()
+		input.Destroy()
+		return nil, fmt.Errorf("configure anti-spoof intra-op threads: %w", err)
+	}
+	if err := options.SetInterOpNumThreads(1); err != nil {
+		_ = options.Destroy()
+		output.Destroy()
+		input.Destroy()
+		return nil, fmt.Errorf("configure anti-spoof inter-op threads: %w", err)
+	}
 	session, err := ort.NewAdvancedSession(
 		modelPath,
 		[]string{"actual_input_1"},
 		[]string{"output1"},
 		[]ort.Value{input},
 		[]ort.Value{output},
-		nil,
+		options,
 	)
+	_ = options.Destroy()
 	if err != nil {
 		output.Destroy()
 		input.Destroy()
 		return nil, fmt.Errorf("load anti-spoof model: %w", err)
 	}
-	return &Engine{input: input, output: output, session: session}, nil
+	return &engineWorker{input: input, output: output, session: session}, nil
+}
+
+func (w *engineWorker) close() {
+	if w == nil {
+		return
+	}
+	if w.session != nil {
+		_ = w.session.Destroy()
+		w.session = nil
+	}
+	if w.output != nil {
+		_ = w.output.Destroy()
+		w.output = nil
+	}
+	if w.input != nil {
+		_ = w.input.Destroy()
+		w.input = nil
+	}
+}
+
+func (e *Engine) acquire() (*engineWorker, func(), error) {
+	e.mu.RLock()
+	if e.closed || e.available == nil {
+		e.mu.RUnlock()
+		return nil, nil, errors.New("anti-spoof engine is closed")
+	}
+	worker := <-e.available
+	return worker, func() {
+		e.available <- worker
+		e.mu.RUnlock()
+	}, nil
 }
 
 func (e *Engine) Close() {
@@ -63,17 +139,12 @@ func (e *Engine) Close() {
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if e.session != nil {
-		_ = e.session.Destroy()
-		e.session = nil
+	if e.closed {
+		return
 	}
-	if e.output != nil {
-		_ = e.output.Destroy()
-		e.output = nil
-	}
-	if e.input != nil {
-		_ = e.input.Destroy()
-		e.input = nil
+	e.closed = true
+	for _, worker := range e.workers {
+		worker.close()
 	}
 }
 
@@ -86,23 +157,22 @@ func (e *Engine) Score(img image.Image, faceRect image.Rectangle) (float64, erro
 		return 0, ErrInvalidFace
 	}
 
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	if e.session == nil || e.input == nil || e.output == nil {
-		return 0, errors.New("anti-spoof engine is closed")
+	worker, release, err := e.acquire()
+	if err != nil {
+		return 0, err
 	}
+	defer release()
+	releaseInference := inference.Acquire()
+	defer releaseInference()
 
 	resized := image.NewRGBA(image.Rect(0, 0, inputSize, inputSize))
 	xdraw.CatmullRom.Scale(resized, resized.Bounds(), img, crop, xdraw.Src, nil)
-	// Apply bounded gamma compensation only to underexposed crops. Keep the
-	// anti-spoof decision thresholds unchanged; this restores some usable
-	// facial detail without turning a low-confidence frame into a live vote.
 	applyLowLightCompensation(resized)
-	fillInput(e.input.GetData(), resized)
-	if err := e.session.Run(); err != nil {
+	fillInput(worker.input.GetData(), resized)
+	if err := worker.session.Run(); err != nil {
 		return 0, fmt.Errorf("run anti-spoof model: %w", err)
 	}
-	data := e.output.GetData()
+	data := worker.output.GetData()
 	if len(data) < 2 {
 		return 0, errors.New("anti-spoof model returned invalid output")
 	}
