@@ -191,23 +191,22 @@ func TestRecognitionTrackerLowLightModeStillRejectsPhotoAndScreenScores(t *testi
 	}
 }
 
-func TestRecognitionTrackerLowLightModeAutoPassesUncertainScores(t *testing.T) {
+func TestRecognitionTrackerLowLightModeDoesNotAutoPassUncertainScores(t *testing.T) {
 	tracker := newRecognitionTracker()
 	now := time.Now()
-	student := store.Student{ID: 90, StudentNo: "S90", Name: "夜间自动签到测试"}
+	student := store.Student{ID: 90, StudentNo: "S90", Name: "夜间不确定活体测试"}
 	var decision trackDecision
-	for i := 0; i < livenessMinFrames; i++ {
+	for i := 0; i < livenessLowLightMaxFrames; i++ {
 		decision = tracker.Observe("camera-low-light-uncertain", []recognitionObservation{{
 			Student: student, Similarity: 0.90, LiveScore: 0.55,
 			Exposure: 0.25, Sharpness: 0.055, LowLightMode: true,
 		}}, now.Add(time.Duration(i)*250*time.Millisecond))[0]
-		if i < livenessMinFrames-1 && decision.Verified {
-			t.Fatalf("low-light check-in happened too early: %#v", decision)
+		if decision.Verified || decision.Rejected || decision.NeedsAttendance {
+			t.Fatalf("uncertain low-light liveness must never auto-check-in: %#v", decision)
 		}
 	}
-	if !decision.Verified || decision.Rejected || !decision.NeedsAttendance ||
-		decision.LivenessStatus != "低光自动识别通过" {
-		t.Fatalf("uncertain low-light score should automatically pass: %#v", decision)
+	if !decision.TimedOut {
+		t.Fatalf("uncertain low-light liveness should time out without attendance: %#v", decision)
 	}
 }
 
@@ -227,30 +226,22 @@ func TestLowLightModeUsesRelaxedQualityFloorButKeepsNormalFloor(t *testing.T) {
 }
 
 
-func TestRecognitionTrackerLowLightBlurAutomaticallyPassesStableMatch(t *testing.T) {
+func TestRecognitionTrackerLowLightBlurDoesNotAutoPassUncertainMatch(t *testing.T) {
 	tracker := newRecognitionTracker()
 	now := time.Now()
 	student := store.Student{ID: 91, StudentNo: "S91", Name: "低光模糊测试"}
 	var decision trackDecision
-	for i := 0; i < livenessMinFrames; i++ {
+	for i := 0; i < livenessLowLightMaxFrames; i++ {
 		decision = tracker.Observe("camera-low-light-blur", []recognitionObservation{{
 			Student: student, Similarity: 0.816, LiveScore: 0.007,
 			Exposure: 0.25, Sharpness: 0.055, LowLightMode: true,
 		}}, now.Add(time.Duration(i)*200*time.Millisecond))[0]
-		if i < livenessMinFrames-1 && (decision.Verified || decision.Rejected) {
-			t.Fatalf("blurry match decided too early: %#v", decision)
+		if decision.Verified || decision.Rejected || decision.NeedsAttendance {
+			t.Fatalf("blurry low-light match must not bypass liveness: %#v", decision)
 		}
 	}
-	if !decision.Verified || decision.Rejected || !decision.NeedsAttendance {
-		t.Fatalf("blurry low-light match should automatically check in: %#v", decision)
-	}
-	tracker.Commit("camera-low-light-blur", decision.TrackID)
-	committed := tracker.Observe("camera-low-light-blur", []recognitionObservation{{
-		Student: student, Similarity: 0.82, LiveScore: 0.01,
-		Exposure: 0.25, Sharpness: 0.055, LowLightMode: true,
-	}}, now.Add(time.Second))[0]
-	if !committed.Verified || committed.NeedsAttendance || committed.Rejected {
-		t.Fatalf("committed match must not write attendance again: %#v", committed)
+	if !decision.TimedOut {
+		t.Fatalf("blurry uncertain match should time out without attendance: %#v", decision)
 	}
 }
 
@@ -306,3 +297,36 @@ func TestRecognitionTrackerLowLightSpoofNeedsClearFrames(t *testing.T) {
 		t.Fatalf("clear low-light spoof evidence must still be rejected: %#v", decision)
 	}
 }
+
+func TestRecognitionTrackerRechecksAfterLivenessIsReenabled(t *testing.T) {
+	tracker := newRecognitionTracker()
+	now := time.Now()
+	student := store.Student{ID: 95, StudentNo: "S95", Name: "开关切换测试"}
+	var decision trackDecision
+	for i := 0; i < livenessFastFrames; i++ {
+		decision = tracker.Observe("camera-toggle", []recognitionObservation{{
+			Student: student, Similarity: 0.94, LiveScore: 0.92, Exposure: 1, Sharpness: 1,
+		}}, now.Add(time.Duration(i)*180*time.Millisecond))[0]
+	}
+	if !decision.Verified {
+		t.Fatalf("initial live face should pass liveness: %#v", decision)
+	}
+	tracker.Commit("camera-toggle", decision.TrackID)
+
+	// The administrator disables liveness after a successful session, then
+	// enables it again. A direct/bypass commit must not satisfy the new check.
+	tracker.CommitDirect("camera-toggle", student.ID, now.Add(time.Second))
+	for i := 0; i < livenessFastFrames; i++ {
+		decision = tracker.Observe("camera-toggle", []recognitionObservation{{
+			Student: student, Similarity: 0.94, LiveScore: 0.08, Exposure: 1, Sharpness: 1,
+		}}, now.Add(time.Second+time.Duration(i)*180*time.Millisecond))[0]
+		if i < livenessFastFrames-1 && (decision.Verified || decision.Rejected) {
+			t.Fatalf("re-enabled liveness decided too early: %#v", decision)
+		}
+	}
+	if !decision.Rejected || decision.Verified || decision.NeedsAttendance ||
+		decision.LivenessStatus != "疑似照片/屏幕" {
+		t.Fatalf("re-enabled liveness must reject spoof frames instead of reusing bypass state: %#v", decision)
+	}
+}
+
