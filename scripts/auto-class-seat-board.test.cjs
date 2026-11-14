@@ -155,3 +155,13 @@ test('already-selected class still loads its seat board when no board has render
   assert.deepEqual(renders, ['一班']);
 });
 
+test('recognized person track selects its class when no face result is visible in the current frame', async () => {
+  const {context, select, renders} = checkinContext();
+  await context.selectCheckinSeatClassFromRecognition({
+    faces: [],
+    persons: [{track_id: 'person-1', student: {id: 7, name: '持续跟踪学生', class_name: '二班'}}]
+  });
+  assert.equal(select.value, '二班');
+  assert.deepEqual(renders, ['二班']);
+});
+
