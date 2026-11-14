@@ -9,8 +9,14 @@ async function showPage(name, options = {}) {
   $('#pageTitle').textContent = titles[name][0];
   $('#pageHint').textContent = titles[name][1];
 
-  if (name === 'checkin' && typeof enterCheckinPageAutoStart === 'function') {
-    await enterCheckinPageAutoStart();
+  if (name === 'checkin') {
+    const classesLoaded = typeof loadClasses === 'function' ? await loadClasses() : false;
+    if (classesLoaded && typeof loadCheckinSeatBoard === 'function') {
+      await loadCheckinSeatBoard();
+    }
+    if (typeof enterCheckinPageAutoStart === 'function') {
+      await enterCheckinPageAutoStart();
+    }
   }
   if (name === 'students') {
     await loadStudents();
