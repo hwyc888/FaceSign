@@ -63,6 +63,9 @@ func normalizeAttendanceTimes(lateAfter, deadline string) (string, string, error
 }
 
 func (s *Store) ListClasses(ctx context.Context) ([]Class, error) {
+	if err := s.syncExistingClasses(ctx); err != nil {
+		return nil, fmt.Errorf("sync student classes: %w", err)
+	}
 	rows, err := s.db.QueryContext(ctx, `
 		SELECT c.id,c.name,c.sort_order,c.seat_rows,c.seats_per_row,c.late_after,c.attendance_deadline,COUNT(s.id)
 		FROM classes c
