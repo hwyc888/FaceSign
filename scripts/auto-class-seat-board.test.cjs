@@ -184,3 +184,38 @@ test('manual class selection loads its seat board without any recognition result
   assert.deepEqual(renders, ['二班']);
 });
 
+async function openCheckinPage(classesLoaded) {
+  const calls = [];
+  const classList = {add() {}, remove() {}, toggle() {}};
+  const navButton = {
+    dataset: {page: 'checkin'},
+    classList,
+    addEventListener() {}
+  };
+  const page = {classList};
+  const selectors = {
+    '#page-checkin': page,
+    '#pageTitle': {textContent: ''},
+    '#pageHint': {textContent: ''}
+  };
+  const context = vm.createContext({
+    $: selector => selectors[selector],
+    $$: selector => selector === '.nav' ? [navButton] : selector === '.page' ? [page] : [],
+    titles: {checkin: ['人脸签到', '摄像头可同时识别多人并完成签到']},
+    loadClasses: async () => { calls.push('classes'); return classesLoaded; },
+    loadCheckinSeatBoard: async () => { calls.push('seat-board'); },
+    enterCheckinPageAutoStart: async () => { calls.push('camera'); }
+  });
+  vm.runInContext(fs.readFileSync(path.join(jsDir, 'navigation.js'), 'utf8'), context);
+  await context.showPage('checkin');
+  return calls;
+}
+
+test('opening check-in refreshes class list and renders seat board before camera auto-start', async () => {
+  assert.deepEqual(await openCheckinPage(true), ['classes', 'seat-board', 'camera']);
+});
+
+test('class API failure does not overwrite the visible error with an empty seat board', async () => {
+  assert.deepEqual(await openCheckinPage(false), ['classes', 'camera']);
+});
+
