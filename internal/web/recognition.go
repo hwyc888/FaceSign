@@ -532,6 +532,11 @@ func (s *Server) markAttendanceWithoutLiveness(
 	now time.Time,
 ) (*store.Attendance, bool, error) {
 	if s.tracker.IsCommitted(sessionID, student.ID, now) {
+		// Keep the track marked as a direct/bypass check-in even when the
+		// student had already passed liveness earlier in this session. If
+		// the setting is turned back on, the next frame must prove liveness
+		// again instead of reusing the committed track.
+		s.tracker.CommitDirect(sessionID, student.ID, now)
 		return nil, false, nil
 	}
 	record, created, err := s.store.MarkAttendance(r.Context(), student, similarity, now)
