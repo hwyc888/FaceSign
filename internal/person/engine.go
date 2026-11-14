@@ -10,6 +10,7 @@ import (
 	"sort"
 	"sync"
 
+	"github.com/hwyc888/FaceSign/internal/inference"
 	ort "github.com/yalue/onnxruntime_go"
 	xdraw "golang.org/x/image/draw"
 )
@@ -26,14 +27,9 @@ type Detection struct {
 	Score     float64
 }
 
-type Engine struct {
-	mu      sync.Mutex
+type engineWorker struct {
 	input   *ort.Tensor[float32]
-	output  *ort.Tensor[float32]
-	session *ort.AdvancedSession
-}
-
-func New(modelPath string) (*Engine, error) {
+	output  *ort.Tensor[float3func New(modelPath string) (*Engine, error) {
 	info, err := os.Stat(modelPath)
 	if err != nil || info.IsDir() {
 		return nil, fmt.Errorf("person detector model not found: %s", modelPath)
@@ -42,6 +38,22 @@ func New(modelPath string) (*Engine, error) {
 		return nil, errors.New("ONNX Runtime environment is not initialized")
 	}
 
+	engine := &Engine{available: make(chan *engineWorker, engineWorkerCount)}
+	for i := 0; i < engineWorkerCount; i++ {
+		worker, err := newEngineWorker(modelPath)
+		if err != nil {
+			for _, existing := range engine.workers {
+				existing.close()
+			}
+			return nil, fmt.Errorf("load person detector worker %d: %w", i+1, err)
+		}
+		engine.workers = append(engine.workers, worker)
+		engine.available <- worker
+	}
+	return engine, nil
+}
+
+func newEngineWorker(modelPath string) (*engineWorker, error) {
 	input, err := ort.NewEmptyTensor[float32](ort.NewShape(1, 3, inputSize, inputSize))
 	if err != nil {
 		return nil, fmt.Errorf("create person detector input tensor: %w", err)
@@ -51,20 +63,70 @@ func New(modelPath string) (*Engine, error) {
 		input.Destroy()
 		return nil, fmt.Errorf("create person detector output tensor: %w", err)
 	}
+	options, err := ort.NewSessionOptions()
+	if err != nil {
+		output.Destroy()
+		input.Destroy()
+		return nil, fmt.Errorf("create person detector session options: %w", err)
+	}
+	if err := options.SetIntraOpNumThreads(1); err != nil {
+		_ = options.Destroy()
+		output.Destroy()
+		input.Destroy()
+		return nil, fmt.Errorf("configure person detector intra-op threads: %w", err)
+	}
+	if err := options.SetInterOpNumThreads(1); err != nil {
+		_ = options.Destroy()
+		output.Destroy()
+		input.Destroy()
+		return nil, fmt.Errorf("configure person detector inter-op threads: %w", err)
+	}
 	session, err := ort.NewAdvancedSession(
 		modelPath,
 		[]string{"images"},
 		[]string{"output"},
 		[]ort.Value{input},
 		[]ort.Value{output},
-		nil,
+		options,
 	)
+	_ = options.Destroy()
 	if err != nil {
 		output.Destroy()
 		input.Destroy()
 		return nil, fmt.Errorf("load YOLOX person detector: %w", err)
 	}
-	return &Engine{input: input, output: output, session: session}, nil
+	return &engineWorker{input: input, output: output, session: session}, nil
+}
+
+func (w *engineWorker) close() {
+	if w == nil {
+		return
+	}
+	if w.session != nil {
+		_ = w.session.Destroy()
+		w.session = nil
+	}
+	if w.output != nil {
+		_ = w.output.Destroy()
+		w.output = nil
+	}
+	if w.input != nil {
+		_ = w.input.Destroy()
+		w.input = nil
+	}
+}
+
+func (e *Engine) acquire() (*engineWorker, func(), error) {
+	e.mu.RLock()
+	if e.closed || e.available == nil {
+		e.mu.RUnlock()
+		return nil, nil, errors.New("person detector is closed")
+	}
+	worker := <-e.available
+	return worker, func() {
+		e.available <- worker
+		e.mu.RUnlock()
+	}, nil
 }
 
 func (e *Engine) Close() {
@@ -73,17 +135,12 @@ func (e *Engine) Close() {
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if e.session != nil {
-		_ = e.session.Destroy()
-		e.session = nil
+	if e.closed {
+		return
 	}
-	if e.output != nil {
-		_ = e.output.Destroy()
-		e.output = nil
-	}
-	if e.input != nil {
-		_ = e.input.Destroy()
-		e.input = nil
+	e.closed = true
+	for _, worker := range e.workers {
+		worker.close()
 	}
 }
 
@@ -101,20 +158,22 @@ func (e *Engine) Detect(img image.Image, threshold float64) ([]Detection, error)
 		threshold = 0.95
 	}
 
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	if e.session == nil || e.input == nil || e.output == nil {
-		return nil, errors.New("person detector is closed")
+	worker, release, err := e.acquire()
+	if err != nil {
+		return nil, err
 	}
+	defer release()
+	releaseInference := inference.Acquire()
+	defer releaseInference()
 
-	ratio := fillYOLOXInput(e.input.GetData(), img)
+	ratio := fillYOLOXInput(worker.input.GetData(), img)
 	if ratio <= 0 {
 		return nil, nil
 	}
-	if err := e.session.Run(); err != nil {
+	if err := worker.session.Run(); err != nil {
 		return nil, fmt.Errorf("run YOLOX person detector: %w", err)
 	}
-	return decodePersonOutput(e.output.GetData(), ratio, img.Bounds(), threshold), nil
+	return decodePersonOutput(worker.output.GetData(), ratio, img.Bounds(), threshold), nil
 }
 
 func fillYOLOXInput(dst []float32, img image.Image) float64 {
