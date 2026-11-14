@@ -15,11 +15,12 @@ function settingsContext({
   initialSettings = null,
   cameraOpen = false
 }) {
+  let currentPageActive = pageActive;
   const checkbox = {checked: false};
   const state = {textContent: ''};
   const page = {
     classList: {
-      contains: name => name === 'active' && pageActive
+      contains: name => name === 'active' && currentPageActive
     }
   };
   const elements = {
@@ -60,7 +61,14 @@ function settingsContext({
     );
   }
 
-  return {context, apiCalls, recognitionCalls, toasts, get cameraStarts() { return cameraStarts; }};
+  return {
+    context,
+    apiCalls,
+    recognitionCalls,
+    toasts,
+    setPageActive: value => { currentPageActive = value; },
+    get cameraStarts() { return cameraStarts; }
+  };
 }
 
 test('check-in entry refreshes a stale cached setting before deciding to auto-start', async () => {
@@ -90,12 +98,19 @@ test('disabled auto-start does not open the camera or start recognition', async 
 });
 
 test('a page transition away from check-in cancels pending automatic startup', async () => {
+  let resolveSettings;
+  const pendingSettings = new Promise(resolve => {
+    resolveSettings = resolve;
+  });
   const state = settingsContext({
-    settingsResponse: {auto_start_checkin: true},
-    pageActive: false
+    settingsResponse: () => pendingSettings,
+    pageActive: true
   });
 
-  await state.context.enterCheckinPageAutoStart();
+  const startup = state.context.enterCheckinPageAutoStart();
+  state.setPageActive(false);
+  resolveSettings({auto_start_checkin: true});
+  await startup;
 
   assert.deepEqual(state.recognitionCalls, []);
 });
