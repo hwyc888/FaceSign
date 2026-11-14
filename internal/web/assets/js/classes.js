@@ -60,7 +60,7 @@ async function loadClasses() {
         }
       };
     });
-    $('[data-class-delete]').forEach(button => {
+    $$('[data-class-delete]').forEach(button => {
       button.onclick = async () => {
         const item = classesCache.find(c => Number(c.id) === Number(button.dataset.classDelete));
         if (!item) return;
