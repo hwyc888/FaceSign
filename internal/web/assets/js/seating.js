@@ -7,7 +7,19 @@ async function selectCheckinSeatClassFromRecognition(result) {
   const select = $('#checkinSeatClass');
   if (!select) return false;
   const faces = Array.isArray(result?.faces) ? result.faces : [];
-  const identified = faces.filter(face =>
+  const persons = Array.isArray(result?.persons) ? result.persons : [];
+  const identities = new Map();
+  persons.forEach(person => {
+    if (!person.student) return;
+    const id = String(person.student.id || person.student.student_no);
+    identities.set(id, {...person, matched: true});
+  });
+  faces.forEach(face => {
+    if (!face.student) return;
+    const id = String(face.student.id || face.student.student_no);
+    identities.set(id, face);
+  });
+  const identified = [...identities.values()].filter(face =>
     (face.recognized || face.matched) &&
     face.student &&
     face.status !== '疑似照片/屏幕'
