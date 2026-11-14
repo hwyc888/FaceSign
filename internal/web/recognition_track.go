@@ -49,7 +49,6 @@ type recognitionTrack struct {
 	Rejected         bool
 	Committed        bool
 	LowLightMode     bool
-	LowLightAutoPass  bool
 	LivenessDisabled bool
 	SpoofVotes        int
 }
@@ -209,13 +208,6 @@ func (t *recognitionTracker) Observe(sessionID string, observations []recognitio
 				average >= livenessPassThreshold &&
 				liveVotes >= livenessMinFrames-1:
 				track.Verified = true
-			// Under low light, a consistently matched face may auto-check-in when
-			// there is no usable photo/screen attack evidence. Unusable frames
-			// never reach this decision.
-			case track.LowLightMode && len(track.Scores) >= livenessMinFrames &&
-				track.SpoofVotes == 0:
-				track.Verified = true
-				track.LowLightAutoPass = true
 			case now.Sub(track.FirstSeen) >= decisionTimeout || len(track.Scores) >= maxFrames:
 				timedOut = true
 			}
@@ -341,9 +333,6 @@ func livenessObservationSpoofQualityUsable(observation recognitionObservation) b
 func livenessVerifiedStatus(track *recognitionTrack) string {
 	if track.LivenessDisabled {
 		return "活体检测已关闭"
-	}
-	if track.LowLightAutoPass {
-		return "低光自动识别通过"
 	}
 	return "活体通过"
 }
