@@ -128,6 +128,7 @@ function drawFaceOverlay(faces, persons = [], sourceWidth = 0, sourceHeight = 0,
   });
   const ctx = overlay.getContext('2d');
   ctx.clearRect(0, 0, overlay.width, overlay.height);
+  if (!$('#autoScan')?.checked) return;
   ctx.lineWidth = Math.max(2, overlay.width / 400);
   ctx.font = `${Math.max(18, Math.round(overlay.width / 55))}px Segoe UI, Arial`;
 
@@ -314,6 +315,7 @@ function stopAutoRecognition() {
   autoTimer = null;
   const checkbox = $('#autoScan');
   if (checkbox) checkbox.checked = false;
+  drawFaceOverlay([], []);
 }
 
 async function setAutoRecognitionEnabled(enabled) {
