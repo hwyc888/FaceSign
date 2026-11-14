@@ -16,6 +16,7 @@ const (
 	realtimeStatusRecognitionSettingKey = "realtime_status_recognition"
 	realtimeStatusReasonSettingKey      = "realtime_status_reason"
 	lowLightRecognitionModeSettingKey   = "low_light_recognition_mode"
+	disableLivenessDetectionSettingKey  = "disable_liveness_detection"
 )
 
 type AppSettings struct {
@@ -28,6 +29,7 @@ type AppSettings struct {
 	RealtimeStatusRecognition  bool `json:"realtime_status_recognition"`
 	RealtimeStatusReason       bool `json:"realtime_status_reason"`
 	LowLightRecognitionMode    bool `json:"low_light_recognition_mode"`
+	DisableLivenessDetection   bool `json:"disable_liveness_detection"`
 }
 
 func (s *Store) AppSettings(ctx context.Context) (AppSettings, error) {
@@ -67,6 +69,10 @@ func (s *Store) AppSettings(ctx context.Context) (AppSettings, error) {
 	if err != nil {
 		return AppSettings{}, err
 	}
+	disableLiveness, err := s.appSettingBool(ctx, disableLivenessDetectionSettingKey, false)
+	if err != nil {
+		return AppSettings{}, err
+	}
 	return AppSettings{
 		AutoStartCheckin:          autoStart,
 		RealtimeStatusEnabled:     realtimeStatus,
@@ -77,11 +83,16 @@ func (s *Store) AppSettings(ctx context.Context) (AppSettings, error) {
 		RealtimeStatusRecognition: recognition,
 		RealtimeStatusReason:      reason,
 		LowLightRecognitionMode:   lowLightMode,
+		DisableLivenessDetection:  disableLiveness,
 	}, nil
 }
 
 func (s *Store) LowLightRecognitionMode(ctx context.Context) (bool, error) {
 	return s.appSettingBool(ctx, lowLightRecognitionModeSettingKey, false)
+}
+
+func (s *Store) DisableLivenessDetection(ctx context.Context) (bool, error) {
+	return s.appSettingBool(ctx, disableLivenessDetectionSettingKey, false)
 }
 
 func (s *Store) appSettingBool(ctx context.Context, key string, defaultValue bool) (bool, error) {
@@ -119,6 +130,7 @@ func (s *Store) UpdateAppSettings(ctx context.Context, settings AppSettings) err
 		{realtimeStatusRecognitionSettingKey, settings.RealtimeStatusRecognition},
 		{realtimeStatusReasonSettingKey, settings.RealtimeStatusReason},
 		{lowLightRecognitionModeSettingKey, settings.LowLightRecognitionMode},
+		{disableLivenessDetectionSettingKey, settings.DisableLivenessDetection},
 	}
 	for _, item := range values {
 		value := "0"
