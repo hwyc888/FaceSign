@@ -1,33 +1,68 @@
 let seatBoardFilter = 'all';
 let lastCheckinRecognizedClass = '';
 let previousMatchedStudentIDs = new Set();
+let lastRenderedCheckinSeatClass = '';
 
-function selectCheckinSeatClassFromRecognition(result) {
+async function selectCheckinSeatClassFromRecognition(result) {
   const select = $('#checkinSeatClass');
   if (!select) return false;
   const faces = Array.isArray(result?.faces) ? result.faces : [];
-  const matched = faces.filter(face =>
+  const identified = faces.filter(face =>
     (face.recognized || face.matched) &&
-    face.student?.class_name &&
+    face.student &&
     face.status !== '疑似照片/屏幕'
   );
-  const ids = new Set(matched.map(face => String(face.student.id || face.student.student_no)));
+  const matched = identified.filter(face => String(face.student.class_name || '').trim());
+  const ids = new Set(identified.map(face => String(face.student.id || face.student.student_no)));
   const target = matched.find(face => face.recognized && face.first_checkin_today) ||
     matched.find(face => !previousMatchedStudentIDs.has(String(face.student.id || face.student.student_no))) ||
     matched.find(face => face.student.class_name === select.value) ||
     matched[0];
   previousMatchedStudentIDs = ids;
-  if (!target) return false;
+  if (!target) {
+    const missingClassStudent = identified[0];
+    if (!missingClassStudent) return false;
+    $('#checkinSeatSummary').innerHTML = '<span class="seat-stat">已识别 · 学生资料未设置班级</span>';
+    $('#checkinSeatBoard').innerHTML =
+      '<div class="seat-board-empty">已识别 ' + esc(missingClassStudent.student.name || '该学生') +
+      '，但学生资料中的所属班级为空。请在“学生管理”补齐班级资料，之后座位图会自动显示。</div>';
+    $('#checkinSeatUnassigned').classList.add('hidden');
+    lastRenderedCheckinSeatClass = '';
+    return true;
+  }
 
   const className = String(target.student.class_name).trim();
-  if (!className) return false;
   lastCheckinRecognizedClass = className;
-  // If classes are still loading, renderCheckinSeatClassOptions will select it later.
-  if (!classesCache.some(item => item.name === className) || select.value === className) return false;
-  select.value = className;
-  seatBoardFilter = 'all';
-  loadCheckinSeatBoard();
-  return true;
+  if (!classesCache.some(item => item.name === className)) {
+    try {
+      const items = await api('/api/classes');
+      classesCache = Array.isArray(items) ? items : [];
+      renderCheckinSeatClassOptions();
+    } catch (error) {
+      $('#checkinSeatSummary').innerHTML = '<span class="seat-stat">班级列表读取失败</span>';
+      $('#checkinSeatBoard').innerHTML = '<div class="seat-board-empty">' + esc(error.message) + '</div>';
+      return true;
+    }
+  }
+  if (!classesCache.some(item => item.name === className)) {
+    $('#checkinSeatSummary').innerHTML = '<span class="seat-stat">已识别 · 班级同步中断</span>';
+    $('#checkinSeatBoard').innerHTML =
+      '<div class="seat-board-empty">已识别 ' + esc(target.student.name || '该学生') +
+      '，所属班级“' + esc(className) + '”尚未出现在班级列表。请刷新页面后重试；学生和签到数据未更改。</div>';
+    return true;
+  }
+
+  if (select.value !== className) {
+    select.value = className;
+    seatBoardFilter = 'all';
+    await loadCheckinSeatBoard();
+    return true;
+  }
+  if (lastRenderedCheckinSeatClass !== className) {
+    await loadCheckinSeatBoard();
+    return true;
+  }
+  return false;
 }
 
 function renderCheckinSeatClassOptions() {
@@ -73,6 +108,7 @@ function attendanceStatusLabel(status, checkedAt, lastSeenAt, recognitionCount) 
 }
 
 function renderCheckinSeatBoard(board) {
+  lastRenderedCheckinSeatClass = String(board.class?.name || '');
   const container = $('#checkinSeatBoard');
   const summary = $('#checkinSeatSummary');
   const unassigned = $('#checkinSeatUnassigned');
@@ -166,6 +202,7 @@ async function loadCheckinSeatBoard() {
   if (!select.value) renderCheckinSeatClassOptions();
   const className = select.value;
   if (!className) {
+    lastRenderedCheckinSeatClass = '';
     $('#checkinSeatSummary').innerHTML = '<span class="seat-stat">暂无班级</span>';
     $('#checkinSeatBoard').innerHTML = '<div class="seat-board-empty">请先在设置中建立班级。</div>';
     return;
@@ -175,6 +212,7 @@ async function loadCheckinSeatBoard() {
     if (select.value === className) renderCheckinSeatBoard(board);
   } catch (e) {
     if (select.value === className) {
+      lastRenderedCheckinSeatClass = '';
       $('#checkinSeatBoard').innerHTML = '<div class="seat-board-empty">' + esc(e.message) + '</div>';
     }
   }
@@ -182,6 +220,7 @@ async function loadCheckinSeatBoard() {
 
 $('#checkinSeatClass').addEventListener('change', () => {
   lastCheckinRecognizedClass = '';
+  lastRenderedCheckinSeatClass = '';
   seatBoardFilter = 'all';
   loadCheckinSeatBoard();
 });
