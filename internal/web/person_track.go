@@ -131,18 +131,11 @@ func (t *personTracker) Observe(sessionID string, detections []person.Detection,
 		track.Score = detection.Score
 		track.LastSeen = now
 
-		var student *store.Student
-		if track.Student != nil {
-			copy := *track.Student
-			student = &copy
-		}
 		out[i] = personTrackObservation{
 			TrackID:     track.ID,
 			Rectangle:   track.Rectangle,
 			Score:       track.Score,
 			BestQuality: track.BestQuality,
-			Student:     student,
-			Similarity:  track.Similarity,
 		}
 	}
 	return out
@@ -161,10 +154,12 @@ func (t *personTracker) NeedFeature(sessionID, trackID string, quality float64, 
 	if track.LastFeatureAt.IsZero() {
 		return true
 	}
-	if track.Student == nil {
-		return quality >= track.BestQuality+bestFaceImprovement || now.Sub(track.LastFeatureAt) >= unknownFaceRetryInterval
+	if track.Student != nil {
+		// Recompute a known identity on every usable face frame. A person box can
+		// be reused by a different person entering the same camera position.
+		return true
 	}
-	return quality >= track.BestQuality+bestFaceImprovement
+	return quality >= track.BestQuality+bestFaceImprovement || now.Sub(track.LastFeatureAt) >= unknownFaceRetryInterval
 }
 
 func (t *personTracker) RecordFeature(sessionID, trackID string, quality float64, student *store.Student, similarity float64, now time.Time) {
@@ -177,18 +172,14 @@ func (t *personTracker) RecordFeature(sessionID, trackID string, quality float64
 	if track == nil {
 		return
 	}
-	previousBest := track.BestQuality
 	track.LastFeatureAt = now
 	if quality > track.BestQuality {
 		track.BestQuality = quality
 	}
 	if student == nil {
+		track.Student = nil
+		track.Similarity = 0
 		return
-	}
-	if track.Student != nil && track.Student.ID != student.ID {
-		if quality < previousBest+0.08 || similarity < track.Similarity+0.03 {
-			return
-		}
 	}
 	copy := *student
 	track.Student = &copy
