@@ -14,6 +14,7 @@ const (
 	livenessMinFrames         = 3
 	livenessMaxFrames         = 3
 	livenessFrameThreshold    = 0.60
+	livenessFastPassThreshold = 0.80
 	livenessPassThreshold     = 0.68
 	livenessSpoofThreshold    = 0.40
 	livenessDecisionTimeout   = 1200 * time.Millisecond
