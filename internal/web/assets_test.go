@@ -1281,6 +1281,53 @@ func TestHostUSBCameraAndMobileCardLayoutAreEmbedded(t *testing.T) {
 }
 
 
+func TestResponsiveLayoutCoversDesktopTabletAndPhone(t *testing.T) {
+	htmlData, err := assets.ReadFile("assets/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(htmlData), `name="viewport" content="width=device-width,initial-scale=1"`) {
+		t.Fatal("responsive viewport metadata is missing")
+	}
+
+	cssData, err := assets.ReadFile("assets/style.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	css := string(cssData)
+	for _, want := range []string{
+		"width:min(1920px,calc(100% - 230px))",
+		"padding:clamp(18px,2vw,32px)",
+		"@media(max-width:1024px)",
+		"table,tbody,tr,td{display:block;width:100%}",
+		"content:attr(data-label)",
+		"@media(max-width:640px)",
+		".nav[data-page=\"checkin\"]:after{content:\"签到\"}",
+		"grid-template-columns:repeat(7,minmax(0,1fr))",
+		"bottom:0;",
+	} {
+		if !strings.Contains(css, want) {
+			t.Fatalf("responsive layout CSS missing %q", want)
+		}
+	}
+
+	coreData, err := assets.ReadFile("assets/js/core.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	core := string(coreData)
+	for _, want := range []string{
+		"function decorateResponsiveTables",
+		"new MutationObserver",
+		"cell.dataset.label = labels[index] || ''",
+	} {
+		if !strings.Contains(core, want) {
+			t.Fatalf("responsive table card labels missing %q", want)
+		}
+	}
+}
+
+
 func TestClosingCameraReleasesServerCapture(t *testing.T) {
 	cameraData, err := assets.ReadFile("assets/js/camera.js")
 	if err != nil { t.Fatal(err) }
