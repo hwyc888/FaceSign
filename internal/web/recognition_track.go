@@ -233,6 +233,49 @@ func (t *recognitionTracker) Observe(sessionID string, observations []recognitio
 	return out
 }
 
+func (t *recognitionTracker) IsCommitted(sessionID string, studentID int64, now time.Time) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if sessionID == "" {
+		sessionID = "default"
+	}
+	session := t.sessions[sessionID]
+	if session == nil {
+		return false
+	}
+	track := session.Tracks[studentID]
+	if track == nil {
+		return false
+	}
+	track.LastSeen = now
+	return track.Committed
+}
+
+func (t *recognitionTracker) CommitDirect(sessionID string, studentID int64, now time.Time) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if sessionID == "" {
+		sessionID = "default"
+	}
+	session := t.sessions[sessionID]
+	if session == nil {
+		session = &recognitionTrackSession{Tracks: make(map[int64]*recognitionTrack)}
+		t.sessions[sessionID] = session
+	}
+	track := session.Tracks[studentID]
+	if track == nil {
+		session.NextID++
+		track = &recognitionTrack{
+			ID:        fmt.Sprintf("%s-%d", sessionID, session.NextID),
+			FirstSeen: now,
+		}
+		session.Tracks[studentID] = track
+	}
+	track.Verified = true
+	track.Committed = true
+	track.LastSeen = now
+}
+
 func (t *recognitionTracker) Commit(sessionID, trackID string) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
