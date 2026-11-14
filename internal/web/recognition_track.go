@@ -49,8 +49,9 @@ type recognitionTrack struct {
 	Rejected         bool
 	Committed        bool
 	LowLightMode     bool
-	LowLightAutoPass bool
-	SpoofVotes       int
+	LowLightAutoPass  bool
+	LivenessDisabled bool
+	SpoofVotes        int
 }
 
 type trackDecision struct {
@@ -277,6 +278,7 @@ func (t *recognitionTracker) CommitDirect(sessionID string, studentID int64, now
 	}
 	track.Verified = true
 	track.Committed = true
+	track.LivenessDisabled = true
 	track.LastSeen = now
 }
 
@@ -315,6 +317,9 @@ func livenessObservationSpoofQualityUsable(observation recognitionObservation) b
 }
 
 func livenessVerifiedStatus(track *recognitionTrack) string {
+	if track.LivenessDisabled {
+		return "活体检测已关闭"
+	}
 	if track.LowLightAutoPass {
 		return "低光自动识别通过"
 	}
