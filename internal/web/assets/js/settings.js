@@ -121,7 +121,7 @@ $('#disableLivenessDetection').addEventListener('change', async event => {
     renderAppSettings();
     toast(disabled
       ? '活体检测已关闭：匹配成功后直接签到，照片/屏幕防伪也会关闭'
-      : '活体检测已恢复：重新启用活体与照片/屏幕防伪');
+      : '活体检测已恢复：照片/屏幕视频回放防伪重新启用，需重新完成连续帧活体验证');
   } catch (e) {
     event.target.checked = !disabled;
     toast(e.message);

@@ -425,7 +425,7 @@
           <div class="card-head">
             <div>
               <h2>活体检测</h2>
-              <p class="muted compact">可选择跳过活体检测，使用人脸身份比对结果直接签到。</p>
+              <p class="muted compact">开启时必须通过连续帧活体验证；关闭时跳过活体与照片 / 屏幕回放防伪，身份匹配且画面质量达标即可签到。</p>
             </div>
             <span class="mode-pill" id="disableLivenessDetectionState">正在读取...</span>
           </div>
@@ -433,8 +433,8 @@
             <input id="disableLivenessDetection" type="checkbox">
             关闭活体检测
           </label>
-          <p class="muted camera-settings-help">开启后不再运行活体模型；已录入人脸匹配成功且画面质量达标时直接签到。</p>
-          <p class="low-light-security-note">重要：当前照片 / 屏幕防伪与活体检测共用同一个模型。关闭活体检测也会同时关闭照片 / 屏幕攻击检测；人脸身份比对和画面质量门槛仍保留。</p>
+          <p class="muted camera-settings-help">勾选“关闭活体检测”后，已录入人脸身份匹配成功且画面质量达标即可签到，不再运行活体模型。</p>
+          <p class="low-light-security-note">安全说明：未勾选时，活体与照片 / 屏幕视频回放防伪生效，必须取得足够的活体证据；夜间低光模式也不会因身份匹配稳定而绕过活体验证。勾选关闭后会同时跳过活体和照片 / 屏幕防伪，但仍保留人脸身份比对与画面质量门槛。</p>
         </div>
 
         <div class="card settings-secondary-card low-light-settings-card">
