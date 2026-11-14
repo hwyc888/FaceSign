@@ -512,8 +512,10 @@ func TestAutoStartCheckinSettingUIAndFlow(t *testing.T) {
 		"setCameraRealtimeStatusFields(realtimeFields)",
 		"enterCheckinPageAutoStart",
 		"setAutoRecognitionEnabled(true)",
-		"if (cameraOpen)",
-		"await startCamera()",
+		"checkinAutoStartPromise",
+		"await loadAppSettings(true)",
+		"classList.contains('active')",
+		"automatic check-in startup failed",
 	} {
 		if !strings.Contains(settingsScript, want) {
 			t.Fatalf("auto check-in setting logic missing %q", want)
@@ -533,6 +535,17 @@ func TestAutoStartCheckinSettingUIAndFlow(t *testing.T) {
 		if !strings.Contains(navigationScript, want) {
 			t.Fatalf("check-in page lifecycle missing %q", want)
 		}
+	}
+	if strings.Index(navigationScript, "enterCheckinPageAutoStart()") > strings.Index(navigationScript, "await loadClasses()") {
+		t.Fatal("check-in auto-start must not wait for class and seat-board loading")
+	}
+
+	bootData, err := assets.ReadFile("assets/js/boot.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(bootData), "enterCheckinPageAutoStart();") {
+		t.Fatal("app startup must use the shared check-in auto-start flow")
 	}
 
 	recognitionData, err := assets.ReadFile("assets/js/recognition.js")

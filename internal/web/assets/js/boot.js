@@ -1,9 +1,7 @@
 function startAuthenticatedApp() {
   loadCameraConfigs().catch(() => {});
   loadRecognitionStats().catch(() => {});
-  loadAppSettings()
-    .then(() => enterCheckinPageAutoStart())
-    .catch(() => {});
+  enterCheckinPageAutoStart();
   $('#attendanceDay').value = today();
   updateCameraControls();
   loadHealth();

@@ -211,12 +211,12 @@ async function openCheckinPage(classesLoaded) {
   return calls;
 }
 
-test('opening check-in refreshes class list and renders seat board before camera auto-start', async () => {
-  assert.deepEqual(await openCheckinPage(true), ['classes', 'seat-board', 'camera']);
+test('opening check-in starts camera auto-start without waiting for class and seat board', async () => {
+  assert.deepEqual(await openCheckinPage(true), ['camera', 'classes', 'seat-board']);
 });
 
-test('class API failure does not overwrite the visible error with an empty seat board', async () => {
-  assert.deepEqual(await openCheckinPage(false), ['classes', 'camera']);
+test('class API failure does not block check-in camera auto-start', async () => {
+  assert.deepEqual(await openCheckinPage(false), ['camera', 'classes']);
 });
 
 function loadClassList(request) {
