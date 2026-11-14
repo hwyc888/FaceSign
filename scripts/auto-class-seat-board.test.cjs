@@ -142,7 +142,7 @@ test('recognized student without a class shows a specific data warning instead o
     faces: [{recognized: true, student: {id: 8, name: '未分班学生', class_name: ''}}]
   });
   assert.equal(handled, true);
-  assert.equal(select.value, '一班');
+  assert.equal(select.value, '');
   assert.match(elements['#checkinSeatBoard'].innerHTML, /未分班学生/);
   assert.match(elements['#checkinSeatBoard'].innerHTML, /学生管理/);
   assert.equal(calls.length, 0);
