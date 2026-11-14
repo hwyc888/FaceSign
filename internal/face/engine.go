@@ -178,7 +178,8 @@ func (e *Engine) DetectAll(img image.Image, threshold float64) ([]Detection, err
 	return out, nil
 }
 
-// func (e *Engine) Feature(img image.Image, detected Detection) ([]float32, error) {
+// Feature extracts one SFace embedding from a previously detected face.
+func (e *Engine) Feature(img image.Image, detected Detection) ([]float32, error) {
 	if img == nil || detected.Rectangle.Empty() {
 		return nil, ErrNoFace
 	}
@@ -198,7 +199,8 @@ func (e *Engine) DetectAll(img image.Image, threshold float64) ([]Detection, err
 	return append([]float32(nil), feature...), nil
 }
 
-// func (e *Engine) ExtractAll(img image.Image, threshold float64) ([]Detection, error) {
+// ExtractAll returns one embedding for every face detected in the same frame.
+func (e *Engine) ExtractAll(img image.Image, threshold float64) ([]Detection, error) {
 	detections, err := e.DetectAll(img, threshold)
 	if err != nil {
 		return nil, err
