@@ -425,16 +425,16 @@
           <div class="card-head">
             <div>
               <h2>活体检测</h2>
-              <p class="muted compact">可选择跳过活体检测，使用人脸身份比对结果直接签到。</p>
+              <p class="muted compact">开启时必须通过活体验证；疑似照片、视频或屏幕攻击，以及无法确认的活体结果，均不签到。</p>
             </div>
-            <span class="mode-pill" id="disableLivenessDetectionState">正在读取...</span>
+            <span class="mode-pill" id="livenessDetectionState">正在读取...</span>
           </div>
           <label class="camera-check">
-            <input id="disableLivenessDetection" type="checkbox">
-            关闭活体检测
+            <input id="enableLivenessDetection" type="checkbox" checked>
+            启用活体检测
           </label>
-          <p class="muted camera-settings-help">开启后不再运行活体模型；已录入人脸匹配成功且画面质量达标时直接签到。</p>
-          <p class="low-light-security-note">重要：当前照片 / 屏幕防伪与活体检测共用同一个模型。关闭活体检测也会同时关闭照片 / 屏幕攻击检测；人脸身份比对和画面质量门槛仍保留。</p>
+          <p class="muted camera-settings-help">关闭后跳过活体与照片/视频/屏幕防伪模型；已录入人脸身份匹配成功且画面质量达标即可签到。</p>
+          <p class="low-light-security-note">安全说明：照片/视频/屏幕防伪与活体检测共用同一个模型。开启时疑似攻击或不确定结果不会通过；关闭时该模型不运行，但人脸身份比对和画面质量门槛仍保留。被动模型无法保证识别所有高质量重放。</p>
         </div>
 
         <div class="card settings-secondary-card low-light-settings-card">
@@ -449,8 +449,8 @@
             <input id="lowLightRecognitionMode" type="checkbox">
             启用夜间低光识别模式
           </label>
-          <p class="muted camera-settings-help">开启后会适度放宽人脸画面质量门槛，并在连续匹配的人脸没有可信照片/屏幕攻击证据时自动签到，无需管理员核验。</p>
-          <p class="low-light-security-note">安全说明：清晰画面检测到照片 / 屏幕攻击仍拒绝签到；过暗或模糊到无法获得有效人脸时继续等待改善画面。普通摄像头无法保证拦截所有伪造照片或屏幕。</p>
+          <p class="muted camera-settings-help">开启后适度放宽人脸画面质量门槛，但仍必须通过活体检测才能签到；活体结果不确定时不会自动放行。</p>
+          <p class="low-light-security-note">安全说明：疑似照片 / 视频 / 屏幕攻击仍拒绝签到；过暗或模糊导致无法确认活体时继续等待改善画面。普通摄像头无法保证拦截所有高质量重放。</p>
         </div>
 
         <div class="card settings-secondary-card">
