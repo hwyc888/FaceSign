@@ -54,8 +54,10 @@ function settingsContext({
 
   vm.runInContext(settingsSource.slice(0, settingsEnd), context);
   if (initialSettings) {
-    context.appSettingsCache = initialSettings;
-    context.appSettingsLoaded = true;
+    vm.runInContext(
+      'appSettingsCache = ' + JSON.stringify(initialSettings) + '; appSettingsLoaded = true;',
+      context
+    );
   }
 
   return {context, apiCalls, recognitionCalls, toasts, get cameraStarts() { return cameraStarts; }};
