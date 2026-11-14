@@ -49,7 +49,10 @@ func TestNonMaximumSuppressionKeepsHighestScore(t *testing.T) {
 
 
 func TestPersonEngineWorkerCountMatchesBoundedInferenceCapacity(t *testing.T) {
-	if engineWorkerCount != inference.MaxConcurrent || engineWorkerCount != 2 {
-		t.Fatalf("person engine workers=%d, inference capacity=%d; want both 2", engineWorkerCount, inference.MaxConcurrent)
+	if engineWorkerCount != inference.MaxConcurrent {
+		t.Fatalf("person engine workers=%d, inference capacity=%d; want them to match", engineWorkerCount, inference.MaxConcurrent)
+	}
+	if engineWorkerCount != 2 {
+		t.Fatalf("person engine workers=%d; want 2", engineWorkerCount)
 	}
 }
