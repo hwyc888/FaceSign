@@ -68,8 +68,10 @@ type trackDecision struct {
 }
 
 type recognitionTrackSession struct {
-	Tracks map[int64]*recognitionTrack
-	NextID uint64
+	Tracks                 map[int64]*recognitionTrack
+	NextID                 uint64
+	LivenessModeSet        bool
+	LivenessDisabled       bool
 }
 
 type recognitionTracker struct {
@@ -79,6 +81,26 @@ type recognitionTracker struct {
 
 func newRecognitionTracker() *recognitionTracker {
 	return &recognitionTracker{sessions: make(map[string]*recognitionTrackSession)}
+}
+
+// SetLivenessMode starts a fresh verification cycle whenever the session setting changes.
+func (t *recognitionTracker) SetLivenessMode(sessionID string, disabled bool) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+
+	if sessionID == "" {
+		sessionID = "default"
+	}
+	session := t.sessions[sessionID]
+	if session == nil {
+		session = &recognitionTrackSession{Tracks: make(map[int64]*recognitionTrack)}
+		t.sessions[sessionID] = session
+	}
+	if session.LivenessModeSet && session.LivenessDisabled != disabled {
+		session.Tracks = make(map[int64]*recognitionTrack)
+	}
+	session.LivenessModeSet = true
+	session.LivenessDisabled = disabled
 }
 
 func (t *recognitionTracker) Observe(sessionID string, observations []recognitionObservation, now time.Time) []trackDecision {
