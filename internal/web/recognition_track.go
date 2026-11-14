@@ -11,18 +11,17 @@ import (
 const (
 	livenessTrackTTL          = 3 * time.Second
 	livenessFastFrames        = 3
-	livenessMinFrames         = 4
-	livenessMaxFrames         = 6
+	livenessMinFrames         = 3
+	livenessMaxFrames         = 3
 	livenessFrameThreshold    = 0.60
-	livenessFastPassThreshold = 0.80
 	livenessPassThreshold     = 0.68
 	livenessSpoofThreshold    = 0.40
-	livenessDecisionTimeout   = 2 * time.Second
+	livenessDecisionTimeout   = 1200 * time.Millisecond
 	livenessMinExposureScore  = 0.35
 	livenessMinSharpnessScore = 0.08
 
-	livenessLowLightMaxFrames        = 8
-	livenessLowLightDecisionTimeout = 3500 * time.Millisecond
+	livenessLowLightMaxFrames        = 3
+	livenessLowLightDecisionTimeout = 1200 * time.Millisecond
 	livenessLowLightMinExposureScore = 0.20
 	livenessLowLightMinSharpnessScore = 0.05
 	// Blurry low-light frames cannot reliably prove a photo/screen attack.
@@ -200,13 +199,9 @@ func (t *recognitionTracker) Observe(sessionID string, observations []recognitio
 			case len(track.Scores) >= livenessFastFrames &&
 				average < livenessSpoofThreshold && track.SpoofVotes >= 2:
 				track.Rejected = true
-			case len(track.Scores) >= livenessFastFrames &&
-				average >= livenessFastPassThreshold &&
-				liveVotes == len(track.Scores):
-				track.Verified = true
 			case len(track.Scores) >= livenessMinFrames &&
 				average >= livenessPassThreshold &&
-				liveVotes >= livenessMinFrames-1:
+				liveVotes >= 2:
 				track.Verified = true
 			case now.Sub(track.FirstSeen) >= decisionTimeout || len(track.Scores) >= maxFrames:
 				timedOut = true
@@ -352,18 +347,7 @@ func livenessDecisionTimeoutForMode(lowLightMode bool) time.Duration {
 }
 
 func requiredLivenessFrames(track *recognitionTrack) int {
-	if track == nil || track.Verified || track.Rejected {
-		return livenessFastFrames
-	}
-	maxFrames := livenessMaxFramesForMode(track.LowLightMode)
-	switch {
-	case len(track.Scores) >= livenessMinFrames:
-		return maxFrames
-	case len(track.Scores) >= livenessFastFrames:
-		return livenessMinFrames
-	default:
-		return livenessFastFrames
-	}
+	return livenessMinFrames
 }
 
 func maxLivenessFloat(a, b float64) float64 {
