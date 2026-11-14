@@ -8,6 +8,8 @@ import (
 	"os"
 	"sync"
 
+	"github.com/hwyc888/FaceSign/internal/inference"
+
 	onnxface "github.com/leandroveronezi/go-onnxface"
 	"github.com/leandroveronezi/go-onnxface/sface"
 	"github.com/leandroveronezi/go-onnxface/yunet"
@@ -25,11 +27,19 @@ type Detection struct {
 	Feature   []float32
 }
 
-type Engine struct {
-	mu         sync.Mutex
+type engineWorker struct {
 	detector   *yunet.Detector
 	recognizer *sface.Recognizer
 }
+
+type Engine struct {
+	mu        sync.RWMutex
+	workers   []*engineWorker
+	available chan *engineWorker
+	closed    bool
+}
+
+const engineWorkerCount = inference.MaxConcurrent
 
 func New(runtimePath, detectorModel, recognizerModel string) (*Engine, error) {
 	for label, path := range map[string]string{
@@ -45,18 +55,58 @@ func New(runtimePath, detectorModel, recognizerModel string) (*Engine, error) {
 	if err := onnxface.InitEnvironment(runtimePath); err != nil {
 		return nil, fmt.Errorf("initialize ONNX Runtime: %w", err)
 	}
-	detector, err := yunet.NewDetector(detectorModel)
-	if err != nil {
+
+	engine := &Engine{available: make(chan *engineWorker, engineWorkerCount)}
+	cleanup := func() {
+		for _, worker := range engine.workers {
+			worker.close()
+		}
 		_ = onnxface.CloseEnvironment()
-		return nil, fmt.Errorf("load YuNet model: %w", err)
 	}
-	recognizer, err := sface.NewRecognizer(recognizerModel)
-	if err != nil {
-		detector.Close()
-		_ = onnxface.CloseEnvironment()
-		return nil, fmt.Errorf("load SFace model: %w", err)
+	for i := 0; i < engineWorkerCount; i++ {
+		detector, err := yunet.NewDetector(detectorModel)
+		if err != nil {
+			cleanup()
+			return nil, fmt.Errorf("load YuNet worker %d: %w", i+1, err)
+		}
+		recognizer, err := sface.NewRecognizer(recognizerModel)
+		if err != nil {
+			detector.Close()
+			cleanup()
+			return nil, fmt.Errorf("load SFace worker %d: %w", i+1, err)
+		}
+		worker := &engineWorker{detector: detector, recognizer: recognizer}
+		engine.workers = append(engine.workers, worker)
+		engine.available <- worker
 	}
-	return &Engine{detector: detector, recognizer: recognizer}, nil
+	return engine, nil
+}
+
+func (w *engineWorker) close() {
+	if w == nil {
+		return
+	}
+	if w.recognizer != nil {
+		w.recognizer.Close()
+		w.recognizer = nil
+	}
+	if w.detector != nil {
+		w.detector.Close()
+		w.detector = nil
+	}
+}
+
+func (e *Engine) acquire() (*engineWorker, func(), error) {
+	e.mu.RLock()
+	if e.closed || e.available == nil {
+		e.mu.RUnlock()
+		return nil, nil, errors.New("face engine is closed")
+	}
+	worker := <-e.available
+	return worker, func() {
+		e.available <- worker
+		e.mu.RUnlock()
+	}, nil
 }
 
 func (e *Engine) Close() {
@@ -65,13 +115,12 @@ func (e *Engine) Close() {
 	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
-	if e.recognizer != nil {
-		e.recognizer.Close()
-		e.recognizer = nil
+	if e.closed {
+		return
 	}
-	if e.detector != nil {
-		e.detector.Close()
-		e.detector = nil
+	e.closed = true
+	for _, worker := range e.workers {
+		worker.close()
 	}
 	_ = onnxface.CloseEnvironment()
 }
@@ -101,11 +150,16 @@ func (e *Engine) DetectAll(img image.Image, threshold float64) ([]Detection, err
 		threshold = 0.99
 	}
 
-	e.mu.Lock()
-	defer e.mu.Unlock()
+	worker, release, err := e.acquire()
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+	releaseInference := inference.Acquire()
+	defer releaseInference()
 
-	e.detector.ScoreThreshold = float32(threshold)
-	faces, err := e.detector.Detect(img)
+	worker.detector.ScoreThreshold = float32(threshold)
+	faces, err := worker.detector.Detect(img)
 	if err != nil {
 		return nil, fmt.Errorf("detect face: %w", err)
 	}
@@ -124,23 +178,27 @@ func (e *Engine) DetectAll(img image.Image, threshold float64) ([]Detection, err
 	return out, nil
 }
 
-// Feature extracts one SFace embedding from a previously detected face.
-func (e *Engine) Feature(img image.Image, detected Detection) ([]float32, error) {
+// func (e *Engine) Feature(img image.Image, detected Detection) ([]float32, error) {
 	if img == nil || detected.Rectangle.Empty() {
 		return nil, ErrNoFace
 	}
-	e.mu.Lock()
-	defer e.mu.Unlock()
-	aligned := e.recognizer.Align(img, detected.Landmarks)
-	feature, err := e.recognizer.Feature(aligned)
+	worker, release, err := e.acquire()
+	if err != nil {
+		return nil, err
+	}
+	defer release()
+	releaseInference := inference.Acquire()
+	defer releaseInference()
+
+	aligned := worker.recognizer.Align(img, detected.Landmarks)
+	feature, err := worker.recognizer.Feature(aligned)
 	if err != nil {
 		return nil, fmt.Errorf("extract face feature: %w", err)
 	}
 	return append([]float32(nil), feature...), nil
 }
 
-// ExtractAll returns one embedding for every face detected in the same frame.
-func (e *Engine) ExtractAll(img image.Image, threshold float64) ([]Detection, error) {
+// func (e *Engine) ExtractAll(img image.Image, threshold float64) ([]Detection, error) {
 	detections, err := e.DetectAll(img, threshold)
 	if err != nil {
 		return nil, err
@@ -186,11 +244,16 @@ func (e *Engine) extractDetection(img image.Image, threshold float64, enrollment
 		threshold = 0.99
 	}
 
-	e.mu.Lock()
-	defer e.mu.Unlock()
+	worker, release, err := e.acquire()
+	if err != nil {
+		return Detection{}, err
+	}
+	defer release()
+	releaseInference := inference.Acquire()
+	defer releaseInference()
 
-	e.detector.ScoreThreshold = float32(threshold)
-	faces, err := e.detector.Detect(img)
+	worker.detector.ScoreThreshold = float32(threshold)
+	faces, err := worker.detector.Detect(img)
 	if err != nil {
 		return Detection{}, fmt.Errorf("detect face: %w", err)
 	}
@@ -209,8 +272,8 @@ func (e *Engine) extractDetection(img image.Image, threshold float64, enrollment
 		}
 	}
 
-	aligned := e.recognizer.Align(img, selected.Landmarks)
-	feature, err := e.recognizer.Feature(aligned)
+	aligned := worker.recognizer.Align(img, selected.Landmarks)
+	feature, err := worker.recognizer.Feature(aligned)
 	if err != nil {
 		return Detection{}, fmt.Errorf("extract face feature: %w", err)
 	}
