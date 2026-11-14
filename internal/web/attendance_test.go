@@ -103,12 +103,20 @@ func TestMarkAttendanceWithoutLivenessWritesOnlyOncePerSession(t *testing.T) {
 		t.Fatalf("same recognition session should not write attendance twice: record=%#v created=%v", second, created)
 	}
 
+	third, created, err := s.markAttendanceWithoutLiveness(req, "disabled-session", student, 0.94, now.Add(livenessTrackTTL+time.Second))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if third == nil || created {
+		t.Fatalf("expired recognition track should resume normal attendance updates: record=%#v created=%v", third, created)
+	}
+
 	records, err := st.ListAttendance(ctx, now.Format("2006-01-02"))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(records) != 1 || records[0].StudentID != student.ID || records[0].RecognitionCount != 1 {
-		t.Fatalf("direct check-in should create one attendance event per session: %#v", records)
+	if len(records) != 1 || records[0].StudentID != student.ID || records[0].RecognitionCount != 2 {
+		t.Fatalf("direct check-in should deduplicate active sessions and resume after track expiry: %#v", records)
 	}
 }
 
