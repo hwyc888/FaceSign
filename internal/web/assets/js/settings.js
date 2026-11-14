@@ -73,19 +73,33 @@ async function loadAppSettings(force = false) {
   return appSettingsCache;
 }
 
-async function enterCheckinPageAutoStart() {
-  await loadAppSettings();
-  try {
-    if (appSettingsCache.auto_start_checkin) {
-      await setAutoRecognitionEnabled(true);
-      return;
+let checkinAutoStartPromise = null;
+
+function enterCheckinPageAutoStart() {
+  if (checkinAutoStartPromise) return checkinAutoStartPromise;
+
+  const run = (async () => {
+    try {
+      // Refresh the saved value on every entry so another tab cannot leave this
+      // page using a stale auto-start setting.
+      await loadAppSettings(true);
+      if (!$('#page-checkin')?.classList.contains('active')) return;
+
+      if (appSettingsCache.auto_start_checkin) {
+        await setAutoRecognitionEnabled(true);
+      }
+    } catch (error) {
+      console.warn('automatic check-in startup failed', error);
+      if ($('#page-checkin')?.classList.contains('active')) {
+        toast('自动启动签到失败：' + (error?.message || error));
+      }
     }
-    if (cameraOpen) {
-      await startCamera();
-    }
-  } catch {
-    // Camera startup already reports its own HTTPS/device error.
-  }
+  })();
+
+  checkinAutoStartPromise = run.finally(() => {
+    checkinAutoStartPromise = null;
+  });
+  return checkinAutoStartPromise;
 }
 
 $('#autoStartCheckin').addEventListener('change', async event => {
