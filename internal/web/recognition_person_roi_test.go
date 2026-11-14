@@ -2,6 +2,7 @@ package web
 
 import (
 	"image"
+	"math"
 	"testing"
 
 	"github.com/hwyc888/FaceSign/internal/person"
@@ -54,6 +55,28 @@ func TestPersonHeadROIStaysNearUpperBody(t *testing.T) {
 	}
 	if roi.Min.X < bounds.Min.X || roi.Max.X > bounds.Max.X {
 		t.Fatalf("ROI exceeds bounds: %v", roi)
+	}
+}
+
+func TestPersonHeadROIIncludesLowerHeadForLeaningPeople(t *testing.T) {
+	bounds := image.Rect(0, 0, 660, 404)
+	personRect := image.Rect(12, 12, 348, 400)
+	roi := personHeadROI(personRect, bounds)
+	minBottom := personRect.Min.Y + int(math.Round(float64(personRect.Dy())*0.55))
+	if roi.Max.Y < minBottom {
+		t.Fatalf("head ROI cuts off lower head area: roi=%v want bottom >= %d", roi, minBottom)
+	}
+	if roi.Empty() || !roi.In(bounds) {
+		t.Fatalf("head ROI is invalid: %v", roi)
+	}
+}
+
+func TestPersonROIFaceThresholdIsMoreTolerantThanFullFrame(t *testing.T) {
+	if got := personROIFaceThreshold(0.80); got != 0.65 {
+		t.Fatalf("ROI face threshold=%v, want 0.65", got)
+	}
+	if got := personROIFaceThreshold(0.60); got != 0.60 {
+		t.Fatalf("ROI threshold must not raise a configured lower threshold: got %v", got)
 	}
 }
 
