@@ -94,6 +94,12 @@ func TestMarkAttendanceWithoutLivenessWritesOnlyOncePerSession(t *testing.T) {
 	if first == nil || !created {
 		t.Fatalf("first direct check-in was not recorded: record=%#v created=%v", first, created)
 	}
+	committed := s.tracker.Observe("disabled-session", []recognitionObservation{{
+		Student: student, Similarity: 0.93, LiveScore: 0.9, Exposure: 1, Sharpness: 1,
+	}}, now.Add(100*time.Millisecond))[0]
+	if !committed.Verified || committed.NeedsAttendance || committed.LivenessStatus != "活体检测已关闭" {
+		t.Fatalf("direct check-in track should retain disabled-liveness status: %#v", committed)
+	}
 
 	second, created, err := s.markAttendanceWithoutLiveness(req, "disabled-session", student, 0.93, now.Add(200*time.Millisecond))
 	if err != nil {
