@@ -210,15 +210,19 @@ function applySeatBoardFilter() {
   });
 }
 
-async function loadCheckinSeatBoard() {
+async function loadCheckinSeatBoard(selectedClassName = '') {
   const select = $('#checkinSeatClass');
   if (!select) return;
-  if (!select.value) renderCheckinSeatClassOptions();
-  const className = select.value;
+  let className = String(selectedClassName || select.value || '').trim();
+  if (!className) {
+    renderCheckinSeatClassOptions();
+    className = String(select.value || '').trim();
+  }
   if (!className) {
     lastRenderedCheckinSeatClass = '';
     $('#checkinSeatSummary').innerHTML = '<span class="seat-stat">暂无班级</span>';
-    $('#checkinSeatBoard').innerHTML = '<div class="seat-board-empty">请先在设置中建立班级。</div>';
+    $('#checkinSeatBoard').innerHTML = '<div class="seat-board-empty">当前没有可选择的班级，请先在设置中创建班级。</div>';
+    $('#checkinSeatUnassigned').classList.add('hidden');
     return;
   }
   try {
@@ -227,17 +231,32 @@ async function loadCheckinSeatBoard() {
   } catch (e) {
     if (select.value === className) {
       lastRenderedCheckinSeatClass = '';
+      $('#checkinSeatSummary').innerHTML = '<span class="seat-stat">班级座位图加载失败</span>';
       $('#checkinSeatBoard').innerHTML = '<div class="seat-board-empty">' + esc(e.message) + '</div>';
     }
   }
 }
 
-$('#checkinSeatClass').addEventListener('change', () => {
+async function handleCheckinSeatClassChange() {
+  const select = $('#checkinSeatClass');
+  if (!select) return;
+  const className = String(select.value || '').trim();
   lastCheckinRecognizedClass = '';
   lastRenderedCheckinSeatClass = '';
   seatBoardFilter = 'all';
-  loadCheckinSeatBoard();
-});
+  if (!className) {
+    $('#checkinSeatSummary').innerHTML = '<span class="seat-stat">请选择班级查看签到状态</span>';
+    $('#checkinSeatBoard').innerHTML = '<div class="seat-board-empty">请选择班级查看座位图。</div>';
+    $('#checkinSeatUnassigned').classList.add('hidden');
+    return;
+  }
+  $('#checkinSeatSummary').innerHTML = '<span class="seat-stat">正在加载 ' + esc(className) + ' 班签到状态...</span>';
+  $('#checkinSeatBoard').innerHTML = '<div class="seat-board-empty">正在加载 ' + esc(className) + ' 班座位图...</div>';
+  $('#checkinSeatUnassigned').classList.add('hidden');
+  await loadCheckinSeatBoard(className);
+}
+
+$('#checkinSeatClass').addEventListener('change', handleCheckinSeatClassChange);
 
 setInterval(() => {
   const select = $('#checkinSeatClass');
