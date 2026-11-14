@@ -363,16 +363,13 @@ func (s *Server) recognizePreparedImage(
 			verifiedCount++
 			matchedCount++
 			verifiedStudentIDs = append(verifiedStudentIDs, student.ID)
-			if !s.tracker.IsCommitted(sessionID, student.ID, now) {
-				record, created, err := s.store.MarkAttendance(r.Context(), student, match.Similarity, now)
-				if err != nil {
-					writeError(w, http.StatusInternalServerError, err)
-					return
-				}
-				result.Attendance = &record
-				result.FirstCheckinToday = created
-				s.tracker.CommitDirect(sessionID, student.ID, now)
+			record, created, err := s.markAttendanceWithoutLiveness(r, sessionID, student, match.Similarity, now)
+			if err != nil {
+				writeError(w, http.StatusInternalServerError, err)
+				return
 			}
+			result.Attendance = record
+			result.FirstCheckinToday = created
 			if pIndex, ok := personIndex[result.TrackID]; ok {
 				personResults[pIndex].Status = result.Status
 			}
@@ -525,6 +522,24 @@ func (s *Server) recognizePreparedImage(
 		}
 	}
 	writeJSON(w, http.StatusOK, response)
+}
+
+func (s *Server) markAttendanceWithoutLiveness(
+	r *http.Request,
+	sessionID string,
+	student store.Student,
+	similarity float64,
+	now time.Time,
+) (*store.Attendance, bool, error) {
+	if s.tracker.IsCommitted(sessionID, student.ID, now) {
+		return nil, false, nil
+	}
+	record, created, err := s.store.MarkAttendance(r.Context(), student, similarity, now)
+	if err != nil {
+		return nil, false, err
+	}
+	s.tracker.CommitDirect(sessionID, student.ID, now)
+	return &record, created, nil
 }
 
 func boxFromRectangle(rect image.Rectangle) faceBox {
