@@ -27,6 +27,8 @@ async function selectCheckinSeatClassFromRecognition(result) {
       '<div class="seat-board-empty">已识别 ' + esc(missingClassStudent.student.name || '该学生') +
       '，但学生资料中的所属班级为空。请在“学生管理”补齐班级资料，之后座位图会自动显示。</div>';
     $('#checkinSeatUnassigned').classList.add('hidden');
+    lastCheckinRecognizedClass = '';
+    select.value = '';
     lastRenderedCheckinSeatClass = '';
     return true;
   }
