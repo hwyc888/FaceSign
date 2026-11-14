@@ -76,6 +76,24 @@ func TestPhotoImportUI(t *testing.T) {
 }
 
 
+func TestCheckinSeatBoardFitsAvailableWidth(t *testing.T) {
+	cssData, err := assets.ReadFile("assets/style.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	css := string(cssData)
+	for _, want := range []string{
+		".seat-board{display:grid;gap:12px;overflow:auto;min-width:0;width:100%}",
+		".seat-row{display:grid;grid-template-columns:64px minmax(0,1fr);gap:10px;align-items:stretch;min-width:0;width:100%}",
+		".seat-row-cells{display:grid;grid-template-columns:repeat(var(--seats-per-row),minmax(104px,1fr));gap:8px;min-width:calc(var(--seats-per-row) * 104px);width:100%}",
+	} {
+		if !strings.Contains(css, want) {
+			t.Fatalf("check-in seat board width rule missing %q", want)
+		}
+	}
+}
+
+
 func TestSeatBoardUI(t *testing.T) {
 	data, err := assets.ReadFile("assets/index.html")
 	if err != nil {
