@@ -210,9 +210,11 @@ async function recognizeFrame(options = {}) {
     if (r?.skipped && r?.busy) return r;
     completedRecognition = true;
     renderRecognition(r);
+    const classChanged = typeof selectCheckinSeatClassFromRecognition === 'function' &&
+      selectCheckinSeatClassFromRecognition(r);
     if ((r.verified_count || r.recognized_count || 0) > 0) {
       loadToday();
-      if (typeof loadCheckinSeatBoard === 'function') loadCheckinSeatBoard();
+      if (!classChanged && typeof loadCheckinSeatBoard === 'function') loadCheckinSeatBoard();
     }
     return r;
   } catch (e) {
