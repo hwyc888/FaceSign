@@ -1,4 +1,34 @@
 let seatBoardFilter = 'all';
+let lastCheckinRecognizedClass = '';
+let previousMatchedStudentIDs = new Set();
+
+function selectCheckinSeatClassFromRecognition(result) {
+  const select = $('#checkinSeatClass');
+  if (!select) return false;
+  const faces = Array.isArray(result?.faces) ? result.faces : [];
+  const matched = faces.filter(face =>
+    (face.recognized || face.matched) &&
+    face.student?.class_name &&
+    face.status !== '疑似照片/屏幕'
+  );
+  const ids = new Set(matched.map(face => String(face.student.id || face.student.student_no)));
+  const target = matched.find(face => face.recognized && face.first_checkin_today) ||
+    matched.find(face => !previousMatchedStudentIDs.has(String(face.student.id || face.student.student_no))) ||
+    matched.find(face => face.student.class_name === select.value) ||
+    matched[0];
+  previousMatchedStudentIDs = ids;
+  if (!target) return false;
+
+  const className = String(target.student.class_name).trim();
+  if (!className) return false;
+  lastCheckinRecognizedClass = className;
+  // If classes are still loading, renderCheckinSeatClassOptions will select it later.
+  if (!classesCache.some(item => item.name === className) || select.value === className) return false;
+  select.value = className;
+  seatBoardFilter = 'all';
+  loadCheckinSeatBoard();
+  return true;
+}
 
 function renderCheckinSeatClassOptions() {
   const select = $('#checkinSeatClass');
@@ -6,7 +36,9 @@ function renderCheckinSeatClassOptions() {
   const current = select.value;
   select.innerHTML = '<option value="">请选择班级</option>' +
     classesCache.map(item => `<option value="${esc(item.name)}">${esc(item.name)}</option>`).join('');
-  if (classesCache.some(item => item.name === current)) {
+  if (classesCache.some(item => item.name === lastCheckinRecognizedClass)) {
+    select.value = lastCheckinRecognizedClass;
+  } else if (classesCache.some(item => item.name === current)) {
     select.value = current;
   } else if (classesCache.length) {
     select.value = classesCache[0].name;
@@ -140,13 +172,16 @@ async function loadCheckinSeatBoard() {
   }
   try {
     const board = await api('/api/attendance/seats?day=' + encodeURIComponent(today()) + '&class_name=' + encodeURIComponent(className));
-    renderCheckinSeatBoard(board);
+    if (select.value === className) renderCheckinSeatBoard(board);
   } catch (e) {
-    $('#checkinSeatBoard').innerHTML = '<div class="seat-board-empty">' + esc(e.message) + '</div>';
+    if (select.value === className) {
+      $('#checkinSeatBoard').innerHTML = '<div class="seat-board-empty">' + esc(e.message) + '</div>';
+    }
   }
 }
 
 $('#checkinSeatClass').addEventListener('change', () => {
+  lastCheckinRecognizedClass = '';
   seatBoardFilter = 'all';
   loadCheckinSeatBoard();
 });
