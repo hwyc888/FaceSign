@@ -3,6 +3,8 @@ package person
 import (
 	"image"
 	"testing"
+
+	"github.com/hwyc888/FaceSign/internal/inference"
 )
 
 func TestDecodePersonOutputFindsPerson(t *testing.T) {
@@ -42,5 +44,12 @@ func TestNonMaximumSuppressionKeepsHighestScore(t *testing.T) {
 	}
 	if got[0].Score != 0.91 {
 		t.Fatalf("highest score was not kept first: %#v", got)
+	}
+}
+
+
+func TestPersonEngineWorkerCountMatchesBoundedInferenceCapacity(t *testing.T) {
+	if engineWorkerCount != inference.MaxConcurrent || engineWorkerCount != 2 {
+		t.Fatalf("person engine workers=%d, inference capacity=%d; want both 2", engineWorkerCount, inference.MaxConcurrent)
 	}
 }
