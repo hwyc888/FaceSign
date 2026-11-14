@@ -1487,3 +1487,44 @@ func TestLowLightRecognitionUIHasNoManualAttendanceAction(t *testing.T) {
 		t.Fatal("unused manual review button styling remains")
 	}
 }
+
+func TestDisableLivenessDetectionSettingUI(t *testing.T) {
+	index, err := assets.ReadFile("assets/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		`id="disableLivenessDetection"`,
+		`id="disableLivenessDetectionState"`,
+		"关闭活体检测",
+		"照片 / 屏幕防伪",
+		"人脸身份比对和画面质量门槛仍保留",
+	} {
+		if !strings.Contains(string(index), want) {
+			t.Fatalf("disable-liveness setting UI missing %q", want)
+		}
+	}
+
+	settingsData, err := assets.ReadFile("assets/js/settings.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"disable_liveness_detection",
+		"disableLivenessDetection",
+		"活体检测已关闭：匹配成功后直接签到",
+	} {
+		if !strings.Contains(string(settingsData), want) {
+			t.Fatalf("disable-liveness setting handler missing %q", want)
+		}
+	}
+
+	recognitionData, err := assets.ReadFile("assets/js/recognition.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(recognitionData), "f.liveness_status === '活体检测已关闭'") {
+		t.Fatal("recognition UI does not show that liveness detection is disabled")
+	}
+}
+
