@@ -13,7 +13,6 @@ permissions:
 
 env:
   ORT_VERSION: '1.26.0'
-  FFMPEG_SERIES: '8.1'
 
 jobs:
   build-windows:
@@ -155,31 +154,19 @@ jobs:
 
       - name: Bundle FFmpeg RTSP runtime
         shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
         run: |
-          $headers = @{
-            Authorization = "Bearer $env:GH_TOKEN"
-            Accept = 'application/vnd.github+json'
-            'X-GitHub-Api-Version' = '2022-11-28'
-          }
-          $release = Invoke-RestMethod -Headers $headers -Uri 'https://api.github.com/repos/BtbN/FFmpeg-Builds/releases/latest'
-          $seriesPattern = [regex]::Escape($env:FFMPEG_SERIES)
-          $asset = $release.assets |
-            Where-Object {
-              $_.name -match "(?i)^ffmpeg-n$seriesPattern(?:[.-][a-z0-9]+)*(?:-latest)?-win64-lgpl-$seriesPattern\.zip$" -and
-              $_.name -notmatch '(?i)-shared-'
-            } |
+          $releaseBase = 'https://github.com/FFmpeg-Builds/FFmpeg-Builds/releases/download/autobuild-2026-11-12-15-40'
+          $assetName = 'ffmpeg-n8.1.3-35-gf1acb0a266-win64-lgpl-8.1.zip'
+          $checksumsFile = Join-Path $env:RUNNER_TEMP 'facesign-ffmpeg-checksums.sha256'
+          Invoke-WebRequest -Uri "$releaseBase/checksums.sha256" -OutFile $checksumsFile -UseBasicParsing
+          $checksumLine = Get-Content $checksumsFile |
+            Where-Object { $_ -match ("^([0-9a-fA-F]{64})\s+\*?" + [regex]::Escape($assetName) + "$") } |
             Select-Object -First 1
-          if (-not $asset) {
-            $available = ($release.assets | Where-Object { $_.name -match '(?i)win64.*lgpl' } | Select-Object -ExpandProperty name) -join ', '
-            throw "Compatible FFmpeg $env:FFMPEG_SERIES win64 LGPL static asset not found. Available: $available"
-          }
-          if ($asset.digest -notmatch '^sha256:([0-9a-fA-F]{64})$') { throw "FFmpeg asset does not expose a SHA-256 digest: $($asset.digest)" }
-          $expectedHash = $matches[1].ToUpperInvariant()
+          if (-not $checksumLine) { throw "Pinned FFmpeg checksum not found for $assetName" }
+          $expectedHash = [regex]::Match($checksumLine, '^([0-9a-fA-F]{64})').Groups[1].Value.ToUpperInvariant()
 
           $ffmpegZip = Join-Path $env:RUNNER_TEMP 'facesign-ffmpeg.zip'
-          Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $ffmpegZip -UseBasicParsing
+          Invoke-WebRequest -Uri "$releaseBase/$assetName" -OutFile $ffmpegZip -UseBasicParsing
           $actualHash = (Get-FileHash $ffmpegZip -Algorithm SHA256).Hash
           if ($actualHash -ne $expectedHash) {
             throw "FFmpeg archive checksum mismatch: expected $expectedHash got $actualHash"
@@ -198,7 +185,7 @@ jobs:
           @"
           FaceSign bundles an FFmpeg 8.1 LGPL Windows runtime for RTSP H.264/H.265 decoding.
           Build source: https://github.com/BtbN/FFmpeg-Builds
-          Asset: $($asset.name)
+          Asset: $assetName
           Asset SHA-256: $expectedHash
           FFmpeg source/license information: https://ffmpeg.org/
           "@ | Set-Content -Path 'dist\licenses\FFMPEG_NOTICE.txt' -Encoding UTF8
