@@ -8,7 +8,9 @@ if ([string]::IsNullOrWhiteSpace($InstallDir)) {
 }
 $InstallDir = [IO.Path]::GetFullPath($InstallDir)
 $driveRoot = [IO.Path]::GetPathRoot($InstallDir)
-if ([string]::Equals($InstallDir.TrimEnd('\','/'), $driveRoot.TrimEnd('\','/'), [StringComparison]::OrdinalIgnoreCase)) {
+$trimmedInstallDir = $InstallDir.TrimEnd([char[]]@('\','/'))
+$trimmedDriveRoot = $driveRoot.TrimEnd([char[]]@('\','/'))
+if ([string]::Equals($trimmedInstallDir, $trimmedDriveRoot, [StringComparison]::OrdinalIgnoreCase)) {
   throw 'Refusing to uninstall from a drive root.'
 }
 if ($RemoveProgramFiles) {
