@@ -306,3 +306,51 @@ func TestRecognitionTrackerLowLightSpoofNeedsClearFrames(t *testing.T) {
 		t.Fatalf("clear low-light spoof evidence must still be rejected: %#v", decision)
 	}
 }
+
+func TestRecognitionTrackerResetsWhenLivenessIsReEnabled(t *testing.T) {
+	tracker := newRecognitionTracker()
+	now := time.Now()
+	student := store.Student{ID: 101, StudentNo: "S101", Name: "开关切换测试"}
+
+	tracker.SetLivenessMode("camera-toggle", true)
+	tracker.CommitDirect("camera-toggle", student.ID, now)
+	disabled := tracker.Observe("camera-toggle", []recognitionObservation{{
+		Student: student, Similarity: 0.95, LiveScore: 0.01, Exposure: 1, Sharpness: 1,
+	}}, now.Add(100*time.Millisecond))[0]
+	if !disabled.Verified || disabled.NeedsAttendance || disabled.LivenessStatus != "活体检测已关闭" {
+		t.Fatalf("disabled mode should keep direct check-in committed: %#v", disabled)
+	}
+
+	tracker.SetLivenessMode("camera-toggle", false)
+	reenabled := tracker.Observe("camera-toggle", []recognitionObservation{{
+		Student: student, Similarity: 0.95, LiveScore: 0.01, Exposure: 1, Sharpness: 1,
+	}}, now.Add(200*time.Millisecond))[0]
+	if reenabled.Verified || reenabled.Rejected || reenabled.Frames != 1 ||
+		reenabled.LivenessStatus != "活体验证中" {
+		t.Fatalf("re-enabling liveness must discard the disabled-mode pass and start fresh verification: %#v", reenabled)
+	}
+}
+
+func TestRecognitionTrackerResetsPendingFramesWhenLivenessIsDisabled(t *testing.T) {
+	tracker := newRecognitionTracker()
+	now := time.Now()
+	student := store.Student{ID: 102, StudentNo: "S102", Name: "反向开关测试"}
+
+	tracker.SetLivenessMode("camera-toggle-reverse", false)
+	first := tracker.Observe("camera-toggle-reverse", []recognitionObservation{{
+		Student: student, Similarity: 0.95, LiveScore: 0.70, Exposure: 1, Sharpness: 1,
+	}}, now)[0]
+	if first.Frames != 1 || first.Verified {
+		t.Fatalf("first enabled frame should remain pending: %#v", first)
+	}
+
+	tracker.SetLivenessMode("camera-toggle-reverse", true)
+	tracker.CommitDirect("camera-toggle-reverse", student.ID, now.Add(100*time.Millisecond))
+	disabled := tracker.Observe("camera-toggle-reverse", []recognitionObservation{{
+		Student: student, Similarity: 0.95, LiveScore: 0.01, Exposure: 1, Sharpness: 1,
+	}}, now.Add(200*time.Millisecond))[0]
+	if !disabled.Verified || disabled.NeedsAttendance || disabled.LivenessStatus != "活体检测已关闭" {
+		t.Fatalf("disabling liveness should use the direct-check-in state: %#v", disabled)
+	}
+}
+
