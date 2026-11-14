@@ -166,6 +166,11 @@ func (s *Server) recognizePreparedImage(
 		s.logger.Warn("read low-light recognition setting failed; using normal mode", "error", settingsErr)
 		lowLightMode = false
 	}
+	disableLivenessDetection, livenessSettingsErr := s.store.DisableLivenessDetection(r.Context())
+	if livenessSettingsErr != nil {
+		s.logger.Warn("read liveness detection setting failed; keeping liveness enabled", "error", livenessSettingsErr)
+		disableLivenessDetection = false
+	}
 	qualityThreshold := minRecognitionFaceQuality
 	if lowLightMode {
 		qualityThreshold = 0.38
@@ -328,6 +333,12 @@ func (s *Server) recognizePreparedImage(
 		}
 	}
 
+	verifiedCount := 0
+	pendingCount := 0
+	timeoutCount := 0
+	spoofCount := 0
+	matchedCount := 0
+	verifiedStudentIDs := make([]int64, 0, len(selected))
 	observations := make([]recognitionObservation, 0, len(selected))
 	observationDetectionIndexes := make([]int, 0, len(selected))
 	for _, match := range selected {
@@ -343,6 +354,29 @@ func (s *Server) recognizePreparedImage(
 			personResults[pIndex].Similarity = match.Similarity
 			personResults[pIndex].BestFaceQuality = result.BestQuality
 			personResults[pIndex].Status = "活体验证中"
+		}
+
+		if disableLivenessDetection {
+			result.Recognized = true
+			result.Status = "签到通过"
+			result.LivenessStatus = "活体检测已关闭"
+			verifiedCount++
+			matchedCount++
+			verifiedStudentIDs = append(verifiedStudentIDs, student.ID)
+			if !s.tracker.IsCommitted(sessionID, student.ID, now) {
+				record, created, err := s.store.MarkAttendance(r.Context(), student, match.Similarity, now)
+				if err != nil {
+					writeError(w, http.StatusInternalServerError, err)
+					return
+				}
+				result.Attendance = &record
+				result.FirstCheckinToday = created
+				s.tracker.CommitDirect(sessionID, student.ID, now)
+			}
+			if pIndex, ok := personIndex[result.TrackID]; ok {
+				personResults[pIndex].Status = result.Status
+			}
+			continue
 		}
 
 		score, err := s.liveness.Score(img, detections[match.DetectionIndex].Rectangle)
@@ -368,12 +402,6 @@ func (s *Server) recognizePreparedImage(
 	}
 
 	decisions := s.tracker.Observe(sessionID, observations, now)
-	verifiedCount := 0
-	pendingCount := 0
-	timeoutCount := 0
-	spoofCount := 0
-	matchedCount := 0
-	verifiedStudentIDs := make([]int64, 0, len(decisions))
 	for i, decision := range decisions {
 		detectionIndex := observationDetectionIndexes[i]
 		result := &results[detectionIndex]
@@ -462,6 +490,7 @@ func (s *Server) recognizePreparedImage(
 		"threshold":               s.matchThreshold,
 		"face_quality_threshold":  qualityThreshold,
 		"low_light_mode_enabled":  lowLightMode,
+		"liveness_detection_disabled": disableLivenessDetection,
 		"liveness_threshold":      livenessPassThreshold,
 		"liveness_fast_threshold": livenessFastPassThreshold,
 		"liveness_fast_frames":    livenessFastFrames,
