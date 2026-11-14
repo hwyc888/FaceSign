@@ -9,7 +9,7 @@ function renderClassOptions(selected = '') {
 async function loadClasses() {
   try {
     const items = await api('/api/classes');
-    classesCache = items;
+    classesCache = Array.isArray(items) ? items : [];
     renderClassOptions($('#modalClassName') ? $('#modalClassName').value : '');
     if (typeof renderCheckinSeatClassOptions === 'function') renderCheckinSeatClassOptions();
     const seatClassSelect = $('#seatArrangementClass');
@@ -23,7 +23,7 @@ async function loadClasses() {
     }
 
     const body = $('#classesBody');
-    if (!body) return;
+    if (!body) return true;
     body.innerHTML = items.map((item, index) => `
       <tr>
         <td>${index + 1}</td>
@@ -60,7 +60,7 @@ async function loadClasses() {
         }
       };
     });
-    $$('[data-class-delete]').forEach(button => {
+    $('[data-class-delete]').forEach(button => {
       button.onclick = async () => {
         const item = classesCache.find(c => Number(c.id) === Number(button.dataset.classDelete));
         if (!item) return;
@@ -77,8 +77,16 @@ async function loadClasses() {
         }
       };
     });
+    return true;
   } catch (e) {
     toast(e.message);
+    const select = $('#checkinSeatClass');
+    const summary = $('#checkinSeatSummary');
+    const board = $('#checkinSeatBoard');
+    if (select) select.innerHTML = '<option value="">班级列表加载失败</option>';
+    if (summary) summary.innerHTML = '<span class="seat-stat">班级列表加载失败</span>';
+    if (board) board.innerHTML = '<div class="seat-board-empty">' + esc(e.message) + '</div>';
+    return false;
   }
 }
 
