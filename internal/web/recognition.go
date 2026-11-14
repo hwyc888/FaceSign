@@ -229,17 +229,8 @@ func (s *Server) recognizePreparedImage(
 		}
 
 		if quality.Score < qualityThreshold {
-			if student, similarity, best := s.personTracker.Identity(sessionID, result.TrackID); student != nil {
-				result.Matched = true
-				result.Student = student
-				result.Similarity = similarity
-				result.BestQuality = best
-				if pIndex, ok := personIndex[result.TrackID]; ok {
-					personResults[pIndex].Student = student
-					personResults[pIndex].Similarity = similarity
-					personResults[pIndex].BestFaceQuality = best
-				}
-			}
+			// Do not reuse a prior person's cached identity on a low-quality frame.
+			// The current face must produce a fresh embedding before it can be named.
 			results[i] = result
 			continue
 		}
