@@ -210,8 +210,9 @@ async function recognizeFrame(options = {}) {
     if (r?.skipped && r?.busy) return r;
     completedRecognition = true;
     renderRecognition(r);
-    const classChanged = typeof selectCheckinSeatClassFromRecognition === 'function' &&
-      selectCheckinSeatClassFromRecognition(r);
+    const classChanged = typeof selectCheckinSeatClassFromRecognition === 'function'
+      ? await selectCheckinSeatClassFromRecognition(r)
+      : false;
     if ((r.verified_count || r.recognized_count || 0) > 0) {
       loadToday();
       if (!classChanged && typeof loadCheckinSeatBoard === 'function') loadCheckinSeatBoard();

@@ -31,7 +31,10 @@ function checkinContext(names = ['一班', '二班'], request = async url => ({
     setInterval: () => 0
   });
   vm.runInContext(fs.readFileSync(path.join(jsDir, 'seating.js'), 'utf8'), context);
-  context.renderCheckinSeatBoard = board => renders.push(board.class.name);
+  context.renderCheckinSeatBoard = board => {
+    vm.runInContext('lastRenderedCheckinSeatClass = ' + JSON.stringify(board.class.name), context);
+    renders.push(board.class.name);
+  };
   return {context, elements, calls, renders, select: elements['#checkinSeatClass']};
 }
 
@@ -41,34 +44,34 @@ const face = (id, className, extras = {}) => ({
 
 test('matched student selects and loads the corresponding class without a manual choice', async () => {
   const {context, select, calls, renders} = checkinContext();
-  assert.equal(context.selectCheckinSeatClassFromRecognition({faces: [face(2, '二班')]}), true);
+  assert.equal(await context.selectCheckinSeatClassFromRecognition({faces: [face(2, '二班')]}), true);
   assert.equal(select.value, '二班');
-  await new Promise(resolve => setImmediate(resolve));
   assert.equal(calls.length, 1);
   assert.deepEqual(renders, ['二班']);
-  assert.equal(context.selectCheckinSeatClassFromRecognition({faces: [face(2, '二班')]}), false);
+  assert.equal(await context.selectCheckinSeatClassFromRecognition({faces: [face(2, '二班')]}), false);
   assert.equal(calls.length, 1);
 });
 
 test('switches for a newly arrived student but stays stable when two classes remain visible', async () => {
-  const {context, select, calls} = checkinContext();
-  assert.equal(context.selectCheckinSeatClassFromRecognition({faces: [face(1, '一班')]}), false);
-  assert.equal(context.selectCheckinSeatClassFromRecognition({faces: [face(1, '一班'), face(2, '二班')]}), true);
+  const {context, select, calls, renders} = checkinContext();
+  assert.equal(await context.selectCheckinSeatClassFromRecognition({faces: [face(1, '一班')]}), true);
+  assert.deepEqual(renders, ['一班']);
+  assert.equal(await context.selectCheckinSeatClassFromRecognition({faces: [face(1, '一班'), face(2, '二班')]}), true);
   assert.equal(select.value, '二班');
-  assert.equal(context.selectCheckinSeatClassFromRecognition({faces: [face(1, '一班'), face(2, '二班')]}), false);
+  assert.equal(await context.selectCheckinSeatClassFromRecognition({faces: [face(1, '一班'), face(2, '二班')]}), false);
   assert.equal(select.value, '二班');
-  assert.equal(calls.length, 1);
+  assert.equal(calls.length, 2);
 });
 
-test('prioritizes a newly signed-in student when multiple classes are recognized', () => {
+test('prioritizes a newly signed-in student when multiple classes are recognized', async () => {
   const {context, select} = checkinContext();
-  context.selectCheckinSeatClassFromRecognition({faces: [face(1, '一班'), face(2, '二班', {recognized: true, first_checkin_today: true})]});
+  await context.selectCheckinSeatClassFromRecognition({faces: [face(1, '一班'), face(2, '二班', {recognized: true, first_checkin_today: true})]});
   assert.equal(select.value, '二班');
 });
 
-test('unregistered or rejected photo cannot switch classes', () => {
+test('unregistered or rejected photo cannot switch classes', async () => {
   const {context, select, calls} = checkinContext();
-  context.selectCheckinSeatClassFromRecognition({faces: [
+  await context.selectCheckinSeatClassFromRecognition({faces: [
     {matched: false, student: {id: 2, class_name: '二班'}},
     face(3, '二班', {status: '疑似照片/屏幕'})
   ]});
@@ -76,12 +79,17 @@ test('unregistered or rejected photo cannot switch classes', () => {
   assert.equal(calls.length, 0);
 });
 
-test('recognition before class options finish loading is applied on class refresh', () => {
-  const {context, select} = checkinContext([]);
-  assert.equal(context.selectCheckinSeatClassFromRecognition({faces: [face(2, '二班')]}), false);
-  context.classesCache.push({name: '一班'}, {name: '二班'});
-  context.renderCheckinSeatClassOptions();
+test('recognition refreshes class options when the class list has not loaded yet', async () => {
+  const {context, select, calls, renders} = checkinContext([]);
+  context.api = async url => {
+    calls.push(url);
+    if (url === '/api/classes') return [{name: '一班'}, {name: '二班'}];
+    return {class: {name: '二班'}};
+  };
+  assert.equal(await context.selectCheckinSeatClassFromRecognition({faces: [face(2, '二班')]}), true);
   assert.equal(select.value, '二班');
+  assert.equal(calls[0], '/api/classes');
+  assert.deepEqual(renders, ['二班']);
   select.value = '一班';
   select.change();
   context.renderCheckinSeatClassOptions();
@@ -127,3 +135,33 @@ test('recognition flow calls automatic class selection before attendance refresh
   assert.equal(attendance, 1);
   assert.equal(refreshed, 0, 'class switch already triggered the only seat-board refresh');
 });
+
+test('recognized student without a class shows a specific data warning instead of asking to create a class', async () => {
+  const {context, select, elements, calls} = checkinContext();
+  const handled = await context.selectCheckinSeatClassFromRecognition({
+    faces: [{recognized: true, student: {id: 8, name: '未分班学生', class_name: ''}}]
+  });
+  assert.equal(handled, true);
+  assert.equal(select.value, '');
+  assert.match(elements['#checkinSeatBoard'].innerHTML, /未分班学生/);
+  assert.match(elements['#checkinSeatBoard'].innerHTML, /学生管理/);
+  assert.equal(calls.length, 0);
+});
+
+test('already-selected class still loads its seat board when no board has rendered', async () => {
+  const {context, calls, renders} = checkinContext();
+  assert.equal(await context.selectCheckinSeatClassFromRecognition({faces: [face(1, '一班')]}), true);
+  assert.equal(calls.length, 1);
+  assert.deepEqual(renders, ['一班']);
+});
+
+test('recognized person track selects its class when no face result is visible in the current frame', async () => {
+  const {context, select, renders} = checkinContext();
+  await context.selectCheckinSeatClassFromRecognition({
+    faces: [],
+    persons: [{track_id: 'person-1', student: {id: 7, name: '持续跟踪学生', class_name: '二班'}}]
+  });
+  assert.equal(select.value, '二班');
+  assert.deepEqual(renders, ['二班']);
+});
+

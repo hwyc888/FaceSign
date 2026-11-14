@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"path/filepath"
 	"testing"
 	"time"
@@ -123,6 +124,38 @@ func TestMarkAttendanceWithoutLivenessWritesOnlyOncePerSession(t *testing.T) {
 	}
 	if len(records) != 1 || records[0].StudentID != student.ID || records[0].RecognitionCount != 2 {
 		t.Fatalf("direct check-in should deduplicate active sessions and resume after track expiry: %#v", records)
+	}
+}
+
+func TestAttendanceSeatsSyncsClassForRecognizedStudent(t *testing.T) {
+	ctx := context.Background()
+	st, err := store.Open(filepath.Join(t.TempDir(), "runtime-seat-class-sync.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+
+	student, err := st.CreateStudent(ctx, "SEAT-SYNC-001", "班级同步学生", "自动同步班")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := &Server{store: st}
+	request := httptest.NewRequest(
+		http.MethodGet,
+		"/api/attendance/seats?class_name="+url.QueryEscape(student.ClassName)+"&day="+time.Now().Format("2006-01-02"),
+		nil,
+	)
+	recorder := httptest.NewRecorder()
+	server.attendanceSeats(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("attendance seat board status=%d body=%s", recorder.Code, recorder.Body.String())
+	}
+	var board store.AttendanceBoard
+	if err := json.Unmarshal(recorder.Body.Bytes(), &board); err != nil {
+		t.Fatal(err)
+	}
+	if board.Class.Name != student.ClassName || board.Total != 1 || board.Students[0].StudentID != student.ID {
+		t.Fatalf("recognized student's class seat board was not returned: %#v", board)
 	}
 }
 
