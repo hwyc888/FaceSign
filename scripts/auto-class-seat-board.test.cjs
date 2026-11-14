@@ -32,7 +32,7 @@ function checkinContext(names = ['一班', '二班'], request = async url => ({
   });
   vm.runInContext(fs.readFileSync(path.join(jsDir, 'seating.js'), 'utf8'), context);
   context.renderCheckinSeatBoard = board => {
-    context.lastRenderedCheckinSeatClass = board.class.name;
+    vm.runInContext('lastRenderedCheckinSeatClass = ' + JSON.stringify(board.class.name), context);
     renders.push(board.class.name);
   };
   return {context, elements, calls, renders, select: elements['#checkinSeatClass']};
