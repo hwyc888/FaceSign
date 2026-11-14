@@ -39,6 +39,10 @@ func personWaitingStatus(rect image.Rectangle) string {
 	return "等待露脸"
 }
 
+func personROIFaceThreshold(configured float64) float64 {
+	return math.Min(configured, personROIFaceDetectionThreshold)
+}
+
 func scalePersonDetections(src []person.Detection, from, to image.Rectangle) []person.Detection {
 	if len(src) == 0 {
 		return nil
@@ -115,7 +119,7 @@ func (s *Server) detectFacesInPersonROIs(img image.Image, people []person.Detect
 		if cropped == nil {
 			continue
 		}
-		detected, err := s.engine.DetectAll(cropped, math.Min(s.detectionThreshold, personROIFaceDetectionThreshold))
+		detected, err := s.engine.DetectAll(cropped, personROIFaceThreshold(s.detectionThreshold))
 		if err != nil {
 			if errors.Is(err, face.ErrNoFace) {
 				continue
