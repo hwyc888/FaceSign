@@ -165,8 +165,7 @@ func (e *Engine) Score(img image.Image, faceRect image.Rectangle) (float64, erro
 	releaseInference := inference.Acquire()
 	defer releaseInference()
 
-	resized := image.NewRGBA(image.Rect(0, 0, inputSize, inputSize))
-	xdraw.CatmullRom.Scale(resized, resized.Bounds(), img, crop, xdraw.Src, nil)
+	resized := resizeFaceCrop(img, crop)
 	fillInput(worker.input.GetData(), resized)
 	if err := worker.session.Run(); err != nil {
 		return 0, fmt.Errorf("run anti-spoof model: %w", err)
@@ -176,6 +175,15 @@ func (e *Engine) Score(img image.Image, faceRect image.Rectangle) (float64, erro
 		return 0, errors.New("anti-spoof model returned invalid output")
 	}
 	return realProbability(float64(data[0]), float64(data[1])), nil
+}
+
+func resizeFaceCrop(img image.Image, crop image.Rectangle) *image.RGBA {
+	resized := image.NewRGBA(image.Rect(0, 0, inputSize, inputSize))
+	// Match the upstream anti-spoof demo's cv.resize default (INTER_LINEAR).
+	// Cubic interpolation can add ringing/high-frequency texture that changes
+	// the classifier score, especially for small faces from multi-person frames.
+	xdraw.BiLinear.Scale(resized, resized.Bounds(), img, crop, xdraw.Src, nil)
+	return resized
 }
 
 func expandedFaceRect(rect, bounds image.Rectangle) image.Rectangle {
