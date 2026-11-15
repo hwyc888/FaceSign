@@ -17,7 +17,11 @@ let appSettingsCache = {
   realtime_status_recognition: true,
   realtime_status_reason: true,
   low_light_recognition_mode: false,
-  disable_liveness_detection: false
+  disable_liveness_detection: false,
+  face_detection_threshold: 0.45,
+  liveness_pass_threshold: 0.60,
+  liveness_frame_threshold: 0.55,
+  liveness_spoof_threshold: 0.40
 };
 let appSettingsLoaded = false;
 
@@ -45,6 +49,20 @@ function renderAppSettings() {
   const livenessDisabled = Boolean(appSettingsCache.disable_liveness_detection);
   if (disableLivenessCheckbox) disableLivenessCheckbox.checked = livenessDisabled;
   if (disableLivenessState) disableLivenessState.textContent = livenessDisabled ? '已关闭 · 全局生效' : '已启用';
+
+  const thresholdSliders = [
+    ['faceDetectionThreshold', 'face_detection_threshold', 'faceDetectionThresholdValue'],
+    ['livenessPassThreshold', 'liveness_pass_threshold', 'livenessPassThresholdValue'],
+    ['livenessFrameThreshold', 'liveness_frame_threshold', 'livenessFrameThresholdValue'],
+    ['livenessSpoofThreshold', 'liveness_spoof_threshold', 'livenessSpoofThresholdValue']
+  ];
+  thresholdSliders.forEach(([id, key, outputId]) => {
+    const slider = $('#' + id);
+    const output = $('#' + outputId);
+    const value = Number(appSettingsCache[key]);
+    if (slider && Number.isFinite(value)) slider.value = String(value);
+    if (output && Number.isFinite(value)) output.textContent = (value * 100).toFixed(0) + '%';
+  });
 
   const realtimeFields = {};
   REALTIME_STATUS_FIELDS.forEach(([id, key, field]) => {
@@ -164,6 +182,39 @@ $('#lowLightRecognitionMode').addEventListener('change', async event => {
   } finally {
     event.target.disabled = false;
   }
+});
+
+[
+  ['faceDetectionThreshold', 'face_detection_threshold', '人脸检测阈值'],
+  ['livenessPassThreshold', 'liveness_pass_threshold', '活体通过阈值'],
+  ['livenessFrameThreshold', 'liveness_frame_threshold', '单帧活体阈值'],
+  ['livenessSpoofThreshold', 'liveness_spoof_threshold', '照片攻击阈值']
+].forEach(([id, key, label]) => {
+  const slider = $('#' + id);
+  if (!slider) return;
+  slider.addEventListener('input', event => {
+    const output = $('#' + id + 'Value');
+    if (output) output.textContent = (Number(event.target.value) * 100).toFixed(0) + '%';
+  });
+  slider.addEventListener('change', async event => {
+    const value = Number(event.target.value);
+    slider.disabled = true;
+    try {
+      appSettingsCache = await api('/api/settings', {
+        method: 'PUT',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({[key]: value})
+      });
+      appSettingsLoaded = true;
+      renderAppSettings();
+      toast(label + '已保存：' + (value * 100).toFixed(0) + '%');
+    } catch (e) {
+      toast(e.message);
+      await loadAppSettings(true);
+    } finally {
+      slider.disabled = false;
+    }
+  });
 });
 
 $('#realtimeStatusEnabled').addEventListener('change', async event => {
