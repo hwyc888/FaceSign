@@ -84,8 +84,9 @@ func (s *Server) recognize(w http.ResponseWriter, r *http.Request) {
 func (s *Server) recognizeImage(w http.ResponseWriter, r *http.Request, img image.Image) {
 	now := time.Now()
 	sessionID := recognitionSessionID(r)
+	detectionThreshold := s.currentFaceDetectionThreshold(r.Context())
 
-	detections, err := s.engine.DetectAll(img, s.detectionThreshold)
+	detections, err := s.engine.DetectAll(img, detectionThreshold)
 	if err != nil {
 		if errors.Is(err, face.ErrNoFace) {
 			detections = nil
@@ -101,7 +102,29 @@ func (s *Server) recognizeImage(w http.ResponseWriter, r *http.Request, img imag
 		s.logger.Warn("person detector failed; continuing with face-derived tracks", "error", err)
 		personDetections = nil
 	}
+	// Browser-camera recognition used to stop after a full-frame YuNet miss.
+	// When YOLOX has already located a person, retry face detection on that
+	// person's enlarged head ROI so small/dim faces are not silently ignored.
+	if len(detections) == 0 && len(personDetections) > 0 && anyPersonReadyForFaceProbe(personDetections) {
+		detections, err = s.detectFacesInPersonROIs(img, personDetections, detectionThreshold)
+		if err != nil {
+			writeFaceError(w, err)
+			return
+		}
+	}
 	s.recognizePreparedImage(w, r, img, now, sessionID, personDetections, detections)
+}
+
+func (s *Server) currentFaceDetectionThreshold(ctx context.Context) float64 {
+	settings, err := s.store.AppSettings(ctx)
+	if err != nil {
+		s.logger.Warn("read face detection threshold failed; using startup value", "error", err)
+		return s.detectionThreshold
+	}
+	if settings.FaceDetectionThreshold <= 0 {
+		return s.detectionThreshold
+	}
+	return settings.FaceDetectionThreshold
 }
 
 func (s *Server) recognizeNetworkCameraImage(w http.ResponseWriter, r *http.Request, camera store.Camera, personImg image.Image) {
@@ -109,6 +132,7 @@ func (s *Server) recognizeNetworkCameraImage(w http.ResponseWriter, r *http.Requ
 	sessionID := recognitionSessionID(r)
 	loadLevel := normalizeRecognitionLoadLevel(r.Header.Get("X-FaceSign-AI-Load"))
 
+	detectionThreshold := s.currentFaceDetectionThreshold(r.Context())
 	personDetections, err := s.personDetectionsForRecognition(sessionID, personImg, now, loadLevel, true)
 	if err != nil {
 		s.logger.Warn("person detector failed; falling back to face-first recognition", "camera_id", camera.ID, "error", err)
@@ -117,7 +141,7 @@ func (s *Server) recognizeNetworkCameraImage(w http.ResponseWriter, r *http.Requ
 	}
 
 	if len(personDetections) == 0 {
-		detections, detectErr := s.engine.DetectAll(personImg, s.detectionThreshold)
+		detections, detectErr := s.engine.DetectAll(personImg, detectionThreshold)
 		if detectErr != nil && !errors.Is(detectErr, face.ErrNoFace) {
 			writeFaceError(w, detectErr)
 			return
@@ -144,7 +168,7 @@ func (s *Server) recognizeNetworkCameraImage(w http.ResponseWriter, r *http.Requ
 		s.logger.Warn("main-stream face frame unavailable; using recognition frame", "camera_id", camera.ID, "error", frameErr)
 	}
 
-	detections, err := s.detectFacesInPersonROIs(faceImg, facePeople)
+	detections, err := s.detectFacesInPersonROIs(faceImg, facePeople, detectionThreshold)
 	if err != nil {
 		writeFaceError(w, err)
 		return
@@ -161,15 +185,22 @@ func (s *Server) recognizePreparedImage(
 	personDetections []person.Detection,
 	detections []face.Detection,
 ) {
-	lowLightMode, settingsErr := s.store.LowLightRecognitionMode(r.Context())
+	settings, settingsErr := s.store.AppSettings(r.Context())
 	if settingsErr != nil {
-		s.logger.Warn("read low-light recognition setting failed; using normal mode", "error", settingsErr)
-		lowLightMode = false
+		s.logger.Warn("read recognition settings failed; using safe defaults", "error", settingsErr)
+		settings = store.AppSettings{
+			FaceDetectionThreshold:  0.45,
+			LivenessPassThreshold:   livenessPassThreshold,
+			LivenessFrameThreshold:  livenessFrameThreshold,
+			LivenessSpoofThreshold:  livenessSpoofThreshold,
+		}
 	}
-	disableLivenessDetection, livenessSettingsErr := s.store.DisableLivenessDetection(r.Context())
-	if livenessSettingsErr != nil {
-		s.logger.Warn("read liveness detection setting failed; keeping liveness enabled", "error", livenessSettingsErr)
-		disableLivenessDetection = false
+	lowLightMode := settings.LowLightRecognitionMode
+	disableLivenessDetection := settings.DisableLivenessDetection
+	thresholds := livenessThresholds{
+		Pass: settings.LivenessPassThreshold,
+		Frame: settings.LivenessFrameThreshold,
+		Spoof: settings.LivenessSpoofThreshold,
 	}
 	qualityThreshold := minRecognitionFaceQuality
 	if lowLightMode {
@@ -390,7 +421,7 @@ func (s *Server) recognizePreparedImage(
 		observationDetectionIndexes = append(observationDetectionIndexes, match.DetectionIndex)
 	}
 
-	decisions := s.tracker.Observe(sessionID, observations, now)
+	decisions := s.tracker.ObserveWithThresholds(sessionID, observations, now, thresholds)
 	for i, decision := range decisions {
 		detectionIndex := observationDetectionIndexes[i]
 		result := &results[detectionIndex]
@@ -480,7 +511,10 @@ func (s *Server) recognizePreparedImage(
 		"face_quality_threshold":  qualityThreshold,
 		"low_light_mode_enabled":  lowLightMode,
 		"liveness_detection_disabled": disableLivenessDetection,
-		"liveness_threshold":      livenessPassThreshold,
+		"liveness_threshold":      thresholds.Pass,
+		"liveness_frame_threshold": thresholds.Frame,
+		"liveness_spoof_threshold": thresholds.Spoof,
+		"face_detection_threshold": s.currentFaceDetectionThreshold(r.Context()),
 		"liveness_fast_threshold": livenessFastPassThreshold,
 		"liveness_fast_frames":    livenessFastFrames,
 		"liveness_min_frames":     livenessMinFrames,
