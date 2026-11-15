@@ -102,15 +102,16 @@ func (s *Server) recognizeImage(w http.ResponseWriter, r *http.Request, img imag
 		s.logger.Warn("person detector failed; continuing with face-derived tracks", "error", err)
 		personDetections = nil
 	}
-	// Browser-camera recognition used to stop after a full-frame YuNet miss.
-	// When YOLOX has already located a person, retry face detection on that
-	// person's enlarged head ROI so small/dim faces are not silently ignored.
-	if len(detections) == 0 && len(personDetections) > 0 && anyPersonReadyForFaceProbe(personDetections) {
-		detections, err = s.detectFacesInPersonROIs(img, personDetections, detectionThreshold)
-		if err != nil {
-			writeFaceError(w, err)
+	// Retry only people whose faces were missed by full-frame YuNet. This
+	// recovers small/dim faces without paying for ROI inference on everyone.
+	missingFacePeople := peopleWithoutDetectedFaces(personDetections, detections)
+	if len(missingFacePeople) > 0 && anyPersonReadyForFaceProbe(missingFacePeople) {
+		roiFaces, roiErr := s.detectFacesInPersonROIs(img, missingFacePeople, detectionThreshold)
+		if roiErr != nil {
+			writeFaceError(w, roiErr)
 			return
 		}
+		detections = append(detections, roiFaces...)
 	}
 	s.recognizePreparedImage(w, r, img, now, sessionID, personDetections, detections)
 }
