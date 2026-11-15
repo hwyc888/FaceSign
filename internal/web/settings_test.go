@@ -40,6 +40,12 @@ func TestAppSettingsAPI(t *testing.T) {
 	if current.DisableLivenessDetection {
 		t.Fatal("liveness detection should remain enabled by default")
 	}
+	if current.FaceDetectionThreshold != 0.45 ||
+		current.LivenessPassThreshold != 0.60 ||
+		current.LivenessFrameThreshold != 0.55 ||
+		current.LivenessSpoofThreshold != 0.40 {
+		t.Fatalf("unexpected recognition threshold defaults: %#v", current)
+	}
 
 	nonAdminPut := httptest.NewRequest(http.MethodPut, "/api/settings", strings.NewReader(`{"low_light_recognition_mode":true}`))
 	nonAdminPut.Header.Set("Content-Type", "application/json")
@@ -162,5 +168,31 @@ func TestAppSettingsAPI(t *testing.T) {
 	}
 	if !persisted.LowLightRecognitionMode || !persisted.AutoStartCheckin || persisted.RealtimeStatusEnabled {
 		t.Fatal("partial disable-liveness update changed unrelated application settings")
+	}
+
+	thresholdPut := httptest.NewRequest(http.MethodPut, "/api/settings", strings.NewReader(`{"face_detection_threshold":0.35,"liveness_pass_threshold":0.56,"liveness_frame_threshold":0.50,"liveness_spoof_threshold":0.32}`))
+	thresholdPut.Header.Set("Content-Type", "application/json")
+	thresholdRec := httptest.NewRecorder()
+	s.settings(thresholdRec, withTestAdmin(thresholdPut))
+	if thresholdRec.Code != http.StatusOK {
+		t.Fatalf("threshold PUT status=%d body=%s", thresholdRec.Code, thresholdRec.Body.String())
+	}
+	persisted, err = st.AppSettings(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if persisted.FaceDetectionThreshold != 0.35 ||
+		persisted.LivenessPassThreshold != 0.56 ||
+		persisted.LivenessFrameThreshold != 0.50 ||
+		persisted.LivenessSpoofThreshold != 0.32 {
+		t.Fatalf("thresholds were not persisted: %#v", persisted)
+	}
+
+	invalidThresholdPut := httptest.NewRequest(http.MethodPut, "/api/settings", strings.NewReader(`{"liveness_spoof_threshold":0.60}`))
+	invalidThresholdPut.Header.Set("Content-Type", "application/json")
+	invalidThresholdRec := httptest.NewRecorder()
+	s.settings(invalidThresholdRec, withTestAdmin(invalidThresholdPut))
+	if invalidThresholdRec.Code != http.StatusBadRequest {
+		t.Fatalf("invalid threshold PUT status=%d body=%s", invalidThresholdRec.Code, invalidThresholdRec.Body.String())
 	}
 }
