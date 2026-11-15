@@ -365,6 +365,11 @@ pre{background:#0b1220;color:#d8e2f3;border-radius:12px;padding:16px;overflow:au
 .camera-row-actions{display:flex;gap:7px;flex-wrap:wrap}
 .camera-row-actions button{padding:7px 9px;font-size:12px}
 .camera-settings-help{font-size:12px;margin:12px 0 0}
+.threshold-setting{padding:12px 0;border-bottom:1px solid #edf0f5}
+.threshold-setting:last-of-type{border-bottom:0}
+.threshold-setting>label{display:flex;justify-content:space-between;align-items:center;gap:12px;font-weight:650;font-size:14px}
+.threshold-setting output{font-variant-numeric:tabular-nums;color:#2563eb}
+.threshold-setting input[type="range"]{display:block;width:100%;margin:12px 0 4px;accent-color:#2563eb}
 @media(max-width:1180px){.camera-form{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:720px){
   .recognition-counts{grid-template-columns:1fr}
