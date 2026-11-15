@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"strconv"
 )
 
 const (
@@ -17,6 +18,10 @@ const (
 	realtimeStatusReasonSettingKey      = "realtime_status_reason"
 	lowLightRecognitionModeSettingKey   = "low_light_recognition_mode"
 	disableLivenessDetectionSettingKey  = "disable_liveness_detection"
+	faceDetectionThresholdSettingKey   = "face_detection_threshold"
+	livenessPassThresholdSettingKey     = "liveness_pass_threshold"
+	livenessFrameThresholdSettingKey    = "liveness_frame_threshold"
+	livenessSpoofThresholdSettingKey    = "liveness_spoof_threshold"
 )
 
 type AppSettings struct {
@@ -29,7 +34,11 @@ type AppSettings struct {
 	RealtimeStatusRecognition  bool `json:"realtime_status_recognition"`
 	RealtimeStatusReason       bool `json:"realtime_status_reason"`
 	LowLightRecognitionMode    bool `json:"low_light_recognition_mode"`
-	DisableLivenessDetection   bool `json:"disable_liveness_detection"`
+	DisableLivenessDetection   bool    `json:"disable_liveness_detection"`
+	FaceDetectionThreshold     float64 `json:"face_detection_threshold"`
+	LivenessPassThreshold      float64 `json:"liveness_pass_threshold"`
+	LivenessFrameThreshold     float64 `json:"liveness_frame_threshold"`
+	LivenessSpoofThreshold     float64 `json:"liveness_spoof_threshold"`
 }
 
 func (s *Store) AppSettings(ctx context.Context) (AppSettings, error) {
@@ -73,6 +82,22 @@ func (s *Store) AppSettings(ctx context.Context) (AppSettings, error) {
 	if err != nil {
 		return AppSettings{}, err
 	}
+	faceDetection, err := s.appSettingFloat(ctx, faceDetectionThresholdSettingKey, 0.60)
+	if err != nil {
+		return AppSettings{}, err
+	}
+	livenessPass, err := s.appSettingFloat(ctx, livenessPassThresholdSettingKey, 0.60)
+	if err != nil {
+		return AppSettings{}, err
+	}
+	livenessFrame, err := s.appSettingFloat(ctx, livenessFrameThresholdSettingKey, 0.55)
+	if err != nil {
+		return AppSettings{}, err
+	}
+	livenessSpoof, err := s.appSettingFloat(ctx, livenessSpoofThresholdSettingKey, 0.40)
+	if err != nil {
+		return AppSettings{}, err
+	}
 	return AppSettings{
 		AutoStartCheckin:          autoStart,
 		RealtimeStatusEnabled:     realtimeStatus,
@@ -84,6 +109,10 @@ func (s *Store) AppSettings(ctx context.Context) (AppSettings, error) {
 		RealtimeStatusReason:      reason,
 		LowLightRecognitionMode:   lowLightMode,
 		DisableLivenessDetection:  disableLiveness,
+		FaceDetectionThreshold:    faceDetection,
+		LivenessPassThreshold:     livenessPass,
+		LivenessFrameThreshold:    livenessFrame,
+		LivenessSpoofThreshold:    livenessSpoof,
 	}, nil
 }
 
@@ -93,6 +122,21 @@ func (s *Store) LowLightRecognitionMode(ctx context.Context) (bool, error) {
 
 func (s *Store) DisableLivenessDetection(ctx context.Context) (bool, error) {
 	return s.appSettingBool(ctx, disableLivenessDetectionSettingKey, false)
+}
+
+func (s *Store) appSettingFloat(ctx context.Context, key string, defaultValue float64) (float64, error) {
+	var value float64
+	err := s.db.QueryRowContext(ctx,
+		"SELECT CAST(value AS REAL) FROM app_settings WHERE key=?",
+		key,
+	).Scan(&value)
+	if errors.Is(err, sql.ErrNoRows) {
+		return defaultValue, nil
+	}
+	if err != nil {
+		return 0, err
+	}
+	return value, nil
 }
 
 func (s *Store) appSettingBool(ctx context.Context, key string, defaultValue bool) (bool, error) {
@@ -141,6 +185,24 @@ func (s *Store) UpdateAppSettings(ctx context.Context, settings AppSettings) err
 			INSERT INTO app_settings(key,value) VALUES(?,?)
 			ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
 			item.key, value,
+		); err != nil {
+			return err
+		}
+	}
+	floatValues := []struct {
+		key   string
+		value float64
+	}{
+		{faceDetectionThresholdSettingKey, settings.FaceDetectionThreshold},
+		{livenessPassThresholdSettingKey, settings.LivenessPassThreshold},
+		{livenessFrameThresholdSettingKey, settings.LivenessFrameThreshold},
+		{livenessSpoofThresholdSettingKey, settings.LivenessSpoofThreshold},
+	}
+	for _, item := range floatValues {
+		if _, err := tx.ExecContext(ctx, `
+			INSERT INTO app_settings(key,value) VALUES(?,?)
+			ON CONFLICT(key) DO UPDATE SET value=excluded.value`,
+			item.key, strconv.FormatFloat(item.value, 'f', 4, 64),
 		); err != nil {
 			return err
 		}
