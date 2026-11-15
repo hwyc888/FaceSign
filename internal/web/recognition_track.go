@@ -29,6 +29,18 @@ const (
 	livenessLowLightSpoofMinSharpnessScore = 0.12
 )
 
+type livenessThresholds struct {
+	Pass  float64
+	Frame float64
+	Spoof float64
+}
+
+var defaultLivenessThresholds = livenessThresholds{
+	Pass:  livenessPassThreshold,
+	Frame: livenessFrameThreshold,
+	Spoof: livenessSpoofThreshold,
+}
+
 type recognitionObservation struct {
 	Student    store.Student
 	Similarity float64
@@ -103,6 +115,13 @@ func (t *recognitionTracker) SetLivenessMode(sessionID string, disabled bool) {
 }
 
 func (t *recognitionTracker) Observe(sessionID string, observations []recognitionObservation, now time.Time) []trackDecision {
+	return t.ObserveWithThresholds(sessionID, observations, now, defaultLivenessThresholds)
+}
+
+func (t *recognitionTracker) ObserveWithThresholds(sessionID string, observations []recognitionObservation, now time.Time, thresholds livenessThresholds) []trackDecision {
+	if thresholds.Pass <= 0 || thresholds.Frame <= 0 || thresholds.Spoof <= 0 {
+		thresholds = defaultLivenessThresholds
+	}
 	t.mu.Lock()
 	defer t.mu.Unlock()
 
@@ -178,7 +197,7 @@ func (t *recognitionTracker) Observe(sessionID string, observations []recognitio
 		track.LastSeen = now
 		track.Frames++
 		track.SimilaritySum += observation.Similarity
-		if observation.LiveScore < livenessSpoofThreshold && livenessObservationSpoofQualityUsable(observation) {
+		if observation.LiveScore < thresholds.Spoof && livenessObservationSpoofQualityUsable(observation) {
 			track.SpoofVotes++
 		}
 		track.Scores = append(track.Scores, observation.LiveScore)
@@ -189,7 +208,7 @@ func (t *recognitionTracker) Observe(sessionID string, observations []recognitio
 		average := averageScores(track.Scores)
 		liveVotes := 0
 		for _, score := range track.Scores {
-			if score >= livenessFrameThreshold {
+			if score >= thresholds.Frame {
 				liveVotes++
 			}
 		}
@@ -198,10 +217,10 @@ func (t *recognitionTracker) Observe(sessionID string, observations []recognitio
 		if !track.Verified && !track.Rejected {
 			switch {
 			case len(track.Scores) >= livenessFastFrames &&
-				average < livenessSpoofThreshold && track.SpoofVotes >= 2:
+				average < thresholds.Spoof && track.SpoofVotes >= 2:
 				track.Rejected = true
 			case len(track.Scores) >= livenessMinFrames &&
-				average >= livenessPassThreshold &&
+				average >= thresholds.Pass &&
 				liveVotes >= 2:
 				track.Verified = true
 			case now.Sub(track.FirstSeen) >= decisionTimeout || len(track.Scores) >= maxFrames:
