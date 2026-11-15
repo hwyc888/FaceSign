@@ -2,6 +2,7 @@ package web
 
 import (
 	"errors"
+	"math"
 	"net/http"
 )
 
@@ -15,7 +16,11 @@ type appSettingsRequest struct {
 	RealtimeStatusRecognition *bool `json:"realtime_status_recognition"`
 	RealtimeStatusReason      *bool `json:"realtime_status_reason"`
 	LowLightRecognitionMode   *bool `json:"low_light_recognition_mode"`
-	DisableLivenessDetection  *bool `json:"disable_liveness_detection"`
+	DisableLivenessDetection  *bool    `json:"disable_liveness_detection"`
+	FaceDetectionThreshold    *float64 `json:"face_detection_threshold"`
+	LivenessPassThreshold     *float64 `json:"liveness_pass_threshold"`
+	LivenessFrameThreshold    *float64 `json:"liveness_frame_threshold"`
+	LivenessSpoofThreshold    *float64 `json:"liveness_spoof_threshold"`
 }
 
 func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
@@ -45,7 +50,11 @@ func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
 			in.RealtimeStatusRecognition == nil &&
 			in.RealtimeStatusReason == nil &&
 			in.LowLightRecognitionMode == nil &&
-			in.DisableLivenessDetection == nil {
+			in.DisableLivenessDetection == nil &&
+			in.FaceDetectionThreshold == nil &&
+			in.LivenessPassThreshold == nil &&
+			in.LivenessFrameThreshold == nil &&
+			in.LivenessSpoofThreshold == nil {
 			writeError(w, http.StatusBadRequest, errors.New("缺少应用设置"))
 			return
 		}
@@ -84,6 +93,27 @@ func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
 		if in.DisableLivenessDetection != nil {
 			settings.DisableLivenessDetection = *in.DisableLivenessDetection
 		}
+		if in.FaceDetectionThreshold != nil {
+			settings.FaceDetectionThreshold = *in.FaceDetectionThreshold
+		}
+		if in.LivenessPassThreshold != nil {
+			settings.LivenessPassThreshold = *in.LivenessPassThreshold
+		}
+		if in.LivenessFrameThreshold != nil {
+			settings.LivenessFrameThreshold = *in.LivenessFrameThreshold
+		}
+		if in.LivenessSpoofThreshold != nil {
+			settings.LivenessSpoofThreshold = *in.LivenessSpoofThreshold
+		}
+		if !validThreshold(settings.FaceDetectionThreshold, 0.25, 0.80) ||
+			!validThreshold(settings.LivenessPassThreshold, 0.50, 0.80) ||
+			!validThreshold(settings.LivenessFrameThreshold, 0.45, 0.70) ||
+			!validThreshold(settings.LivenessSpoofThreshold, 0.20, 0.45) ||
+			settings.LivenessSpoofThreshold >= settings.LivenessPassThreshold ||
+			settings.LivenessFrameThreshold > settings.LivenessPassThreshold {
+			writeError(w, http.StatusBadRequest, errors.New("识别阈值超出允许范围或活体阈值关系不正确"))
+			return
+		}
 		if err := s.store.UpdateAppSettings(r.Context(), settings); err != nil {
 			writeError(w, http.StatusInternalServerError, err)
 			return
@@ -92,4 +122,8 @@ func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
 	default:
 		methodNotAllowed(w)
 	}
+}
+
+func validThreshold(value, minimum, maximum float64) bool {
+	return !math.IsNaN(value) && !math.IsInf(value, 0) && value >= minimum && value <= maximum
 }
