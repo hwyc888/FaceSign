@@ -108,7 +108,7 @@ func translateFaceDetection(detected face.Detection, offset image.Point) face.De
 	return detected
 }
 
-func (s *Server) detectFacesInPersonROIs(img image.Image, people []person.Detection) ([]face.Detection, error) {
+func (s *Server) detectFacesInPersonROIs(img image.Image, people []person.Detection, detectionThreshold float64) ([]face.Detection, error) {
 	out := make([]face.Detection, 0, len(people))
 	for _, item := range people {
 		roi := personHeadROI(item.Rectangle, img.Bounds())
@@ -119,7 +119,7 @@ func (s *Server) detectFacesInPersonROIs(img image.Image, people []person.Detect
 		if cropped == nil {
 			continue
 		}
-		detected, err := s.engine.DetectAll(cropped, personROIFaceThreshold(s.detectionThreshold))
+		detected, err := s.engine.DetectAll(cropped, personROIFaceThreshold(detectionThreshold))
 		if err != nil {
 			if errors.Is(err, face.ErrNoFace) {
 				continue
