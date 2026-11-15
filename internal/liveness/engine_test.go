@@ -47,3 +47,21 @@ func TestRealProbability(t *testing.T) {
 		t.Fatalf("softmax conversion unexpected: %v", got)
 	}
 }
+
+func TestResizeFaceCropUsesRequestedRegionAndModelDimensions(t *testing.T) {
+	img := image.NewRGBA(image.Rect(0, 0, 8, 8))
+	for y := 0; y < 8; y++ {
+		for x := 0; x < 8; x++ {
+			img.Set(x, y, color.RGBA{R: 20, G: 40, B: 60, A: 255})
+		}
+	}
+	crop := image.Rect(2, 2, 6, 6)
+	got := resizeFaceCrop(img, crop)
+	if got.Bounds() != image.Rect(0, 0, inputSize, inputSize) {
+		t.Fatalf("resized crop bounds=%v", got.Bounds())
+	}
+	pixel := got.RGBAAt(inputSize/2, inputSize/2)
+	if pixel != (color.RGBA{R: 20, G: 40, B: 60, A: 255}) {
+		t.Fatalf("resized crop center=%v, want original crop color", pixel)
+	}
+}
