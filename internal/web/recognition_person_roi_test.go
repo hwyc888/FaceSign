@@ -5,8 +5,24 @@ import (
 	"math"
 	"testing"
 
+	"github.com/hwyc888/FaceSign/internal/face"
 	"github.com/hwyc888/FaceSign/internal/person"
 )
+
+func TestPeopleWithoutDetectedFacesKeepsOnlyMissedPeople(t *testing.T) {
+	people := []person.Detection{
+		{Rectangle: image.Rect(10, 10, 180, 400), Score: 0.9},
+		{Rectangle: image.Rect(220, 10, 390, 400), Score: 0.9},
+	}
+	faces := []face.Detection{{Rectangle: image.Rect(60, 50, 120, 115), Score: 0.9}}
+	missing := peopleWithoutDetectedFaces(people, faces)
+	if len(missing) != 1 || missing[0].Rectangle != people[1].Rectangle {
+		t.Fatalf("missing-face people=%#v, want only second person", missing)
+	}
+	if got := peopleWithoutDetectedFaces(people, nil); len(got) != 2 {
+		t.Fatalf("all people should be probed when no face was detected, got %d", len(got))
+	}
+}
 
 func TestScalePersonDetections(t *testing.T) {
 	got := scalePersonDetections(
