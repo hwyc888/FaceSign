@@ -156,7 +156,14 @@ func TestFaceQualityExplainsLowLightAndBlur(t *testing.T) {
 			blurred.Set(x, y, color.RGBA{R: 125, G: 125, B: 125, A: 255})
 		}
 	}
-	if got := scoreFaceQuality(blurred, detected).Hint; got != "画面模糊，请擦拭镜头并保持静止" {
-		t.Fatalf("blur hint=%q", got)
+	blurQuality := scoreFaceQuality(blurred, detected)
+	if blurQuality.Hint != "画面模糊，请擦拭镜头并保持静止" {
+		t.Fatalf("blur hint=%q", blurQuality.Hint)
+	}
+	if blurQuality.Score < minRecognitionFaceQuality {
+		t.Fatalf("test face should meet the recognition floor: %#v", blurQuality)
+	}
+	if blurQuality.Status != "可识别" {
+		t.Fatalf("a passing quality score must not be blocked by an advisory blur hint: %#v", blurQuality)
 	}
 }
