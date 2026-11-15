@@ -109,7 +109,8 @@ func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
 			!validThreshold(settings.LivenessPassThreshold, 0.50, 0.80) ||
 			!validThreshold(settings.LivenessFrameThreshold, 0.45, 0.70) ||
 			!validThreshold(settings.LivenessSpoofThreshold, 0.20, 0.45) ||
-			settings.LivenessSpoofThreshold >= settings.LivenessPassThreshold {
+			settings.LivenessSpoofThreshold >= settings.LivenessPassThreshold ||
+			settings.LivenessFrameThreshold > settings.LivenessPassThreshold {
 			writeError(w, http.StatusBadRequest, errors.New("识别阈值超出允许范围或活体阈值关系不正确"))
 			return
 		}
