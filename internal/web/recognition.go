@@ -516,7 +516,7 @@ func (s *Server) recognizePreparedImage(
 		"liveness_threshold":      thresholds.Pass,
 		"liveness_frame_threshold": thresholds.Frame,
 		"liveness_spoof_threshold": thresholds.Spoof,
-		"face_detection_threshold": s.currentFaceDetectionThreshold(r.Context()),
+		"face_detection_threshold": settings.FaceDetectionThreshold,
 		"liveness_fast_threshold": livenessFastPassThreshold,
 		"liveness_fast_frames":    livenessFastFrames,
 		"liveness_min_frames":     livenessMinFrames,
