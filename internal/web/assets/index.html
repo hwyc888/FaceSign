@@ -456,6 +456,36 @@
         <div class="card settings-secondary-card">
           <div class="card-head">
             <div>
+              <h2>识别与活体阈值调节</h2>
+              <p class="muted compact">拖动滑块调整人脸检测和活体判断灵敏度，保存后立即对后续识别生效。</p>
+            </div>
+          </div>
+          <div class="threshold-setting">
+            <label for="faceDetectionThreshold">人脸检测阈值 <output id="faceDetectionThresholdValue">45%</output></label>
+            <input id="faceDetectionThreshold" type="range" min="0.25" max="0.80" step="0.01" value="0.45">
+            <p class="muted camera-settings-help">调低可帮助暗光、远距离人脸被检测到；过低可能增加误检。此项不改变身份匹配门槛。</p>
+          </div>
+          <div class="threshold-setting">
+            <label for="livenessPassThreshold">活体通过阈值 <output id="livenessPassThresholdValue">60%</output></label>
+            <input id="livenessPassThreshold" type="range" min="0.50" max="0.80" step="0.01" value="0.60">
+            <p class="muted camera-settings-help">调低更容易通过活体，但会降低防伪余量；建议先保持 60%。</p>
+          </div>
+          <div class="threshold-setting">
+            <label for="livenessFrameThreshold">单帧活体阈值 <output id="livenessFrameThresholdValue">55%</output></label>
+            <input id="livenessFrameThreshold" type="range" min="0.45" max="0.70" step="0.01" value="0.55">
+            <p class="muted camera-settings-help">决定每一帧是否计为有效活体票数，仍需满足连续帧规则。</p>
+          </div>
+          <div class="threshold-setting">
+            <label for="livenessSpoofThreshold">照片攻击判定阈值 <output id="livenessSpoofThresholdValue">40%</output></label>
+            <input id="livenessSpoofThreshold" type="range" min="0.20" max="0.45" step="0.01" value="0.40">
+            <p class="muted camera-settings-help">调高会更敏感、较容易判为照片攻击；调低可减少误报，但可能漏过攻击。系统仍要求至少两帧可信攻击证据。</p>
+          </div>
+          <p class="low-light-security-note">阈值只调整检测灵敏度，不会关闭活体模型。活体关闭开关仍独立生效；任何调整都建议用真人和照片分别测试。</p>
+        </div>
+
+        <div class="card settings-secondary-card">
+          <div class="card-head">
+            <div>
               <h2>摄像头画面显示</h2>
               <p class="muted compact">控制签到页和人脸采集页是否显示实时通道、FPS、丢帧、网络和识别性能状态。</p>
             </div>
