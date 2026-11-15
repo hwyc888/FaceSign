@@ -82,7 +82,7 @@ func (s *Store) AppSettings(ctx context.Context) (AppSettings, error) {
 	if err != nil {
 		return AppSettings{}, err
 	}
-	faceDetection, err := s.appSettingFloat(ctx, faceDetectionThresholdSettingKey, 0.60)
+	faceDetection, err := s.appSettingFloat(ctx, faceDetectionThresholdSettingKey, 0.45)
 	if err != nil {
 		return AppSettings{}, err
 	}
