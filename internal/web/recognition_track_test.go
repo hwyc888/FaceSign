@@ -55,6 +55,37 @@ func TestRecognitionTrackerNormalPassesThreeModerateLiveFrames(t *testing.T) {
 	}
 }
 
+func TestRecognitionTrackerKeepsMultipleStudentsLivenessIndependent(t *testing.T) {
+	tracker := newRecognitionTracker()
+	now := time.Now()
+	liveStudent := store.Student{ID: 201, StudentNo: "S201", Name: "现场学生"}
+	spoofStudent := store.Student{ID: 202, StudentNo: "S202", Name: "照片测试"}
+	var decisions []trackDecision
+
+	for i := 0; i < livenessMinFrames; i++ {
+		decisions = tracker.Observe("camera-multi-person", []recognitionObservation{
+			{Student: liveStudent, Similarity: 0.94, LiveScore: 0.90, Exposure: 1, Sharpness: 1},
+			{Student: spoofStudent, Similarity: 0.93, LiveScore: 0.10, Exposure: 1, Sharpness: 1},
+		}, now.Add(time.Duration(i)*180*time.Millisecond))
+		if len(decisions) != 2 {
+			t.Fatalf("multi-person decisions=%d want=2", len(decisions))
+		}
+		if i < livenessMinFrames-1 && (decisions[0].Verified || decisions[1].Rejected) {
+			t.Fatalf("one student's frames affected the other before the decision point: %#v", decisions)
+		}
+	}
+
+	if !decisions[0].Verified || decisions[0].Rejected {
+		t.Fatalf("live student should pass independently: %#v", decisions[0])
+	}
+	if !decisions[1].Rejected || decisions[1].Verified {
+		t.Fatalf("spoof student should be rejected independently: %#v", decisions[1])
+	}
+	if decisions[0].TrackID == decisions[1].TrackID {
+		t.Fatalf("different students must have independent liveness tracks: %#v", decisions)
+	}
+}
+
 func TestRecognitionTrackerPassesWhenTwoOfThreeFramesMeetRelaxedThreshold(t *testing.T) {
 	tracker := newRecognitionTracker()
 	now := time.Now()
