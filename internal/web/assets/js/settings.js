@@ -64,6 +64,13 @@ function renderAppSettings() {
     if (output && Number.isFinite(value)) output.textContent = (value * 100).toFixed(0) + '%';
   });
 
+  const passSlider = $('#livenessPassThreshold');
+  const frameSlider = $('#livenessFrameThreshold');
+  const passValue = Number(appSettingsCache.liveness_pass_threshold);
+  const frameValue = Number(appSettingsCache.liveness_frame_threshold);
+  if (passSlider && Number.isFinite(frameValue)) passSlider.min = String(Math.max(0.50, frameValue));
+  if (frameSlider && Number.isFinite(passValue)) frameSlider.max = String(Math.min(0.70, passValue));
+
   const realtimeFields = {};
   REALTIME_STATUS_FIELDS.forEach(([id, key, field]) => {
     const visible = appSettingsCache[key] !== false;
