@@ -39,6 +39,29 @@ func personWaitingStatus(rect image.Rectangle) string {
 	return "等待露脸"
 }
 
+func peopleWithoutDetectedFaces(people []person.Detection, faces []face.Detection) []person.Detection {
+	if len(people) == 0 {
+		return nil
+	}
+	missing := make([]person.Detection, 0, len(people))
+	for _, personDetection := range people {
+		hasFace := false
+		for _, detected := range faces {
+			cx, cy := rectangleCenter(detected.Rectangle)
+			body := personDetection.Rectangle
+			if cx >= float64(body.Min.X) && cx <= float64(body.Max.X) &&
+				cy >= float64(body.Min.Y) && cy <= float64(body.Max.Y) {
+				hasFace = true
+				break
+			}
+		}
+		if !hasFace {
+			missing = append(missing, personDetection)
+		}
+	}
+	return missing
+}
+
 func personROIFaceThreshold(configured float64) float64 {
 	return math.Min(configured, personROIFaceDetectionThreshold)
 }
