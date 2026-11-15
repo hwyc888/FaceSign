@@ -55,6 +55,29 @@ func TestRecognitionTrackerNormalPassesThreeModerateLiveFrames(t *testing.T) {
 	}
 }
 
+func TestRecognitionTrackerResetsPendingVotesWhenThresholdsChange(t *testing.T) {
+	tracker := newRecognitionTracker()
+	now := time.Now()
+	student := store.Student{ID: 221, StudentNo: "S221", Name: "阈值切换测试"}
+	firstThresholds := defaultLivenessThresholds
+	tracker.SetThresholds("camera-threshold-reset", firstThresholds)
+	first := tracker.ObserveWithThresholds("camera-threshold-reset", []recognitionObservation{{
+		Student: student, Similarity: 0.92, LiveScore: 0.70, Exposure: 1, Sharpness: 1,
+	}}, now, firstThresholds)[0]
+	if first.Frames != 1 {
+		t.Fatalf("first frame count=%d want=1", first.Frames)
+	}
+
+	changed := livenessThresholds{Pass: 0.55, Frame: 0.50, Spoof: 0.30}
+	tracker.SetThresholds("camera-threshold-reset", changed)
+	next := tracker.ObserveWithThresholds("camera-threshold-reset", []recognitionObservation{{
+		Student: student, Similarity: 0.92, LiveScore: 0.70, Exposure: 1, Sharpness: 1,
+	}}, now.Add(100*time.Millisecond), changed)[0]
+	if next.TrackID == first.TrackID || next.Frames != 1 {
+		t.Fatalf("threshold change must start a fresh liveness cycle: first=%#v next=%#v", first, next)
+	}
+}
+
 func TestRecognitionTrackerUsesConfiguredLivenessThresholds(t *testing.T) {
 	tracker := newRecognitionTracker()
 	now := time.Now()
