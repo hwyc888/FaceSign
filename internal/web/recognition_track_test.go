@@ -55,6 +55,23 @@ func TestRecognitionTrackerNormalPassesThreeModerateLiveFrames(t *testing.T) {
 	}
 }
 
+func TestRecognitionTrackerUsesConfiguredLivenessThresholds(t *testing.T) {
+	tracker := newRecognitionTracker()
+	now := time.Now()
+	student := store.Student{ID: 220, StudentNo: "S220", Name: "可调阈值测试"}
+	thresholds := livenessThresholds{Pass: 0.53, Frame: 0.50, Spoof: 0.30}
+	scores := []float64{0.50, 0.55, 0.55}
+	var decision trackDecision
+	for i, score := range scores {
+		decision = tracker.ObserveWithThresholds("camera-configured-thresholds", []recognitionObservation{{
+			Student: student, Similarity: 0.92, LiveScore: score, Exposure: 1, Sharpness: 1,
+		}}, now.Add(time.Duration(i)*180*time.Millisecond), thresholds)[0]
+	}
+	if !decision.Verified || decision.Rejected || decision.TimedOut {
+		t.Fatalf("configured pass/frame thresholds were not applied: %#v", decision)
+	}
+}
+
 func TestRecognitionTrackerKeepsMultipleStudentsLivenessIndependent(t *testing.T) {
 	tracker := newRecognitionTracker()
 	now := time.Now()
