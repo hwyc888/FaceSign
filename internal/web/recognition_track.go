@@ -83,6 +83,8 @@ type recognitionTrackSession struct {
 	NextID                 uint64
 	LivenessModeSet        bool
 	LivenessDisabled       bool
+	ThresholdsSet          bool
+	Thresholds             livenessThresholds
 }
 
 type recognitionTracker struct {
@@ -112,6 +114,24 @@ func (t *recognitionTracker) SetLivenessMode(sessionID string, disabled bool) {
 	}
 	session.LivenessModeSet = true
 	session.LivenessDisabled = disabled
+}
+
+func (t *recognitionTracker) SetThresholds(sessionID string, thresholds livenessThresholds) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if sessionID == "" {
+		sessionID = "default"
+	}
+	session := t.sessions[sessionID]
+	if session == nil {
+		session = &recognitionTrackSession{Tracks: make(map[int64]*recognitionTrack)}
+		t.sessions[sessionID] = session
+	}
+	if session.ThresholdsSet && session.Thresholds != thresholds {
+		session.Tracks = make(map[int64]*recognitionTrack)
+	}
+	session.Thresholds = thresholds
+	session.ThresholdsSet = true
 }
 
 func (t *recognitionTracker) Observe(sessionID string, observations []recognitionObservation, now time.Time) []trackDecision {
