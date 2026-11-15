@@ -210,6 +210,7 @@ func (s *Server) recognizePreparedImage(
 	}
 
 	s.tracker.SetLivenessMode(sessionID, disableLivenessDetection)
+	s.tracker.SetThresholds(sessionID, thresholds)
 	personDetections = addFaceFallbackPersons(personDetections, detections, img.Bounds())
 	tracks := s.personTracker.Observe(sessionID, personDetections, now)
 	personResults := make([]recognitionPerson, len(tracks))
