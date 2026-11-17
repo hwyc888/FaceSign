@@ -172,6 +172,7 @@ func (t *recognitionTracker) Observe(sessionID string, observations []recognitio
 		}
 
 		track.InferenceFailures = 0
+		track.InferenceFailures = 0
 		if !livenessObservationQualityUsable(observation) {
 			status := "光线不足或画面模糊，请调整摄像头"
 			timedOut := !track.Verified && !track.Rejected && now.Sub(track.FirstSeen) >= decisionTimeout
@@ -199,18 +200,7 @@ func (t *recognitionTracker) Observe(sessionID string, observations []recognitio
 			}
 			continue
 		}
-		track.InferenceFailures = 0;
-		if track == nil {
-			session.NextID++
-			track = &recognitionTrack{
-				ID:        fmt.Sprintf("%s-%d", sessionID, session.NextID),
-				FirstSeen: now,
-				Scores:    make([]float64, 0, livenessMaxFramesForMode(observation.LowLightMode)),
-			}
-			session.Tracks[observation.Student.ID] = track
-		}
 		maxFrames := livenessMaxFramesForMode(track.LowLightMode)
-		decisionTimeout := livenessDecisionTimeoutForMode(track.LowLightMode)
 		track.LastSeen = now
 		track.Frames++
 		track.SimilaritySum += observation.Similarity
