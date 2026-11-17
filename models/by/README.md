@@ -1,33 +1,44 @@
-# FaceSign By model files
+# FaceSign By face models
 
-The By runtime uses the following externally supplied ONNX files:
+The By branch has one supported face pipeline:
 
-| File | Role | SHA-256 |
-|---|---|---|
-| `scrfd_10g.onnx` | SCRFD-10GF face detector with 5-point keypoints | `5838f7fe053675b1c7a08b633df49e7af5495cee0493c7dcf6697200b85b5b91` |
-| `arcface_w600k_r50.onnx` | ArcFace / IResNet50 WebFace600K recognizer, 512-D | `4c06341c33c2ca1f86781dab0e829f88ad5b64be9fba56e56bc9ebdefc619e43` |
+- `scrfd_10g.onnx`: SCRFD-10GF face detector (expected graph: one NCHW float input, nine outputs for strides 8/16/32 with two anchors and five landmarks).
+- `arcface_w600k_r50.onnx`: ArcFace / IResNet50 recognizer (112x112 BGR input, 512-dimensional float output).
 
-## Install
+Put both authorized model files in this directory, or set `FACESIGN_BY_MODEL_DIR`.
 
-1. Obtain the exact model files from a source whose licence covers your intended use.
-2. Put them in this directory, or set `FACESIGN_BY_MODEL_DIR` to another directory.
-3. Keep the filenames above, and place a `SHA256SUMS` file alongside them.
-4. Start FaceSign with the default `--face-model by` backend.
+## Create the local checksum manifest
 
-The resolver verifies both model files against `SHA256SUMS` and will not silently download third-party weights.
+The application requires a SHA-256 manifest to detect accidental or incomplete model-file changes. The manifest is generated locally from the exact files you obtained; this is an integrity check, not proof of publisher authenticity.
 
-The reference InsightFace v0.7 `buffalo_l.zip` contains `det_10g.onnx` and `w600k_r50.onnx`; rename those two files to the names above if you have the appropriate licence. The original upstream model-zoo weights are marked for non-commercial research purposes only. Do not use them for operational school attendance or redistribute them unless you have obtained permission covering that use. The InsightFace code licence does not override the pretrained-weight terms.
+In PowerShell, run:
 
-Official sources:
+```powershell
+Get-FileHash .\scrfd_10g.onnx -Algorithm SHA256
+Get-FileHash .\arcface_w600k_r50.onnx -Algorithm SHA256
+```
+
+Create `SHA256SUMS` in this directory with these two lines, using the actual hashes printed on your computer:
+
+```text
+<64-character-SCRFD-SHA256>  scrfd_10g.onnx
+<64-character-ArcFace-SHA256>  arcface_w600k_r50.onnx
+```
+
+Do not copy example hashes from documentation. FaceSign checks both files against this manifest before loading them.
+
+## Model source and licensing
+
+The upstream InsightFace model zoo's pretrained weights are labelled for non-commercial research use. The software repository's code licence does not automatically grant broader rights to pretrained weights. Do not use those weights for operational school attendance unless you have written permission or another exact checkpoint licence that covers the intended use and redistribution.
+
+Official references:
 - https://github.com/deepinsight/insightface/releases/tag/v0.7
 - https://github.com/deepinsight/insightface/tree/master/model_zoo
 
-## Optional landmark models
+The names above are the FaceSign local filenames. For the buffalo_l package, the corresponding source files are commonly named `det_10g.onnx` and `w600k_r50.onnx`; rename only after verifying the checkpoint architecture and licence.
 
-The resolver can also verify optional `2d106det.onnx` and `1k3d68.onnx` files if their hashes are added to `SHA256SUMS`. The current Go attendance pipeline uses SCRFD's five landmarks for ArcFace alignment; the 106-point and 3D-68 inference/display pipeline is not yet enabled.
+## Enrollment and migration
 
-Gender/age inference is intentionally excluded from attendance decisions.
+ArcFace embeddings are a separate feature space from SFace. FaceSign does not convert old vectors. On first startup with the new backend, old vectors are archived in `face_samples_archive` and removed from the active index. Student profiles, class/seat data, attendance, camera configuration, user accounts, and settings remain. Students must be re-enrolled or imported from authorized original photos.
 
-## Migration
-
-The By engine uses a separate 512-dimensional feature space. Existing SFace vectors are not convertible. On first startup with the By backend, FaceSign archives non-By vectors in the local `face_samples_legacy` table and removes them from the active face index. Student profiles, class/seat data, attendance, camera configuration, user accounts, and settings remain intact. Students must be enrolled again or imported from authorized source photos to create By vectors.
+106-point and 3D-68 landmark inference are not part of the current attendance pipeline. Gender/age estimation is intentionally excluded.

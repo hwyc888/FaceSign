@@ -38,7 +38,7 @@ func ResolveBy(assetsPath string) (Paths, error) {
 		}
 	}
 	if modelDir == "" {
-		return Paths{}, fmt.Errorf("By face models are missing; place %s and %s in %s (or set FACESIGN_BY_MODEL_DIR)", bySCRFDFile, byArcFaceFile, filepath.Join(assetsPath, "models", "by"))
+		return Paths{}, fmt.Errorf("By face models are missing; place the authorized %s and %s files in %s (or set FACESIGN_BY_MODEL_DIR)", bySCRFDFile, byArcFaceFile, filepath.Join(assetsPath, "models", "by"))
 	}
 
 	checksums, err := readByChecksums(filepath.Join(modelDir, "SHA256SUMS"))

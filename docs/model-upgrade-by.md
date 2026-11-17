@@ -1,26 +1,25 @@
-# FaceSign model upgrade track (By)
+# FaceSign model upgrade (By)
 
-The By branch now switches the default face backend to SCRFD-10GF + ArcFace ResNet50. It keeps YOLOX-Nano person tracking and the existing passive RGB PAD engine.
+The By branch replaces YuNet + SFace with one supported face-recognition pipeline: SCRFD-10GF detection and ArcFace ResNet50 embeddings (512 dimensions). There is no legacy model backend or runtime fallback.
 
-## Runtime implementation
+## Runtime
 
-- SCRFD-10GF ONNX detector: 640x640 input, three FPN strides (8/16/32), score/bbox/keypoint decode, NMS, and five-point landmarks.
-- ArcFace ResNet50 ONNX recognizer: 112x112 similarity alignment, RGB normalization, 512-D output, L2 normalization.
-- ONNX Runtime CPU execution remains the runtime.
-- Model backend selection: `--face-model by` (default) or `--face-model legacy`.
-- By weights are external and SHA-256 checked. No restricted pretrained weights are bundled or automatically downloaded.
-- Optional 106-point and 3D-68 models are recognized in the model manifest, but their inference pipeline is not yet enabled. Gender/age is excluded.
+- SCRFD-10GF ONNX: 640x640 RGB input, stride 8/16/32 output decoding, bounding boxes, five facial landmarks, NMS.
+- ArcFace ResNet50 ONNX: five-point similarity alignment, 112x112 BGR input, 512-D output, L2 normalization.
+- ONNX Runtime CPU.
+- YOLOX-Nano person detection/tracking remains.
+- anti-spoof-mn3 passive PAD and existing multi-frame voting remain.
+
+## Weights
+
+The SCRFD and ArcFace weights are not included in this repository or CI artifacts. Place authorized files in `models/by/` and generate the local `SHA256SUMS` manifest using the commands in `models/by/README.md`. The checksum verifies local integrity, not publisher authenticity.
+
+The upstream InsightFace model zoo marks its pretrained weights for non-commercial research. Obtain an appropriate licence or use another checkpoint whose exact terms permit the intended school deployment. Do not assume the source-code licence grants rights to pretrained weights.
 
 ## Feature-space migration
 
-The model version is stored with each face sample. On startup, the selected model is activated. Samples belonging to another feature space are copied to `face_samples_legacy` and deleted from the active table. Student, class, seat, attendance, camera, account, and settings records are not deleted. SFace embeddings cannot be converted to ArcFace embeddings; re-enrollment or authorized source photos are required.
+Every face sample carries a model-version tag. On startup, the app archives samples from older model spaces in `face_samples_archive` and deletes them from the active `face_samples` table. No old inference backend is retained. Student profiles, class/seat assignments, attendance, cameras, user accounts, and settings are preserved. Students must be re-enrolled or imported from authorized source photos to create new ArcFace vectors.
 
-## Licensing
+## CI
 
-The upstream InsightFace model zoo states that its pretrained model weights are for non-commercial research purposes only. The software code licence does not grant broader rights to the weights. Use only a checkpoint whose exact weight licence covers the intended deployment, or obtain written permission. See `models/by/README.md`.
-
-## Validation
-
-- Unit tests cover SCRFD decode, alignment transforms, vector normalization, model hash checks, and feature-space migration.
-- Windows CI builds and runs the legacy smoke tests because the restricted By weights are not included in CI artifacts.
-- A real By runtime smoke test still requires the two authorized ONNX files in `models/by`.
+Windows CI runs Go tests/vet and produces Windows x64 packages. Because restricted or user-provided face weights are not redistributed, CI does not run camera/model inference smoke tests unless `FACESIGN_RUN_MODEL_SMOKE=true` and authorized model files have been made available to the runner.

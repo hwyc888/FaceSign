@@ -31,7 +31,7 @@ func (s *Store) CreateStudent(ctx context.Context, studentNo, name, className st
 }
 
 func (s *Store) CreateStudentWithFace(ctx context.Context, studentNo, name, className, label string, embedding []byte) (Student, FaceSampleInfo, error) {
-	return s.CreateStudentWithFaceVersion(ctx, studentNo, name, className, label, "sface-v1", embedding)
+	return s.CreateStudentWithFaceVersion(ctx, studentNo, name, className, label, "arcface-r50-w600k-v1", embedding)
 }
 
 func (s *Store) CreateStudentWithFaceVersion(ctx context.Context, studentNo, name, className, label, modelVersion string, embedding []byte) (Student, FaceSampleInfo, error) {

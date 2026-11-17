@@ -35,21 +35,6 @@ type spec struct {
 	URL    string
 }
 
-var pinned = []spec{
-	{Name: "face_detection_yunet_2023mar.onnx", SHA256: "8f2383e4dd3cfbb4553ea8718107fc0423210dc964f9f4280604804ed2552fa4"},
-	{Name: "face_recognition_sface_2021dec.onnx", SHA256: "0ba9fbfa01b5270c96627c4ef784da859931e02f04419c829e83484087c34e79"},
-	{Name: "anti-spoof-mn3.onnx", SHA256: "c4c99af04603b62d7e44f6f4daeb33e0daeccc696008c0b1d62f6f5cebbb3262"},
-	{
-		Name:   "yolox_nano.onnx",
-		SHA256: "c789161ed43c8269fcd4e67c67eeeb4e80c622da2eb296a20bc6007bd18a0b7d",
-		URL:    "https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/yolox_nano.onnx",
-	},
-}
-
-func Resolve(assetsPath string) (Paths, error) {
-	return resolve(assetsPath, candidateDirectories(assetsPath), defaultBaseURL, pinned)
-}
-
 func candidateDirectories(assetsPath string) []string {
 	var dirs []string
 	if custom := strings.TrimSpace(os.Getenv("FACESIGN_MODEL_DIR")); custom != "" {
@@ -242,12 +227,9 @@ func writeVerified(target, expectedSHA string, write func(io.Writer) error) erro
 
 func buildPaths(dir string) Paths {
 	return Paths{
-		Detector:   filepath.Join(dir, "face_detection_yunet_2023mar.onnx"),
-		Recognizer: filepath.Join(dir, "face_recognition_sface_2021dec.onnx"),
-		Liveness:   filepath.Join(dir, "anti-spoof-mn3.onnx"),
-		Person:     filepath.Join(dir, "yolox_nano.onnx"),
-		Backend:    "legacy",
-		Directory:  dir,
+		Liveness:  filepath.Join(dir, "anti-spoof-mn3.onnx"),
+		Person:    filepath.Join(dir, "yolox_nano.onnx"),
+		Directory: dir,
 	}
 }
 

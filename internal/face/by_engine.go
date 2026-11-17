@@ -1,16 +1,13 @@
 package face
 
 import (
-	"errors"
 	"fmt"
 	"image"
 	"math"
 	"os"
-	"sort"
 	"sync"
 
 	"github.com/hwyc888/FaceSign/internal/inference"
-	onnxface "github.com/leandroveronezi/go-onnxface"
 	ort "github.com/yalue/onnxruntime_go"
 )
 
@@ -28,7 +25,6 @@ type byRuntime struct {
 	recognizer *ort.DynamicAdvancedSession
 	recognizerInput string
 	recognizerOutput string
-	input *ort.Tensor[float32]
 }
 
 type byCandidate struct {
@@ -36,9 +32,9 @@ type byCandidate struct {
 	score float32
 }
 
-// NewBy creates the SCRFD-10GF + ArcFace ResNet50 inference engine.
-// Model files are supplied locally; this function never downloads or redistributes
-// third-party pretrained weights.
+// NewBy loads the only supported face-recognition backend: SCRFD-10GF +
+// ArcFace ResNet50. Model weights are supplied locally and are never downloaded
+// or redistributed by the application.
 func NewBy(runtimePath, detectorModel, recognizerModel string) (*Engine, error) {
 	for label, path := range map[string]string{
 		"ONNX Runtime": runtimePath,
@@ -50,11 +46,12 @@ func NewBy(runtimePath, detectorModel, recognizerModel string) (*Engine, error) 
 			return nil, fmt.Errorf("%s not found: %s", label, path)
 		}
 	}
-	if err := onnxface.InitEnvironment(runtimePath); err != nil {
+	ort.SetSharedLibraryPath(runtimePath)
+	if err := ort.InitializeEnvironment(); err != nil {
 		return nil, fmt.Errorf("initialize ONNX Runtime: %w", err)
 	}
 	fail := func(err error) (*Engine, error) {
-		_ = onnxface.CloseEnvironment()
+		_ = ort.DestroyEnvironment()
 		return nil, err
 	}
 
@@ -82,10 +79,10 @@ func NewBy(runtimePath, detectorModel, recognizerModel string) (*Engine, error) 
 	recognizer, err := ort.NewDynamicAdvancedSession(recognizerModel, []string{recognizerInputs[0].Name}, []string{recognizerOutputs[0].Name}, nil)
 	if err != nil {
 		_ = detector.Destroy()
-		return fail(fmt.Errorf("load ArcFace model: %w", err))
+		return fail(fmt.Errorf("load ArcFace recognizer: %w", err))
 	}
 
-	return &Engine{backend: "by", by: &byRuntime{
+	return &Engine{backend: "scrfd-arcface", by: &byRuntime{
 		detector: detector,
 		detectorInput: detectorInputs[0].Name,
 		detectorOutputs: outputNames(detectorOutputs),
@@ -117,7 +114,9 @@ func (e *Engine) closeBy() {
 		_ = e.by.recognizer.Destroy()
 		e.by.recognizer = nil
 	}
-	_ = onnxface.CloseEnvironment()
+	if ort.IsInitialized() {
+		_ = ort.DestroyEnvironment()
+	}
 }
 
 func (e *Engine) detectSCRFD(img image.Image, threshold float64) ([]Detection, error) {
@@ -132,7 +131,7 @@ func (e *Engine) detectSCRFD(img image.Image, threshold float64) ([]Detection, e
 	e.by.mu.Lock()
 	defer e.by.mu.Unlock()
 	if e.by.detector == nil {
-		return nil, errors.New("SCRFD detector is closed")
+		return nil, fmt.Errorf("SCRFD detector is closed")
 	}
 	releaseInference := inference.Acquire()
 	defer releaseInference()
@@ -218,6 +217,9 @@ func decodeSCRFD(outputs []*ort.Tensor[float32], scale float64, bounds image.Rec
 func decodeSCRFDData(outputs [][]float32, scale float64, bounds image.Rectangle, threshold float32) []Detection {
 	strides := []int{8, 16, 32}
 	candidates := make([]byCandidate, 0, 64)
+	if len(outputs) != 9 || scale <= 0 {
+		return nil
+	}
 	for level, stride := range strides {
 		gridWidth := byDetectorSize / stride
 		gridHeight := byDetectorSize / stride
@@ -300,7 +302,7 @@ func (e *Engine) featureArcFace(img image.Image, detected Detection) ([]float32,
 	e.by.mu.Lock()
 	defer e.by.mu.Unlock()
 	if e.by.recognizer == nil {
-		return nil, errors.New("ArcFace recognizer is closed")
+		return nil, fmt.Errorf("ArcFace recognizer is closed")
 	}
 	releaseInference := inference.Acquire()
 	defer releaseInference()
@@ -322,7 +324,7 @@ func (e *Engine) featureArcFace(img image.Image, detected Detection) ([]float32,
 	defer destroyValues(outputs)
 	tensor, ok := outputs[0].(*ort.Tensor[float32])
 	if !ok {
-		return nil, errors.New("ArcFace output is not float32")
+		return nil, fmt.Errorf("ArcFace output is not float32")
 	}
 	feature := append([]float32(nil), tensor.GetData()...)
 	if len(feature) != byEmbeddingSize {
@@ -371,12 +373,12 @@ func alignArcFace112(img image.Image, landmarks [5]image.Point) ([]float32, erro
 	}
 	params, ok := solve4(normal, rhs)
 	if !ok {
-		return nil, errors.New("cannot estimate ArcFace alignment transform")
+		return nil, fmt.Errorf("cannot estimate ArcFace alignment transform")
 	}
 	a, b, tx, ty := params[0], params[1], params[2], params[3]
 	det := a*a + b*b
 	if det < 1e-12 {
-		return nil, errors.New("invalid ArcFace alignment transform")
+		return nil, fmt.Errorf("invalid ArcFace alignment transform")
 	}
 	const plane = byRecognizerSize * byRecognizerSize
 	data := make([]float32, 3*plane)
@@ -387,9 +389,10 @@ func alignArcFace112(img image.Image, landmarks [5]image.Point) ([]float32, erro
 			sy := (-b*dx + a*dy) / det
 			r, g, blue := sampleRGB(img, sx, sy)
 			index := y*byRecognizerSize + x
-			data[index] = (r - 127.5) / 127.5
+			// InsightFace ArcFace checkpoints expect BGR channel order.
+			data[index] = (blue - 127.5) / 127.5
 			data[plane+index] = (g - 127.5) / 127.5
-			data[2*plane+index] = (blue - 127.5) / 127.5
+			data[2*plane+index] = (r - 127.5) / 127.5
 		}
 	}
 	return data, nil

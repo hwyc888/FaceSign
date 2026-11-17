@@ -13,7 +13,7 @@ func TestActivateFaceModelArchivesOldVectorsAndPreservesStudent(t *testing.T) {
 	}
 	defer st.Close()
 
-	student, _, err := st.CreateStudentWithFace(ctx, "S001", "测试学生", "一班", "正面", []byte{1, 2, 3, 4})
+	student, _, err := st.CreateStudentWithFaceVersion(ctx, "S001", "测试学生", "一班", "正面", "sface-v1", []byte{1, 2, 3, 4})
 	if err != nil {
 		t.Fatal(err)
 	}

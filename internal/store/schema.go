@@ -311,7 +311,7 @@ func (s *Store) ActivateFaceModel(ctx context.Context, modelVersion string) erro
 	}
 	defer tx.Rollback()
 	if _, err := tx.ExecContext(ctx, `
-		CREATE TABLE IF NOT EXISTS face_samples_legacy (
+		CREATE TABLE IF NOT EXISTS face_samples_archive (
 			id INTEGER NOT NULL,
 			student_id INTEGER NOT NULL,
 			embedding BLOB NOT NULL,
@@ -321,7 +321,7 @@ func (s *Store) ActivateFaceModel(ctx context.Context, modelVersion string) erro
 			archived_at INTEGER NOT NULL,
 			PRIMARY KEY(id, model_version)
 		)`); err != nil {
-		return fmt.Errorf("create legacy face archive: %w", err)
+		return fmt.Errorf("create historical face archive: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `
 		INSERT OR IGNORE INTO face_samples_legacy(id,student_id,embedding,label,model_version,created_at,archived_at)

@@ -50,19 +50,11 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	var modelPaths models.Paths
-	switch cfg.FaceModel {
-	case "by":
-		modelPaths, err = models.ResolveBy(cfg.AssetsPath)
-	case "legacy":
-		modelPaths, err = models.Resolve(cfg.AssetsPath)
-	default:
-		return fmt.Errorf("unsupported face model backend %q (use by or legacy)", cfg.FaceModel)
-	}
+	modelPaths, err := models.ResolveBy(cfg.AssetsPath)
 	if err != nil {
-		return fmt.Errorf("准备人脸模型失败: %w", err)
+		return fmt.Errorf("准备 SCRFD + ArcFace 模型失败: %w", err)
 	}
-	logger.Info("FaceSign models ready", "backend", cfg.FaceModel, "directory", modelPaths.Directory)
+	logger.Info("FaceSign models ready", "backend", "scrfd-arcface", "directory", modelPaths.Directory)
 
 	st, err := store.Open(cfg.DataPath)
 	if err != nil {
@@ -70,12 +62,7 @@ func run(logger *slog.Logger) error {
 	}
 	defer st.Close()
 
-	var engine *face.Engine
-	if cfg.FaceModel == "by" {
-		engine, err = face.NewBy(runtimePath, modelPaths.Detector, modelPaths.Recognizer)
-	} else {
-		engine, err = face.New(runtimePath, modelPaths.Detector, modelPaths.Recognizer)
-	}
+	engine, err := face.NewBy(runtimePath, modelPaths.Detector, modelPaths.Recognizer)
 	if err != nil {
 		return fmt.Errorf("启动人脸识别引擎失败: %w", err)
 	}

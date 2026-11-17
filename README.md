@@ -1,159 +1,60 @@
-# FaceSign\n\nFaceSign is a compact school face-attendance application written in Go for Windows.\n\n## Design goals\n\n- One application process: web UI, SQLite, face detection, face feature extraction, matching and attendance.\n- No Python runtime.\n- No Docker.\n- No GPU requirement; CPU inference is the default.\n- Browser camera UI is embedded in the Go executable.
-- A saved **FaceSign host / USB camera** is captured on the Windows computer running FaceSign through the bundled FFmpeg DirectShow input. Remote browsers (including phones/tablets) therefore see the server computer's USB camera instead of silently switching to the remote device camera.\n- Portable Windows release built by GitHub Actions.\n\n## Face recognition stack\n\n- YuNet ONNX model for face detection.\n- SFace ONNX model for face embeddings.\n- anti-spoof-mn3 ONNX model for passive RGB liveness / presentation-attack screening.\n- Multi-frame liveness voting before attendance is written.\n- ONNX Runtime CPU for inference.\n- `go-onnxface` Go API for YuNet/SFace integration.\n\nONNX Runtime is distributed as `onnxruntime.dll` beside `FaceSign.exe`. This is a native library, not a Python dependency.\n\n## Features\n\n- Add and delete students.\n- Class and student number fields.\n- Browser camera enrollment.\n- One face template per student, replaceable by re-enrollment.\n- Face recognition and daily check-in.\n- One check-in record per student per day.\n- Attendance history by date.\n- Embedded responsive left-sidebar UI.\n- SQLite data stored locally.\n- Portable-first Windows operation: unzip and run directly; optional startup registration through the management tool.\n\n## Windows program package
+# FaceSign
 
-Each successful Windows build now publishes **two release artifacts** from the same `FaceSign.exe` build:
+FaceSign is a compact school face-attendance application written in Go for Windows.
 
-- `facesign-windows-amd64-full`: complete offline **portable package** for the application and support models. The separately licensed By face weights must be installed in `models/by/` before first launch.
-- `facesign-windows-amd64-lite`: lightweight upgrade package. It does not contain ONNX models and is recommended when the existing FaceSign directory already contains valid models.
+## Face-recognition stack
 
-Both packages contain the same program and native runtime:
+This branch has one supported face-recognition pipeline:
 
-```text
-FaceSign.exe
-FaceSignManager.exe
-onnxruntime.dll
-scripts/
-  install.ps1
-  upgrade.ps1
-  uninstall.ps1
-  install-client-ca.ps1
-README.md
-```
+- **SCRFD-10GF**: face detection and five facial landmarks.
+- **ArcFace ResNet50**: 512-dimensional identity embeddings.
+- **anti-spoof-mn3**: passive RGB presentation-attack screening with multi-frame voting.
+- **YOLOX-Nano**: person detection used by the person-tracking workflow.
+- **ONNX Runtime CPU**: inference without a GPU requirement.
 
-The full package contains the liveness/person support models. The By face weights are supplied separately because their upstream pretrained-weight licence does not permit automatic redistribution; see [models/by/README.md](models/by/README.md).
+YuNet and SFace have been removed from this branch. There is no legacy face-model backend or runtime fallback.
 
-The installer reuses or downloads only the pinned support models (anti-spoof and YOLOX) and verifies their SHA-256 checksums. It never downloads the restricted SCRFD/ArcFace face weights. Install authorized By weights separately before starting the default backend.
+Install the separately authorized SCRFD and ArcFace ONNX files under `models/by/`. See [models/by/README.md](models/by/README.md) for filenames and checksum-manifest setup. The face weights are not included in this repository or CI artifacts.
 
-The executable resolves the By model files from `models/by/` (or `FACESIGN_BY_MODEL_DIR`). The full package can start offline once those authorized files are installed. The previous model backend can be selected with `--face-model legacy` for recovery or comparison.
+## Features
 
-FaceSign now listens on HTTP `0.0.0.0:8080` and HTTPS `0.0.0.0:8443`. The Windows installer enables HTTP-to-HTTPS redirect while keeping `http://<server-ip>:8080/facesign-root-ca.crt` available for initial client trust setup.
+- Student and class management, including seat assignments.
+- Browser camera enrollment and photo ZIP import.
+- Face recognition and daily check-in.
+- One check-in record per student per day.
+- Attendance history and class seat board.
+- Embedded responsive web UI.
+- Local SQLite database.
+- Portable Windows operation; optional startup registration through FaceSignManager.
+- USB and RTSP camera support through the bundled FFmpeg runtime.
 
-If startup fails, check `facesign-error.log` beside the executable. If that directory is not writable, the fallback log is `%TEMP%\\facesign-error.log`.
+## Windows packages
 
-## Portable use and optional Windows startup registration
+GitHub Actions publishes:
 
-**Portable use is the default.** Extract the full package to any writable folder (for example `D:\\FaceSign`) and double-click `FaceSign.exe`. The program, database, TLS identity, models and logs stay under that same folder.
+- `facesign-windows-amd64-full`: application, native runtime, FFmpeg, anti-spoof model, person model, and By model installation instructions. Add authorized SCRFD/ArcFace files before first launch.
+- `facesign-windows-amd64-lite`: lightweight application upgrade package without model files.
+- `facesign-windows-amd64-full-no-ffmpeg`: full package without the FFmpeg runtime.
+- `facesign-windows-amd64-no-models-no-ffmpeg`: minimal application package.
+- `facesign-camera-agent-windows-amd64`: remote camera agent.
 
-If FaceSign should run at boot, open `FaceSignManager.exe` and click **安装/注册本目录**. The manager requests administrator rights only for the Windows scheduled task, firewall and certificate operations. It registers the **current extracted directory in place** and does not copy the application to `C:\\ProgramData` or another C-drive installation directory.
+The full package is not self-contained for face inference until the two authorized By face weights and local SHA-256 manifest are installed. FaceSign never downloads or redistributes those weights automatically.
 
-The PowerShell installer remains available for diagnostics/automation, but its default target is also the package directory itself.\n\n## FaceSign management tool
+## Feature-vector migration
 
-The Windows package includes `FaceSignManager.exe`. It runs directly from the extracted folder. When **安装/注册本目录** is used, the same folder is registered as the FaceSign startup location and a **FaceSign 管理工具** shortcut is added to the Windows Start menu.
+ArcFace uses a different feature space from SFace. Old SFace vectors cannot be converted and are never used for recognition. On first startup with this version, old vectors are moved to the `face_samples_archive` table and removed from the active face index. Student profiles, class and seat assignments, attendance history, camera configuration, user accounts, and application settings are preserved.
 
-The manager automatically requests administrator rights because startup-task, firewall and machine-certificate changes require elevation. The FaceSign startup task itself now runs as the **currently signed-in Windows user** with an interactive logon token so Windows DirectShow/USB cameras remain visible. It provides:
+Students must be re-enrolled using the new model or imported from authorized original face photos to create new ArcFace vectors.
 
-- **安装/注册本目录** without copying program files to another directory.
-- **卸载 FaceSign** stops the server, removes its startup task, firewall rules, Start menu shortcut and program files. The `data` folder (student, face and attendance database) and `tls` folder (server identity) are deliberately preserved; delete them manually only if you also want to erase that data.
-- Start, stop and restart the registered FaceSign task. Repeated Start/Stop clicks are idempotent: starting an already-running service or stopping an already-stopped service returns immediately instead of re-running Task Scheduler commands. The native Win32 GUI message loop is pinned to its creating OS thread so background work cannot strand the window on a different thread.
-- **Upgrade FaceSign** directly from the management window: choose the newly extracted release directory, confirm once, and the manager closes itself, runs `scripts\upgrade.ps1`, then reopens after the in-place upgrade finishes. Directory selection and every service/shell operation run off the GUI thread so the management window stays responsive. The database, face data, TLS identity, service arguments and startup state are preserved.
-- Stop the scheduled task first, wait for its owned process to exit, then terminate only remaining `FaceSign.exe` PIDs individually. The manager no longer uses `taskkill /T /IM`, so an FFmpeg/decoder child-process error cannot falsely report that FaceSign itself failed to stop. Older scheduled tasks are also normalized to `MultipleInstances=IgnoreNew` during upgrade.
-- Enable or disable startup without deleting the task.
-- Open the FaceSign management webpage.
-- Show the current PID, HTTP/HTTPS listen addresses, running build version and persistent root-CA expiry.
-- Open the startup log and installation directory.
+## Runtime
 
-Stopping FaceSign does **not** disable startup. Use **关闭开机启动** separately if FaceSign should also stay stopped after the next reboot. Because host USB cameras require the interactive Windows desktop session, the registered task starts at that user's logon rather than in SYSTEM Session 0; FaceSign therefore starts after that Windows user signs in. The server executable is built with the Windows GUI subsystem, so neither registered startup nor portable double-click mode creates a CMD console window. Startup failures still show a Windows error dialog and are written to `facesign-error.log`; normal startup details remain in `data\\facesign-startup.log`.
+- HTTP: `0.0.0.0:8080`
+- HTTPS: `0.0.0.0:8443`
+- ONNX Runtime DLL: `onnxruntime.dll` beside `FaceSign.exe`
+- Model directory: `models/by/` or `FACESIGN_BY_MODEL_DIR`
 
-## HTTPS and browser camera access
+If startup fails, check `facesign-error.log` beside the executable. If the directory is not writable, the fallback log is under the user's temporary directory.
 
-FaceSign now creates a persistent private root CA the first time it starts. The root CA is valid for 50 years and is preserved across normal upgrades and uninstall/reinstall. Server certificates are renewed automatically from the same root CA before expiry or whenever the server hostname/IP SAN set changes, so clients keep trusting the server without reinstalling the CA.
+## Development and CI
 
-After optional Windows startup registration, the TLS identity stays under the selected FaceSign directory's `tls` folder. The installer restricts that directory to SYSTEM and local Administrators and imports the root CA into the server's LocalMachine trust store.
-
-On each Windows browser client, run:
-
-```powershell
-.\\scripts\\install-client-ca.ps1 -Server <FaceSign-server-IP>
-```
-
-This installs trust for the current Windows user without administrator rights. Use `-Machine` from an Administrator PowerShell window to trust FaceSign for all users on that client. Then open `https://<server-ip>:8443/`; Edge/Chrome will treat the page as a secure context and can call that client's own USB/built-in camera.
-
-If the server is accessed through an extra DNS name or a NAT/public IP not assigned directly to a server interface, install with `-TLSHosts "facesign.school.example,203.0.113.10"` so those names are included in the HTTPS certificate.\n\n## Security note\n\nFace check-in uses passive RGB anti-spoof inference plus multi-frame voting before attendance is accepted. This reduces simple printed-photo and screen-replay attacks without requiring students to blink or turn their head, but RGB-only liveness cannot guarantee rejection of every sophisticated replay or 3D-mask attack.\n\nThe current lightweight build does not yet include administrator authentication. Use LAN access only on a trusted school network. Face embeddings are biometric data; protect the Windows host and database and follow the school's consent, retention and deletion requirements.\n\n## Local development\n\n```sh\ngo test ./...\ngo vet ./...\n```\n
-
-## Upgrading an existing Windows installation
-
-Normal upgrades preserve FaceSign data and service arguments while refreshing the scheduled task for the currently signed-in Windows user. From the newly extracted release package, run this as Administrator:
-
-```powershell
-Set-ExecutionPolicy -Scope Process Bypass
-.\scripts\upgrade.ps1
-```
-
-The upgrade stops the running FaceSign process, replaces only program/runtime files, recreates the startup task as an interactive current-user logon task, and then starts the new build. It preserves custom HTTP/HTTPS/TLS-host arguments, the current startup-enabled/disabled state, the SQLite database, TLS identity and cached models.
-
-`scripts\install.ps1` is now upgrade-aware too: if an existing FaceSign task and installation are detected, rerunning it performs the same in-place update instead of unregistering and recreating the task. Explicitly passing `-Listen`, `-HTTPSListen` or `-TLSHosts` still updates those service arguments when that is intentional.
-
-For diagnostics:
-
-- `https://127.0.0.1:8443/api/version` shows the running build version after the FaceSign root CA has been trusted.
-- `data\facesign-startup.log` under the FaceSign program directory shows the version, PID and listening address.
-- A startup failure writes `facesign-error.log`.
-
-
-## Pinned face models
-
-The core face/liveness model binaries are pinned in FaceSign history. The person detector is the official YOLOX-Nano release asset, downloaded by the full-package build/installer and verified by its pinned SHA-256:
-
-- Model commit: `de5287c66e9e37e9f804686bf63f5a0974f68f72`
-- YuNet: `models/face_detection_yunet_2023mar.onnx`
-- SFace: `models/face_recognition_sface_2021dec.onnx`
-- Passive liveness: `models/anti-spoof-mn3.onnx`
-- Person detector: official YOLOX-Nano 416 ONNX (`0.1.1rc0`), SHA-256 pinned in `models/SHA256SUMS`
-- Checksums: `models/SHA256SUMS`
-
-This keeps every later Windows program artifact small. If a target PC must be installed offline, download those three model files once from the pinned commit and place them in a `models` folder beside the extracted program package before running `scripts\install.ps1`.
-
-
-## Remote server + classroom Camera Agent
-
-When the FaceSign server is outside the classroom LAN, browser-local USB cameras continue to work from the client browser (use HTTPS for remote browser camera permission). For classroom IP cameras that the central server cannot route to, use the separate `facesign-camera-agent-windows-amd64` artifact.
-
-The Camera Agent runs on a classroom Windows PC, reads the camera locally, and only makes outbound HTTP/HTTPS requests to the central FaceSign server. No inbound port or router port-forward is required. Camera URL/user/password remain in the classroom PC's local `camera-agent.json`; the server stores only the Agent ID, a SHA-256 connection-key hash, and the latest frame in memory.
-
-See `CAMERA_AGENT.md` in the repository or the Camera Agent artifact for deployment steps.
-
-
-## FaceSign host USB camera from phones and other computers
-
-Camera Management treats **FaceSign主机 / USB摄像头** as a server-side camera source. Device enumeration, connection testing, continuous preview frames and recognition frames all run on the Windows computer that is running `FaceSign.exe`.
-
-This fixes the old browser-local behavior where opening FaceSign from a phone caused `getUserMedia()` to open the phone camera. The browser camera remains only as the temporary fallback when no saved camera exists. Once a host USB camera is saved as the default, desktops, tablets and phones all use the same FaceSign-host camera.
-
-The host USB path uses the bundled FFmpeg DirectShow input and one shared capture process for preview and recognition, because many Windows webcams cannot be opened twice at the same time. Windows webcams are session-scoped, so the optional startup task is registered for the currently signed-in desktop user instead of SYSTEM/Session 0. If an older installation still reports no host USB camera, open the new `FaceSignManager.exe` and run **安装/注册本目录** once to migrate the old task. Also confirm the USB camera is connected and Windows Privacy & security -> Camera allows desktop applications to access the camera.
-
-The web UI also has a phone/tablet layout: tablet navigation becomes horizontal, phone navigation moves to the bottom, forms stack to one column, and data tables render as labeled cards on narrow screens.
-
-
-### Host USB camera enumeration fallback
-
-FaceSign first enumerates Windows host cameras through FFmpeg DirectShow. If a Windows/FFmpeg combination returns no DirectShow list, FaceSign also checks Windows Plug and Play Camera/Image devices and uses their friendly names as fallback capture candidates. A failed host-USB connection test reports both **FFmpeg DirectShow** and **Windows PnP** status so it is immediately clear whether the camera is missing at the Windows hardware layer or only unavailable to DirectShow.
-
-
-### Opt-in camera audio
-
-Live camera audio is **off by default**. Clicking **声音：关/开** creates a separate audio-only WebRTC connection, so the existing H.264/H.265 preview path, MJPEG fallback and face-recognition cadence are unchanged while sound is off. The volume slider defaults to 60%.
-
-- RTSP network cameras: FaceSign reads the audio track from the same RTSP stream and converts it to WebRTC Opus only after sound is enabled.
-- FaceSign host USB cameras: FaceSign enumerates Windows DirectShow audio inputs only after sound is enabled and prefers an input whose device name best matches the selected USB camera.
-- Current-browser cameras and Camera Agent stay video-only to avoid microphone feedback and to preserve their existing behavior.
-
-
-### Camera microphone association
-
-The sound control now means **the microphone that belongs to the selected camera**, not an arbitrary PC recording input.
-
-- Current-browser camera: after the user enables sound, FaceSign uses the browser's MediaDeviceInfo `groupId` to find an `audioinput` in the same physical device group as the active `videoinput`. If no same-group microphone exists, sound stays off and FaceSign does not fall back to another microphone.
-- FaceSign host USB camera: the server only accepts a DirectShow audio input that positively matches the selected USB camera name/device tokens. An unrelated Realtek/laptop microphone is no longer selected as a fallback.
-- RTSP camera: sound still comes from the audio track embedded in that camera's RTSP stream.
-
-Audio remains off by default and enabling/disabling it does not change the existing video or face-recognition path.
-
-
-### Browser camera microphone permission and pairing
-
-For the **current-device/browser camera**, clicking the sound button now first requests microphone permission, immediately releases that temporary track, and then re-enumerates devices. Browsers may hide microphone labels and grouping metadata until microphone access has been granted. FaceSign then requests an audio source with the camera's exact `groupId` when supported. On Windows USB composite cameras that expose separate group IDs, a strict unique camera/microphone name match is used as a fallback. FaceSign still refuses to silently substitute an unrelated Realtek/system microphone.
-
-
-## Face feature migration
-
-The default By backend uses a separate 512-dimensional ArcFace feature space. SFace vectors cannot be converted. On first startup after the By weights are installed, FaceSign archives old face vectors in `face_samples_legacy` and clears them from the active recognition index. Student profiles, class/seat assignments, attendance history, camera configuration, user accounts and settings are preserved. Re-enroll students or import authorized original photos to create new vectors. See [the By model guide](models/by/README.md).
+Windows CI runs Go tests, vet, builds the Windows x64 executables, and creates package artifacts. End-to-end camera/model smoke tests require the authorized SCRFD and ArcFace weights to be supplied to the runner; they are not silently replaced by an older model.

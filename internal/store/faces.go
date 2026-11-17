@@ -14,7 +14,7 @@ func (s *Store) SetFaceSample(ctx context.Context, studentID int64, embedding []
 }
 
 func (s *Store) AddFaceSample(ctx context.Context, studentID int64, label string, embedding []byte) (FaceSampleInfo, error) {
-	return s.AddFaceSampleWithVersion(ctx, studentID, label, "sface-v1", embedding)
+	return s.AddFaceSampleWithVersion(ctx, studentID, label, "arcface-r50-w600k-v1", embedding)
 }
 
 func (s *Store) AddFaceSampleWithVersion(ctx context.Context, studentID int64, label, modelVersion string, embedding []byte) (FaceSampleInfo, error) {
