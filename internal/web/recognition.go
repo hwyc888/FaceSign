@@ -215,14 +215,28 @@ func (s *Server) recognizePreparedImage(
 	for i, detected := range detections {
 		quality := scoreFaceQualityWithThreshold(img, detected, qualityThreshold)
 		qualities[i] = quality
+		livenessLowLight, livenessModeLabel := resolveLivenessMode(lowLightMode, quality.Brightness)
+		qualityObservation := recognitionObservation{
+			FaceQuality:    quality.Score,
+			Exposure:       quality.Exposure,
+			Sharpness:      quality.Sharpness,
+			FaceBrightness: quality.Brightness,
+			LowLightMode:   livenessLowLight,
+		}
+		exposureFloor, sharpnessFloor := livenessQualityThresholds(qualityObservation)
 		result := recognitionFace{
-			Status:        "等待清晰人脸",
-			Box:           boxFromRectangle(detected.Rectangle),
-			QualityScore:      quality.Score,
-			QualityStatus:     quality.Status,
-			QualityHint:       quality.Hint,
-			LivenessExposure:  quality.Exposure,
-			LivenessSharpness: quality.Sharpness,
+			Status:                      "等待清晰人脸",
+			Box:                         boxFromRectangle(detected.Rectangle),
+			QualityScore:                quality.Score,
+			QualityStatus:               quality.Status,
+			QualityHint:                 quality.Hint,
+			LivenessExposure:            quality.Exposure,
+			LivenessSharpness:           quality.Sharpness,
+			LivenessBrightness:          quality.Brightness / 255,
+			LivenessMode:                livenessModeLabel,
+			LivenessQualityStatus:       livenessObservationQualityStatus(qualityObservation),
+			LivenessExposureThreshold:   exposureFloor,
+			LivenessSharpnessThreshold:  sharpnessFloor,
 		}
 
 		if trackIndex, ok := associateFaceToPerson(detected.Rectangle, tracks); ok {
