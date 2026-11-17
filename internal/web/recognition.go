@@ -397,10 +397,11 @@ func (s *Server) recognizePreparedImage(
 			Student:      match.Student,
 			Similarity:   match.Similarity,
 			LiveScore:    score,
-			FaceQuality:  qualities[match.DetectionIndex].Score,
-			Exposure:     qualities[match.DetectionIndex].Exposure,
-			Sharpness:    qualities[match.DetectionIndex].Sharpness,
-			LowLightMode: lowLightMode,
+			FaceQuality:     qualities[match.DetectionIndex].Score,
+			Exposure:       qualities[match.DetectionIndex].Exposure,
+			Sharpness:      qualities[match.DetectionIndex].Sharpness,
+			FaceBrightness: qualities[match.DetectionIndex].Brightness,
+			LowLightMode:   results[match.DetectionIndex].LivenessMode != "普通模式",
 		})
 		observationDetectionIndexes = append(observationDetectionIndexes, match.DetectionIndex)
 	}
@@ -524,6 +525,13 @@ func (s *Server) recognizePreparedImage(
 		response["liveness_frames"] = results[0].LivenessFrames
 		response["required_frames"] = results[0].RequiredFrames
 		response["liveness_timed_out"] = results[0].LivenessTimedOut
+		response["liveness_mode"] = results[0].LivenessMode
+		response["liveness_brightness"] = results[0].LivenessBrightness
+		response["liveness_exposure"] = results[0].LivenessExposure
+		response["liveness_sharpness"] = results[0].LivenessSharpness
+		response["liveness_quality_status"] = results[0].LivenessQualityStatus
+		response["liveness_exposure_threshold"] = results[0].LivenessExposureThreshold
+		response["liveness_sharpness_threshold"] = results[0].LivenessSharpnessThreshold
 		if results[0].Student != nil {
 			response["student"] = results[0].Student
 			if results[0].Attendance != nil {

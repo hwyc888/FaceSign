@@ -189,7 +189,7 @@ func TestRecognitionTrackerDoesNotTreatPoorQualityFramesAsSpoofEvidence(t *testi
 		if decision.Rejected || decision.Verified || decision.Frames != 0 {
 			t.Fatalf("poor quality frame must not count as spoof/live evidence: %#v", decision)
 		}
-		if decision.LivenessStatus != "光线不足或画面模糊，请调整摄像头" {
+		if decision.LivenessStatus != "人脸区域曝光不足且清晰度不足" {
 			t.Fatalf("unexpected low-quality status: %#v", decision)
 		}
 	}
@@ -459,11 +459,66 @@ func TestLivenessQualityGateAdaptsSharpnessForStrongFaceQuality(t *testing.T) {
 
 func TestLivenessObservationQualityStatusIdentifiesBlockingDimension(t *testing.T) {
 	observation := recognitionObservation{FaceQuality: 0.72, Exposure: 0.20, Sharpness: 0.04}
-	if got := livenessObservationQualityStatus(observation); got != "光线不足且画面模糊，请补光并保持静止" {
+	if got := livenessObservationQualityStatus(observation); got != "人脸区域曝光不足且清晰度不足" {
 		t.Fatalf("unexpected combined quality status: %q", got)
 	}
 	observation.Exposure = 0.90
-	if got := livenessObservationQualityStatus(observation); got != "画面清晰度不足，请擦拭镜头并保持静止" {
+	if got := livenessObservationQualityStatus(observation); got != "人脸区域清晰度不足" {
 		t.Fatalf("unexpected sharpness status: %q", got)
+	}
+}
+
+func TestAutoLowLightProfileAcceptsDimButMeasurableFaceRegion(t *testing.T) {
+	lowLight, _ := resolveLivenessMode(false, 24)
+	observation := recognitionObservation{
+		FaceQuality: 0.67,
+		FaceBrightness: 24,
+		Exposure: 0.51,
+		Sharpness: 0.055,
+		LowLightMode: lowLight,
+	}
+	if !lowLight || !livenessObservationQualityUsable(observation) {
+		t.Fatalf("measurable dim face should enter anti-spoof inference and frame accumulation: %#v", observation)
+	}
+	if livenessObservationQualityStatus(observation) != "画面质量达标，正在累计活体帧" {
+		t.Fatalf("unexpected adaptive low-light status: %s", livenessObservationQualityStatus(observation))
+	}
+}
+
+func TestAutoLowLightProfileDoesNotAcceptExtremelyDarkOrBlurredFrames(t *testing.T) {
+	lowLight, _ := resolveLivenessMode(false, 12)
+	observation := recognitionObservation{
+		FaceQuality: 0.67,
+		FaceBrightness: 12,
+		Exposure: 0.12,
+		Sharpness: 0.02,
+		LowLightMode: lowLight,
+	}
+	if !lowLight || livenessObservationQualityUsable(observation) {
+		t.Fatalf("extremely dark and blurred face must remain blocked: %#v", observation)
+	}
+	if livenessObservationQualityStatus(observation) != "人脸区域曝光不足且清晰度不足" {
+		t.Fatalf("unexpected blocked status: %s", livenessObservationQualityStatus(observation))
+	}
+}
+
+func TestAutoLowLightProfileStillRequiresThreePositiveAntiSpoofFrames(t *testing.T) {
+	tracker := newRecognitionTracker()
+	now := time.Now()
+	student := store.Student{ID: 312, StudentNo: "S312", Name: "自动低光活体测试"}
+	lowLight, _ := resolveLivenessMode(false, 24)
+	var decision trackDecision
+	for i := 0; i < livenessMinFrames; i++ {
+		decision = tracker.Observe("camera-auto-low-light-live", []recognitionObservation{{
+			Student: student, Similarity: 0.91, LiveScore: 0.70,
+			FaceQuality: 0.67, FaceBrightness: 24, Exposure: 0.51,
+			Sharpness: 0.055, LowLightMode: lowLight,
+		}}, now.Add(time.Duration(i)*220*time.Millisecond))[0]
+		if i < livenessMinFrames-1 && decision.Verified {
+			t.Fatalf("auto low-light mode passed before three anti-spoof frames: %#v", decision)
+		}
+	}
+	if !decision.Verified || decision.Rejected || decision.Frames != 3 {
+		t.Fatalf("three positive anti-spoof frames should pass in auto low-light mode: %#v", decision)
 	}
 }

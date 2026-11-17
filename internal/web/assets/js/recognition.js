@@ -46,7 +46,14 @@ function renderRecognition(r) {
     const quality = Number(f.quality_score || 0);
     const qualityHint = f.quality_hint ? ` · ${esc(f.quality_hint)}` : '';
     const qualityText = `人脸质量 ${(quality * 100).toFixed(0)}% · ${esc(f.quality_status || '等待清晰')}${qualityHint}`;
-    const livenessQualityText = `活体画面曝光 ${(Number(f.liveness_exposure || 0) * 100).toFixed(0)}% · 清晰度 ${(Number(f.liveness_sharpness || 0) * 100).toFixed(0)}%`;
+    const livenessModeText = esc(f.liveness_mode || '待评估');
+    const livenessExposure = Number(f.liveness_exposure || 0) * 100;
+    const livenessSharpness = Number(f.liveness_sharpness || 0) * 100;
+    const livenessBrightness = Number(f.liveness_brightness || 0) * 100;
+    const exposureFloor = Number(f.liveness_exposure_threshold || 0) * 100;
+    const sharpnessFloor = Number(f.liveness_sharpness_threshold || 0) * 100;
+    const livenessQualityStatus = esc(f.liveness_quality_status || '等待活体质量评估');
+    const livenessQualityText = `活体模式 ${livenessModeText} · 人脸区域亮度 ${livenessBrightness.toFixed(0)}% · 曝光 ${livenessExposure.toFixed(0)}%（最低 ${exposureFloor.toFixed(0)}%）· 清晰度 ${livenessSharpness.toFixed(0)}%（最低 ${sharpnessFloor.toFixed(0)}%）· ${livenessQualityStatus}`;
     if (f.recognized && f.student) {
       const attendanceMeta = f.attendance
         ? ` | 首次 ${esc(String(f.attendance.checked_at || '').slice(-8))} | 最近 ${esc(String(f.attendance.last_seen_at || f.attendance.checked_at || '').slice(-8))} | 今日 ${Number(f.attendance.recognition_count || 1)}次`
@@ -58,19 +65,19 @@ function renderRecognition(r) {
           : `活体 ${(Number(f.liveness_score || 0) * 100).toFixed(1)}%`);
       return `<div class="face-result known">
         <div class="face-title">${esc(f.student.name)} · ${f.first_checkin_today ? '签到成功' : '今日已签到'}</div>
-        <div class="face-meta">${esc(f.student.student_no)} | ${esc(f.student.class_name || '-')} | 身份 ${(f.similarity * 100).toFixed(1)}% | ${livenessText} | ${qualityText}${attendanceMeta}</div>
+        <div class="face-meta">${esc(f.student.student_no)} | ${esc(f.student.class_name || '-')} | 身份 ${(f.similarity * 100).toFixed(1)}% | ${livenessText} | ${qualityText} | ${livenessQualityText}${attendanceMeta}</div>
       </div>`;
     }
     if (f.matched && f.student && f.status === '疑似照片/屏幕') {
       return `<div class="face-result danger">
         <div class="face-title">${esc(f.student.name)} · 疑似照片/屏幕，拒绝签到</div>
-        <div class="face-meta">身份 ${(f.similarity * 100).toFixed(1)}% | 活体 ${(Number(f.liveness_score || 0) * 100).toFixed(1)}% | ${qualityText} | 不写入签到记录</div>
+        <div class="face-meta">身份 ${(f.similarity * 100).toFixed(1)}% | 活体 ${(Number(f.liveness_score || 0) * 100).toFixed(1)}% | ${qualityText} | ${livenessQualityText} | 不写入签到记录</div>
       </div>`;
     }
     if (f.matched && f.student && quality < Number(r.face_quality_threshold || 0.45)) {
       return `<div class="face-result pending warning">
         <div class="face-title">${esc(f.student.name)} · 等待更清晰人脸</div>
-        <div class="face-meta">已由人体 Track 保持身份 | ${qualityText} | 最佳 ${(Number(f.best_quality || 0) * 100).toFixed(0)}%</div>
+        <div class="face-meta">已由人体 Track 保持身份 | ${qualityText} | ${livenessQualityText} | 最佳 ${(Number(f.best_quality || 0) * 100).toFixed(0)}%</div>
       </div>`;
     }
     if (f.matched && f.student) {
@@ -83,12 +90,12 @@ function renderRecognition(r) {
     if (quality < Number(r.face_quality_threshold || 0.45)) {
       return `<div class="face-result pending warning">
         <div class="face-title">等待清晰人脸</div>
-        <div class="face-meta">Track ${esc(f.track_id || '-')} | ${qualityText} | 系统会继续跟踪并选择后续最佳帧</div>
+        <div class="face-meta">Track ${esc(f.track_id || '-')} | ${qualityText} | ${livenessQualityText} | 系统会继续跟踪并选择后续最佳帧</div>
       </div>`;
     }
     return `<div class="face-result unknown">
       <div class="face-title">未录入</div>
-      <div class="face-meta">人脸 ${i + 1} 未匹配到已录入学生 | ${qualityText}</div>
+      <div class="face-meta">人脸 ${i + 1} 未匹配到已录入学生 | ${qualityText} | ${livenessQualityText}</div>
     </div>`;
   }).join('');
 

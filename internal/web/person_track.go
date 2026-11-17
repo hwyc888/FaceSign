@@ -58,6 +58,7 @@ type faceQualityResult struct {
 	Pose       float64
 	Sharpness  float64
 	Exposure   float64
+	Brightness float64
 	Detector   float64
 	Hint       string
 }
@@ -324,6 +325,20 @@ func addFaceFallbackPersons(people []person.Detection, faces []face.Detection, b
 	return out
 }
 
+
+// resolveLivenessMode chooses a per-face liveness quality profile. The
+// recognition low-light toggle remains an explicit override, while dark
+// face regions automatically use the conservative low-light quality floor.
+func resolveLivenessMode(manualLowLight bool, faceBrightness float64) (bool, string) {
+	if manualLowLight {
+		return true, "低光模式（手动）"
+	}
+	if faceBrightness < livenessAutoLowLightBrightness {
+		return true, "低光自适应（人脸区域自动）"
+	}
+	return false, "普通模式"
+}
+
 func scoreFaceQuality(img image.Image, detected face.Detection) faceQualityResult {
 	return scoreFaceQualityWithThreshold(img, detected, minRecognitionFaceQuality)
 }
@@ -337,11 +352,14 @@ func scoreFaceQualityWithThreshold(img image.Image, detected face.Detection, qua
 	sizeScore := clamp01((minSide - 45) / 95)
 	detectorScore := clamp01((float64(detected.Score) - 0.45) / 0.50)
 	poseScore := facePoseScore(detected.Landmarks)
-	sharpnessScore, exposureScore, brightness := faceImageQuality(img, rect)
+	qualityRect := faceQualityRegion(rect)
+	sharpnessScore, exposureScore, brightness := faceImageQuality(img, qualityRect)
 	hint := ""
 	switch {
+	case brightness < 10:
+		hint = "人脸区域光线极暗，建议增加正面补光"
 	case brightness < 35:
-		hint = "光线太暗，请增加正面补光"
+		hint = "低光环境，已启用人脸区域自适应活体检测"
 	case brightness > 235:
 		hint = "画面过曝，请避开强光直射"
 	case sharpnessScore < 0.12:
@@ -354,6 +372,8 @@ func scoreFaceQualityWithThreshold(img image.Image, detected face.Detection, qua
 
 	status := "等待清晰人脸"
 	switch {
+	case brightness < 35 && score >= qualityThreshold:
+		status = "低光可识别"
 	case hint != "":
 		status = "需调整画面"
 	case score >= 0.78:
@@ -369,8 +389,9 @@ func scoreFaceQualityWithThreshold(img image.Image, detected face.Detection, qua
 		Size:      sizeScore,
 		Pose:      poseScore,
 		Sharpness: sharpnessScore,
-		Exposure:  exposureScore,
-		Detector:  detectorScore,
+		Exposure:   exposureScore,
+		Brightness: brightness,
+		Detector:   detectorScore,
 		Hint:      hint,
 	}
 }
@@ -391,7 +412,26 @@ func facePoseScore(landmarks [5]image.Point) float64 {
 	return clamp01(eyeLevel*0.40 + noseCenter*0.40 + mouthCenter*0.20)
 }
 
+// faceQualityRegion measures the inner face area rather than the full
+// detector box. This reduces contamination from hair, background and box edges.
+func faceQualityRegion(rect image.Rectangle) image.Rectangle {
+	if rect.Empty() {
+		return rect
+	}
+	insetX := maxInt(1, rect.Dx()*8/100)
+	insetY := maxInt(1, rect.Dy()*8/100)
+	inner := rect.Inset(insetX, insetY)
+	if inner.Dx() < 24 || inner.Dy() < 24 {
+		return rect
+	}
+	return inner
+}
+
 func faceImageQuality(img image.Image, rect image.Rectangle) (float64, float64, float64) {
+	rect = rect.Intersect(img.Bounds())
+	if rect.Empty() {
+		return 0, 0, 0
+	}
 	step := maxInt(1, minInt(rect.Dx(), rect.Dy())/42)
 	var brightnessSum float64
 	var differenceSum float64
