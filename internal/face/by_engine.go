@@ -380,7 +380,6 @@ func alignArcFace112(img image.Image, landmarks [5]image.Point) ([]float32, erro
 	}
 	const plane = byRecognizerSize * byRecognizerSize
 	data := make([]float32, 3*plane)
-	bounds := img.Bounds()
 	for y := 0; y < byRecognizerSize; y++ {
 		for x := 0; x < byRecognizerSize; x++ {
 			dx, dy := float64(x)-tx, float64(y)-ty
