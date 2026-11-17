@@ -18,7 +18,7 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"ok":              true,
-		"engine":          "YuNet + SFace",
+		"engine":          "SCRFD-10GF + ArcFace ResNet50",
 		"liveness":        "anti-spoof-mn3 passive multi-frame",
 		"person_tracking":  "YOLOX-Nano + IoU/centroid track + best-face scoring",
 		"liveness_frames": livenessMinFrames,

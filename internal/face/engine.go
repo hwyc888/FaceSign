@@ -4,6 +4,8 @@ import (
 	"errors"
 	"image"
 	"math"
+
+	ort "github.com/yalue/onnxruntime_go"
 )
 
 var (
@@ -149,3 +151,5 @@ func Similarity(a, b []float32) float64 {
 
 func (e *Engine) ModelVersion() string { return "arcface-r50-w600k-v1" }
 func (e *Engine) Backend() string      { return "scrfd-arcface" }
+
+func RuntimeVersion() string { return ort.GetVersion() }
