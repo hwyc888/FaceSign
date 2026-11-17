@@ -172,7 +172,6 @@ func (t *recognitionTracker) Observe(sessionID string, observations []recognitio
 		}
 
 		track.InferenceFailures = 0
-		track.InferenceFailures = 0
 		if !livenessObservationQualityUsable(observation) {
 			status := "光线不足或画面模糊，请调整摄像头"
 			timedOut := !track.Verified && !track.Rejected && now.Sub(track.FirstSeen) >= decisionTimeout
