@@ -5,6 +5,7 @@ import (
 	"image"
 	"math"
 	"os"
+	"sort"
 	"sync"
 
 	"github.com/hwyc888/FaceSign/internal/inference"

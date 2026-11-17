@@ -324,7 +324,7 @@ func (s *Store) ActivateFaceModel(ctx context.Context, modelVersion string) erro
 		return fmt.Errorf("create historical face archive: %w", err)
 	}
 	if _, err := tx.ExecContext(ctx, `
-		INSERT OR IGNORE INTO face_samples_legacy(id,student_id,embedding,label,model_version,created_at,archived_at)
+		INSERT OR IGNORE INTO face_samples_archive(id,student_id,embedding,label,model_version,created_at,archived_at)
 		SELECT id,student_id,embedding,label,model_version,created_at,?
 		FROM face_samples WHERE model_version<>?`, time.Now().Unix(), modelVersion); err != nil {
 		return fmt.Errorf("archive old face embeddings: %w", err)
