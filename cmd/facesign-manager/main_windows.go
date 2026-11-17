@@ -1202,6 +1202,7 @@ if ($match.Success) {
   $taskArgs = ($taskArgs + ' --assets "' + $dir + '"').Trim()
 }
 $changed = (-not [string]::Equals([string]$oldAction.Execute, $exe, [StringComparison]::OrdinalIgnoreCase)) -or
+           (-not [string]::Equals([string]$oldAction.WorkingDirectory, $dir, [StringComparison]::OrdinalIgnoreCase)) -or
            (-not [string]::Equals([string]$oldAction.Arguments, $taskArgs, [StringComparison]::Ordinal))
 if ($changed) {
   $newAction = New-ScheduledTaskAction -Execute $exe -Argument $taskArgs -WorkingDirectory $dir

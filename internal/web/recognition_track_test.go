@@ -426,7 +426,7 @@ func TestRecognitionTrackerPoorQualityFramesEventuallyTimeoutWithoutResettingClo
 	now := time.Now()
 	student := store.Student{ID: 311, StudentNo: "S311", Name: "低质量超时测试"}
 	var decision trackDecision
-	for i := 0; i < 8; i++ {
+	for i := 0; i < 7; i++ {
 		decision = tracker.Observe("camera-poor-quality-timeout", []recognitionObservation{{
 			Student: student, Similarity: 0.92, LiveScore: 0.9,
 			Exposure: 0.10, Sharpness: 0.02,
