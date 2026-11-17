@@ -420,7 +420,7 @@ func faceQualityRegion(rect image.Rectangle) image.Rectangle {
 	}
 	insetX := maxInt(1, rect.Dx()*12/100)
 	insetY := maxInt(1, rect.Dy()*12/100)
-	inner := rect.Inset(insetX, insetY)
+	inner := image.Rect(rect.Min.X+insetX, rect.Min.Y+insetY, rect.Max.X-insetX, rect.Max.Y-insetY)
 	if inner.Dx() < 24 || inner.Dy() < 24 {
 		return rect
 	}

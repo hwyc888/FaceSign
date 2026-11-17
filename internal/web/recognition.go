@@ -35,8 +35,13 @@ type recognitionFace struct {
 	QualityStatus     string            `json:"quality_status,omitempty"`
 	QualityHint       string            `json:"quality_hint,omitempty"`
 	BestQuality       float64           `json:"best_quality,omitempty"`
-	LivenessExposure  float64           `json:"liveness_exposure"`
-	LivenessSharpness float64           `json:"liveness_sharpness"`
+	LivenessExposure           float64           `json:"liveness_exposure"`
+	LivenessSharpness          float64           `json:"liveness_sharpness"`
+	LivenessBrightness         float64           `json:"liveness_brightness"`
+	LivenessMode               string            `json:"liveness_mode"`
+	LivenessQualityStatus      string            `json:"liveness_quality_status"`
+	LivenessExposureThreshold  float64           `json:"liveness_exposure_threshold"`
+	LivenessSharpnessThreshold float64           `json:"liveness_sharpness_threshold"`
 	LivenessScore     float64           `json:"liveness_score,omitempty"`
 	LivenessStatus    string            `json:"liveness_status,omitempty"`
 	LivenessFrames    int               `json:"liveness_frames,omitempty"`
