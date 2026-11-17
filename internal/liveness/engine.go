@@ -1,6 +1,7 @@
 package liveness
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"image"
@@ -120,17 +121,22 @@ func (w *engineWorker) close() {
 	}
 }
 
-func (e *Engine) acquire() (*engineWorker, func(), error) {
+func (e *Engine) acquire(ctx context.Context) (*engineWorker, func(), error) {
 	e.mu.RLock()
 	if e.closed || e.available == nil {
 		e.mu.RUnlock()
 		return nil, nil, errors.New("anti-spoof engine is closed")
 	}
-	worker := <-e.available
-	return worker, func() {
-		e.available <- worker
+	select {
+	case worker := <-e.available:
+		return worker, func() {
+			e.available <- worker
+			e.mu.RUnlock()
+		}, nil
+	case <-ctx.Done():
 		e.mu.RUnlock()
-	}, nil
+		return nil, nil, fmt.Errorf("wait for anti-spoof worker: %w", ctx.Err())
+	}
 }
 
 func (e *Engine) Close() {
@@ -157,12 +163,17 @@ func (e *Engine) Score(img image.Image, faceRect image.Rectangle) (float64, erro
 		return 0, ErrInvalidFace
 	}
 
-	worker, release, err := e.acquire()
+	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
+	defer cancel()
+	worker, release, err := e.acquire(ctx)
 	if err != nil {
 		return 0, err
 	}
 	defer release()
-	releaseInference := inference.Acquire()
+	releaseInference, err := inference.AcquireContext(ctx)
+	if err != nil {
+		return 0, fmt.Errorf("wait for CPU inference slot: %w", err)
+	}
 	defer releaseInference()
 
 	resized := resizeFaceCrop(img, crop)

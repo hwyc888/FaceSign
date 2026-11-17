@@ -370,12 +370,21 @@ func (s *Server) recognizePreparedImage(
 
 		score, err := s.liveness.Score(img, detections[match.DetectionIndex].Rectangle)
 		if err != nil {
-			result.Status = "活体检测失败"
-			result.LivenessStatus = "活体检测失败"
+			result.Status = "活体模型推理失败，正在重试"
+			result.LivenessStatus = result.Status
+			observations = append(observations, recognitionObservation{
+				Student:        match.Student,
+				Similarity:     match.Similarity,
+				Exposure:       qualities[match.DetectionIndex].Exposure,
+				Sharpness:      qualities[match.DetectionIndex].Sharpness,
+				LowLightMode:   lowLightMode,
+				InferenceFailed: true,
+			})
+			observationDetectionIndexes = append(observationDetectionIndexes, match.DetectionIndex)
 			if pIndex, ok := personIndex[result.TrackID]; ok {
-				personResults[pIndex].Status = "活体检测失败"
+				personResults[pIndex].Status = result.Status
 			}
-			s.logger.Warn("passive liveness inference failed", "student_id", match.Student.ID, "error", err)
+			s.logger.Warn("passive liveness inference failed; retrying with bounded failure state", "student_id", match.Student.ID, "error", err)
 			continue
 		}
 		result.LivenessScore = score

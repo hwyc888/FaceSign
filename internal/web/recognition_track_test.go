@@ -395,3 +395,44 @@ func TestRecognitionTrackerResetsPendingFramesWhenLivenessIsDisabled(t *testing.
 	}
 }
 
+
+func TestRecognitionTrackerInferenceFailureStopsAfterThreeAttemptsAndResets(t *testing.T) {
+	tracker := newRecognitionTracker()
+	now := time.Now()
+	student := store.Student{ID: 310, StudentNo: "S310", Name: "推理失败测试"}
+	var decision trackDecision
+	for i := 0; i < 3; i++ {
+		decision = tracker.Observe("camera-inference-error", []recognitionObservation{{
+			Student: student, Similarity: 0.93, Exposure: 1, Sharpness: 1,
+			InferenceFailed: true,
+		}}, now.Add(time.Duration(i)*200*time.Millisecond))[0]
+		if i < 2 && (decision.TimedOut || decision.LivenessStatus != "活体模型推理失败，正在重试") {
+			t.Fatalf("inference failure should retry before terminal failure: %#v", decision)
+		}
+	}
+	if !decision.TimedOut || decision.LivenessStatus != "活体检测失败，请检查模型和运行日志" {
+		t.Fatalf("repeated inference failures did not reach a terminal state: %#v", decision)
+	}
+	next := tracker.Observe("camera-inference-error", []recognitionObservation{{
+		Student: student, Similarity: 0.93, LiveScore: 0.9, Exposure: 1, Sharpness: 1,
+	}}, now.Add(time.Second))[0]
+	if next.TimedOut || next.Frames != 1 || next.TrackID == decision.TrackID {
+		t.Fatalf("successful retry did not start a fresh liveness cycle: %#v", next)
+	}
+}
+
+func TestRecognitionTrackerPoorQualityFramesEventuallyTimeoutWithoutResettingClock(t *testing.T) {
+	tracker := newRecognitionTracker()
+	now := time.Now()
+	student := store.Student{ID: 311, StudentNo: "S311", Name: "低质量超时测试"}
+	var decision trackDecision
+	for i := 0; i < 8; i++ {
+		decision = tracker.Observe("camera-poor-quality-timeout", []recognitionObservation{{
+			Student: student, Similarity: 0.92, LiveScore: 0.9,
+			Exposure: 0.10, Sharpness: 0.02,
+		}}, now.Add(time.Duration(i)*200*time.Millisecond))[0]
+	}
+	if !decision.TimedOut || decision.LivenessStatus != "光线不足或画面模糊，活体检测超时" {
+		t.Fatalf("continuous poor-quality frames should end instead of remaining pending forever: %#v", decision)
+	}
+}

@@ -183,15 +183,21 @@ func TestPotentiallyBlockingManagerActionsAreAsync(t *testing.T) {
 func withManagerServiceFakes(t *testing.T, pids func() []int, state func() (string, error), execFn func(string, ...string) ([]byte, error)) {
 	t.Helper()
 	oldPIDs := faceSignPIDsFn
+	oldPaths := faceSignExePathsFn
+	oldEnsureTask := ensureTaskTargetsCurrentInstallFn
 	oldState := queryTaskStateFn
 	oldExec := execHiddenFn
 	oldSleep := sleepFn
 	faceSignPIDsFn = pids
+	faceSignExePathsFn = func() []string { return []string{filepath.Join(installDirFlag, "FaceSign.exe")} }
+	ensureTaskTargetsCurrentInstallFn = func() error { return nil }
 	queryTaskStateFn = state
 	execHiddenFn = execFn
 	sleepFn = func(time.Duration) {}
 	t.Cleanup(func() {
 		faceSignPIDsFn = oldPIDs
+		faceSignExePathsFn = oldPaths
+		ensureTaskTargetsCurrentInstallFn = oldEnsureTask
 		queryTaskStateFn = oldState
 		execHiddenFn = oldExec
 		sleepFn = oldSleep
@@ -664,3 +670,43 @@ func TestUninstallPowerShellCommandWaitsForManagerAndPreservesInstallDir(t *test
 	}
 }
 
+
+func TestStartFaceSignStopsOldDirectoryBeforeStartingCurrentRelease(t *testing.T) {
+	pidCalls := 0
+	var commands []string
+	ensureCalls := 0
+	withManagerServiceFakes(
+		t,
+		func() []int {
+			pidCalls++
+			if pidCalls <= 2 {
+				return []int{7628}
+			}
+			return nil
+		},
+		func() (string, error) { return "Ready", nil },
+		func(name string, args ...string) ([]byte, error) {
+			commands = append(commands, name+" "+strings.Join(args, " "))
+			return nil, nil
+		},
+	)
+	faceSignExePathsFn = func() []string { return []string{"D:\\FaceSign-old\\FaceSign.exe"} }
+	ensureTaskTargetsCurrentInstallFn = func() error {
+		ensureCalls++
+		return nil
+	}
+
+	if err := startFaceSign(); err != nil {
+		t.Fatal(err)
+	}
+	if ensureCalls != 1 {
+		t.Fatalf("current task target should be verified once, got %d", ensureCalls)
+	}
+	if len(commands) != 4 ||
+		!strings.Contains(commands[0], "/DISABLE") ||
+		!strings.Contains(commands[1], "/End") ||
+		!strings.Contains(commands[2], "/ENABLE") ||
+		!strings.Contains(commands[3], "/Run") {
+		t.Fatalf("old release was not stopped before current release started: %v", commands)
+	}
+}

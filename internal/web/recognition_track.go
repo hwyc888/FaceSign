@@ -35,7 +35,8 @@ type recognitionObservation struct {
 	LiveScore  float64
 	Exposure   float64
 	Sharpness    float64
-	LowLightMode bool
+	LowLightMode    bool
+	InferenceFailed bool
 }
 
 type recognitionTrack struct {
@@ -51,6 +52,7 @@ type recognitionTrack struct {
 	LowLightMode     bool
 	LivenessDisabled bool
 	SpoofVotes        int
+	InferenceFailures int
 }
 
 type trackDecision struct {
@@ -132,23 +134,53 @@ func (t *recognitionTracker) Observe(sessionID string, observations []recognitio
 			}
 			continue
 		}
+
+		if track == nil {
+			session.NextID++
+			track = &recognitionTrack{
+				ID:        fmt.Sprintf("%s-%d", sessionID, session.NextID),
+				FirstSeen: now,
+				Scores:    make([]float64, 0, livenessMaxFramesForMode(observation.LowLightMode)),
+				LowLightMode: observation.LowLightMode,
+			}
+			session.Tracks[observation.Student.ID] = track
+		}
+		track.LastSeen = now
+		track.LowLightMode = observation.LowLightMode
+		decisionTimeout := livenessDecisionTimeoutForMode(track.LowLightMode)
+
+		if observation.InferenceFailed {
+			track.InferenceFailures++
+			timedOut := track.InferenceFailures >= 3 || now.Sub(track.FirstSeen) >= decisionTimeout
+			status := "活体模型推理失败，正在重试"
+			if timedOut {
+				status = "活体检测失败，请检查模型和运行日志"
+			}
+			out[i] = trackDecision{
+				TrackID:        track.ID,
+				Frames:         len(track.Scores),
+				RequiredFrames: livenessFastFrames,
+				LiveScore:      averageScores(track.Scores),
+				Similarity:     track.SimilaritySum / maxLivenessFloat(1, float64(track.Frames)),
+				TimedOut:       timedOut,
+				LivenessStatus: status,
+			}
+			if timedOut {
+				delete(session.Tracks, observation.Student.ID)
+			}
+			continue
+		}
+
+		track.InferenceFailures = 0
 		if !livenessObservationQualityUsable(observation) {
 			status := "光线不足或画面模糊，请调整摄像头"
-			if track == nil {
-				out[i] = trackDecision{
-					RequiredFrames: livenessFastFrames,
-					LivenessStatus: status,
-				}
-				continue
-			}
-			track.LastSeen = now
-			if !track.Verified && !track.Rejected {
-				track.FirstSeen = now
-			}
+			timedOut := !track.Verified && !track.Rejected && now.Sub(track.FirstSeen) >= decisionTimeout
 			if track.Verified {
 				status = livenessVerifiedStatus(track)
 			} else if track.Rejected {
 				status = "疑似照片/屏幕"
+			} else if timedOut {
+				status = "光线不足或画面模糊，活体检测超时"
 			}
 			out[i] = trackDecision{
 				TrackID:         track.ID,
@@ -158,11 +190,16 @@ func (t *recognitionTracker) Observe(sessionID string, observations []recognitio
 				Similarity:      track.SimilaritySum / maxLivenessFloat(1, float64(track.Frames)),
 				Verified:        track.Verified,
 				Rejected:        track.Rejected,
+				TimedOut:        timedOut,
 				NeedsAttendance: track.Verified && !track.Committed,
 				LivenessStatus:  status,
 			}
+			if timedOut {
+				delete(session.Tracks, observation.Student.ID)
+			}
 			continue
 		}
+		track.InferenceFailures = 0;
 		if track == nil {
 			session.NextID++
 			track = &recognitionTrack{
@@ -172,7 +209,6 @@ func (t *recognitionTracker) Observe(sessionID string, observations []recognitio
 			}
 			session.Tracks[observation.Student.ID] = track
 		}
-		track.LowLightMode = observation.LowLightMode
 		maxFrames := livenessMaxFramesForMode(track.LowLightMode)
 		decisionTimeout := livenessDecisionTimeoutForMode(track.LowLightMode)
 		track.LastSeen = now
