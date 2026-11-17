@@ -28,7 +28,7 @@ func TestActivateFaceModelArchivesOldVectorsAndPreservesStudent(t *testing.T) {
 		t.Fatalf("legacy embeddings must not remain active, got %d", len(active))
 	}
 	var archived int
-	if err := st.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM face_samples_legacy WHERE student_id=?", student.ID).Scan(&archived); err != nil {
+	if err := st.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM face_samples_archive WHERE student_id=?", student.ID).Scan(&archived); err != nil {
 		t.Fatal(err)
 	}
 	if archived != 1 {
