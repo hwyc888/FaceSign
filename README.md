@@ -3,7 +3,7 @@
 
 Each successful Windows build now publishes **two release artifacts** from the same `FaceSign.exe` build:
 
-- `facesign-windows-amd64-full`: complete offline **portable package**. Unzip it anywhere with write permission and run `FaceSign.exe` directly; no installation is required. It contains the four pinned ONNX models and is recommended for a new PC, offline deployment, or recovery.
+- `facesign-windows-amd64-full`: complete offline **portable package** for the application and support models. The separately licensed By face weights must be installed in `models/by/` before first launch.
 - `facesign-windows-amd64-lite`: lightweight upgrade package. It does not contain ONNX models and is recommended when the existing FaceSign directory already contains valid models.
 
 Both packages contain the same program and native runtime:
@@ -20,27 +20,11 @@ scripts/
 README.md
 ```
 
-The full package additionally contains:
+The full package contains the liveness/person support models. The By face weights are supplied separately because their upstream pretrained-weight licence does not permit automatic redistribution; see [models/by/README.md](models/by/README.md).
 
-```text
-models/
-  face_detection_yunet_2023mar.onnx
-  face_recognition_sface_2021dec.onnx
-  anti-spoof-mn3.onnx
-  yolox_nano.onnx
-  SHA256SUMS
-  ...
-```
+The installer reuses or downloads only the pinned support models (anti-spoof and YOLOX) and verifies their SHA-256 checksums. It never downloads the restricted SCRFD/ArcFace face weights. Install authorized By weights separately before starting the default backend.
 
-The installer always uses this order:
-
-1. Reuse valid models already present in the selected/current FaceSign directory.
-2. If the extracted package contains valid local models, copy only the missing ones.
-3. Only if a required model is still missing or invalid, download that pinned model once and verify its SHA-256 checksum.
-
-This means normal upgrades can use the lightweight package without downloading the models again. A fresh machine can use the full package completely offline.
-
-The executable itself still resolves models using the same pinned model set. Double-clicking the full package works offline. The lightweight package can also start directly when a valid existing model cache is available; otherwise it downloads only missing pinned models once.
+The executable resolves the By model files from `models/by/` (or `FACESIGN_BY_MODEL_DIR`). The full package can start offline once those authorized files are installed. The previous model backend can be selected with `--face-model legacy` for recovery or comparison.
 
 FaceSign now listens on HTTP `0.0.0.0:8080` and HTTPS `0.0.0.0:8443`. The Windows installer enables HTTP-to-HTTPS redirect while keeping `http://<server-ip>:8080/facesign-root-ca.crt` available for initial client trust setup.
 
@@ -168,3 +152,8 @@ Audio remains off by default and enabling/disabling it does not change the exist
 ### Browser camera microphone permission and pairing
 
 For the **current-device/browser camera**, clicking the sound button now first requests microphone permission, immediately releases that temporary track, and then re-enumerates devices. Browsers may hide microphone labels and grouping metadata until microphone access has been granted. FaceSign then requests an audio source with the camera's exact `groupId` when supported. On Windows USB composite cameras that expose separate group IDs, a strict unique camera/microphone name match is used as a fallback. FaceSign still refuses to silently substitute an unrelated Realtek/system microphone.
+
+
+## Face feature migration
+
+The default By backend uses a separate 512-dimensional ArcFace feature space. SFace vectors cannot be converted. On first startup after the By weights are installed, FaceSign archives old face vectors in `face_samples_legacy` and clears them from the active recognition index. Student profiles, class/seat assignments, attendance history, camera configuration, user accounts and settings are preserved. Re-enroll students or import authorized original photos to create new vectors. See [the By model guide](models/by/README.md).

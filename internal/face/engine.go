@@ -37,6 +37,8 @@ type Engine struct {
 	workers   []*engineWorker
 	available chan *engineWorker
 	closed    bool
+	backend   string
+	by        *byRuntime
 }
 
 const engineWorkerCount = inference.MaxConcurrent
@@ -113,6 +115,10 @@ func (e *Engine) Close() {
 	if e == nil {
 		return
 	}
+	if e.backend == "by" {
+		e.closeBy()
+		return
+	}
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.closed {
@@ -137,6 +143,9 @@ func (e *Engine) Extract(img image.Image, threshold float64) ([]float32, error) 
 // this first so low-quality frames can be tracked without wasting embedding
 // inference, then extracts a feature only from the best frame for each track.
 func (e *Engine) DetectAll(img image.Image, threshold float64) ([]Detection, error) {
+	if e.backend == "by" {
+		return e.detectSCRFD(img, threshold)
+	}
 	if img == nil || img.Bounds().Dx() < 40 || img.Bounds().Dy() < 40 {
 		return nil, ErrNoFace
 	}
@@ -180,6 +189,9 @@ func (e *Engine) DetectAll(img image.Image, threshold float64) ([]Detection, err
 
 // Feature extracts one SFace embedding from a previously detected face.
 func (e *Engine) Feature(img image.Image, detected Detection) ([]float32, error) {
+	if e.backend == "by" {
+		return e.featureArcFace(img, detected)
+	}
 	if img == nil || detected.Rectangle.Empty() {
 		return nil, ErrNoFace
 	}
@@ -233,6 +245,22 @@ func (e *Engine) ExtractPhotoSample(img image.Image, threshold float64) (Detecti
 }
 
 func (e *Engine) extractDetection(img image.Image, threshold float64, enrollment bool) (Detection, error) {
+	if e.backend == "by" {
+		detections, err := e.detectSCRFD(img, threshold)
+		if err != nil {
+			return Detection{}, err
+		}
+		selected, err := selectEnrollmentFaceDetection(detections, enrollment)
+		if err != nil {
+			return Detection{}, err
+		}
+		feature, err := e.featureArcFace(img, selected)
+		if err != nil {
+			return Detection{}, err
+		}
+		selected.Feature = feature
+		return selected, nil
+	}
 	if img == nil || img.Bounds().Dx() < 40 || img.Bounds().Dy() < 40 {
 		return Detection{}, ErrNoFace
 	}
@@ -317,6 +345,37 @@ func selectEnrollmentFace(faces []onnxface.Face) (onnxface.Face, error) {
 	return best, nil
 }
 
+func selectEnrollmentFaceDetection(faces []Detection, enrollment bool) (Detection, error) {
+	if len(faces) == 0 {
+		return Detection{}, ErrNoFace
+	}
+	if len(faces) == 1 {
+		return faces[0], nil
+	}
+	if !enrollment {
+		return Detection{}, ErrMultipleFaces
+	}
+	best := faces[0]
+	bestArea := rectangleArea(best.Rectangle)
+	for _, candidate := range faces[1:] {
+		if area := rectangleArea(candidate.Rectangle); area > bestArea {
+			best, bestArea = candidate, area
+		}
+	}
+	if bestArea <= 0 {
+		return Detection{}, ErrNoFace
+	}
+	for _, candidate := range faces {
+		if candidate.Rectangle == best.Rectangle {
+			continue
+		}
+		if rectangleArea(candidate.Rectangle) >= bestArea*0.30 {
+			return Detection{}, ErrMultipleFaces
+		}
+	}
+	return best, nil
+}
+
 func rectangleArea(rect image.Rectangle) float64 {
 	if rect.Empty() {
 		return 0
@@ -328,8 +387,32 @@ func Similarity(a, b []float32) float64 {
 	if len(a) == 0 || len(a) != len(b) {
 		return 0
 	}
-	cosine := onnxface.Match(a, b, onnxface.DistanceCosine)
+	var dot, normA, normB float64
+	for i := range a {
+		x, y := float64(a[i]), float64(b[i])
+		dot += x * y
+		normA += x * x
+		normB += y * y
+	}
+	if normA <= 0 || normB <= 0 {
+		return 0
+	}
+	cosine := dot / math.Sqrt(normA*normB)
 	return math.Max(0, math.Min(1, (cosine+1)/2))
+}
+
+func (e *Engine) ModelVersion() string {
+	if e != nil && e.backend == "by" {
+		return "arcface-r50-w600k-v1"
+	}
+	return "sface-v1"
+}
+
+func (e *Engine) Backend() string {
+	if e == nil || e.backend == "" {
+		return "sface"
+	}
+	return e.backend
 }
 
 func RuntimeVersion() string {

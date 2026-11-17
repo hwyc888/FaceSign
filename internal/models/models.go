@@ -23,6 +23,9 @@ type Paths struct {
 	Recognizer string
 	Liveness   string
 	Person     string
+	Landmark2D string
+	Landmark3D string
+	Backend    string
 	Directory  string
 }
 
@@ -243,6 +246,7 @@ func buildPaths(dir string) Paths {
 		Recognizer: filepath.Join(dir, "face_recognition_sface_2021dec.onnx"),
 		Liveness:   filepath.Join(dir, "anti-spoof-mn3.onnx"),
 		Person:     filepath.Join(dir, "yolox_nano.onnx"),
+		Backend:    "legacy",
 		Directory:  dir,
 	}
 }

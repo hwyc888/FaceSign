@@ -17,6 +17,8 @@ env:
 jobs:
   build-windows:
     runs-on: windows-latest
+    env:
+      FACESIGN_FACE_MODEL: legacy
     steps:
       - name: Checkout
         uses: actions/checkout@v7
@@ -200,6 +202,9 @@ jobs:
           Copy-Item 'dist' 'dist-full' -Recurse
           Copy-Item 'dist' 'dist-lite' -Recurse
 
+          New-Item -ItemType Directory -Force -Path 'dist-full\models\by' | Out-Null
+          Copy-Item 'models\by\README.md' 'dist-full\models\by\README.md' -Force
+          Copy-Item 'models\by\SHA256SUMS' 'dist-full\models\by\SHA256SUMS' -Force
           New-Item -ItemType Directory -Force -Path 'dist-full\models' | Out-Null
           foreach ($file in @(
             'face_detection_yunet_2023mar.onnx',

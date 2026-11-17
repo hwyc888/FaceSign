@@ -82,12 +82,13 @@ func (s *Server) createEnrollment(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	student, sample, err := s.store.CreateStudentWithFace(
+	student, sample, err := s.store.CreateStudentWithFaceVersion(
 		r.Context(),
 		r.FormValue("student_no"),
 		r.FormValue("name"),
 		className,
 		r.FormValue("label"),
+		s.engine.ModelVersion(),
 		face.Encode(feature),
 	)
 	if err != nil {
@@ -132,7 +133,7 @@ func (s *Server) addFaceSample(w http.ResponseWriter, r *http.Request, studentID
 		return
 	}
 
-	sample, err := s.store.AddFaceSample(r.Context(), studentID, r.FormValue("label"), face.Encode(feature))
+	sample, err := s.store.AddFaceSampleWithVersion(r.Context(), studentID, r.FormValue("label"), s.engine.ModelVersion(), face.Encode(feature))
 	if err != nil {
 		writeError(w, http.StatusBadRequest, err)
 		return

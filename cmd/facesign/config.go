@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 type config struct {
@@ -15,6 +16,7 @@ type config struct {
 	HTTPRedirect       bool
 	DataPath           string
 	AssetsPath         string
+	FaceModel          string
 	MatchThreshold     float64
 	DetectionThreshold float64
 	OpenBrowser        bool
@@ -36,12 +38,24 @@ func loadConfig() (config, error) {
 	flag.BoolVar(&cfg.HTTPRedirect, "http-redirect", false, "redirect HTTP requests to HTTPS except the root CA download")
 	flag.StringVar(&cfg.DataPath, "data", filepath.Join(base, "data", "facesign.db"), "SQLite database path")
 	flag.StringVar(&cfg.AssetsPath, "assets", base, "directory containing ONNX Runtime and models")
+	defaultFaceModel := strings.TrimSpace(os.Getenv("FACESIGN_FACE_MODEL"))
+	if defaultFaceModel == "" {
+		defaultFaceModel = "by"
+	}
+	flag.StringVar(&cfg.FaceModel, "face-model", defaultFaceModel, "face model backend: by (SCRFD+ArcFace) or legacy (YuNet+SFace)")
 	flag.Float64Var(&cfg.MatchThreshold, "match-threshold", 0.68, "face match threshold from 0 to 1")
-	flag.Float64Var(&cfg.DetectionThreshold, "detection-threshold", 0.80, "face detection threshold from 0 to 1")
+	defaultDetectionThreshold := 0.50
+	if defaultFaceModel == "legacy" {
+		defaultDetectionThreshold = 0.80
+	}
+	flag.Float64Var(&cfg.DetectionThreshold, "detection-threshold", defaultDetectionThreshold, "face detection threshold from 0 to 1")
 	flag.BoolVar(&cfg.OpenBrowser, "open-browser", true, "open the local FaceSign page after startup")
 	flag.BoolVar(&cfg.Background, "background", false, "hide the Windows console when running as a registered background task")
 	flag.Parse()
 
+	if cfg.FaceModel != "by" && cfg.FaceModel != "legacy" {
+		return config{}, fmt.Errorf("face-model must be by or legacy")
+	}
 	if cfg.MatchThreshold <= 0 || cfg.MatchThreshold >= 1 {
 		return config{}, fmt.Errorf("match-threshold must be between 0 and 1")
 	}

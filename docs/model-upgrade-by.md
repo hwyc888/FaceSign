@@ -1,78 +1,26 @@
 # FaceSign model upgrade track (By)
 
-This branch is an isolated model-upgrade experiment. It must not change the
-production model selection on `main` until accuracy, latency, memory,
-licensing, and migration gates have passed.
+The By branch now switches the default face backend to SCRFD-10GF + ArcFace ResNet50. It keeps YOLOX-Nano person tracking and the existing passive RGB PAD engine.
 
-## Current production stack
+## Runtime implementation
 
-| Role | Current implementation |
-|---|---|
-| Face detector | YuNet ONNX, 5 facial landmarks |
-| Face embedding | OpenCV SFace ONNX |
-| Passive presentation-attack detection | anti-spoof-mn3 ONNX (MobileNetV3 family) |
-| Person detection/tracking input | YOLOX-Nano ONNX; Go IoU/center-distance track association |
-| Runtime | ONNX Runtime CPU, Go application |
+- SCRFD-10GF ONNX detector: 640x640 input, three FPN strides (8/16/32), score/bbox/keypoint decode, NMS, and five-point landmarks.
+- ArcFace ResNet50 ONNX recognizer: 112x112 similarity alignment, RGB normalization, 512-D output, L2 normalization.
+- ONNX Runtime CPU execution remains the runtime.
+- Model backend selection: `--face-model by` (default) or `--face-model legacy`.
+- By weights are external and SHA-256 checked. No restricted pretrained weights are bundled or automatically downloaded.
+- Optional 106-point and 3D-68 models are recognized in the model manifest, but their inference pipeline is not yet enabled. Gender/age is excluded.
 
-## Candidate evaluation
+## Feature-space migration
 
-| Role | Candidate | Status |
-|---|---|---|
-| Face detector | SCRFD-10GF | Candidate; adapter and output decoder not yet integrated |
-| Face embedding | ResNet50 trained on WebFace600K | Candidate; embedding contract and licence must be confirmed |
-| 2D landmarks | 106-point model | Optional; not required for initial recognition migration |
-| 3D landmarks | 68-point model | Deferred; separate pose/geometry capability |
-| Age/gender | Attribute model | Out of scope for attendance; do not collect unless a separate lawful purpose exists |
-| Person tracking | Existing YOLOX-Nano + Go tracker | Retain |
-| PAD/liveness | Existing anti-spoof-mn3 + multi-frame vote | Retain as baseline; evaluate separately |
+The model version is stored with each face sample. On startup, the selected model is activated. Samples belonging to another feature space are copied to `face_samples_legacy` and deleted from the active table. Student, class, seat, attendance, camera, account, and settings records are not deleted. SFace embeddings cannot be converted to ArcFace embeddings; re-enrollment or authorized source photos are required.
 
-## Licensing gate
+## Licensing
 
-Do not download, commit, package, or distribute third-party pretrained weights
-until the exact checkpoint's licence permits the intended school/competition
-deployment and redistribution. InsightFace code licensing does not automatically
-grant commercial rights to its pretrained model weights. Obtain a written
-licence or use weights with terms compatible with the deployment.
+The upstream InsightFace model zoo states that its pretrained model weights are for non-commercial research purposes only. The software code licence does not grant broader rights to the weights. Use only a checkpoint whose exact weight licence covers the intended deployment, or obtain written permission. See `models/by/README.md`.
 
-Experimental model files must be supplied locally by an authorized party and
-must not be committed to this repository. Record the upstream URL, exact
-checkpoint/version, licence evidence, SHA-256, input tensor contract, output
-tensor contract, preprocessing, and postprocessing in the test report.
+## Validation
 
-## Safe integration rules
-
-1. Keep YuNet + SFace as the production default and fallback.
-2. Keep candidate models in a separate model directory and namespace.
-3. Verify every candidate file with SHA-256 before loading.
-4. Never reuse SFace embeddings or thresholds with a different recognizer.
-5. Build a new feature-space version and re-extract authorized enrollment
-   samples before comparing the candidate recognizer.
-6. Do not silently fall back after an inference error; report the active model
-   and the failure clearly.
-7. Keep passive PAD enabled by default. A high identity score is not proof of
-   liveness.
-8. Do not use age/gender estimates for attendance decisions.
-
-## Benchmark protocol
-
-Use the same consented and access-controlled test set for both pipelines.
-Split by identity, not by image, to prevent identity leakage between enrollment
-and test sets. Report:
-
-- face detection recall by face-size, pose, illumination, and crowd-density bins;
-- false match rate (FMR), false non-match rate (FNMR), ROC/DET and TAR at a
-  stated FAR;
-- PAD APCER, BPCER and ACER on separately documented bona-fide and attack sets;
-- end-to-end p50/p95 latency, CPU utilization, peak memory and throughput;
-- results on the actual target Windows CPU and camera resolutions.
-
-Do not publish a single generic "accuracy" percentage without the test protocol.
-
-## Implementation status in this branch
-
-The first change adds a SHA-256-verified manifest-validation primitive for
-locally supplied experimental model files and regression tests. It does not
-yet implement SCRFD/ResNet50 inference or change runtime model selection.
-The next implementation step is to confirm authorized model artifacts and
-their ONNX tensor contracts, then implement and test the detector/recognizer
-adapters behind an explicit experimental configuration.
+- Unit tests cover SCRFD decode, alignment transforms, vector normalization, model hash checks, and feature-space migration.
+- Windows CI builds and runs the legacy smoke tests because the restricted By weights are not included in CI artifacts.
+- A real By runtime smoke test still requires the two authorized ONNX files in `models/by`.

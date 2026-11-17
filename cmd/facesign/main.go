@@ -50,11 +50,19 @@ func run(logger *slog.Logger) error {
 	if err != nil {
 		return err
 	}
-	modelPaths, err := models.Resolve(cfg.AssetsPath)
+	var modelPaths models.Paths
+	switch cfg.FaceModel {
+	case "by":
+		modelPaths, err = models.ResolveBy(cfg.AssetsPath)
+	case "legacy":
+		modelPaths, err = models.Resolve(cfg.AssetsPath)
+	default:
+		return fmt.Errorf("unsupported face model backend %q (use by or legacy)", cfg.FaceModel)
+	}
 	if err != nil {
 		return fmt.Errorf("准备人脸模型失败: %w", err)
 	}
-	logger.Info("FaceSign models ready", "directory", modelPaths.Directory)
+	logger.Info("FaceSign models ready", "backend", cfg.FaceModel, "directory", modelPaths.Directory)
 
 	st, err := store.Open(cfg.DataPath)
 	if err != nil {
@@ -62,12 +70,16 @@ func run(logger *slog.Logger) error {
 	}
 	defer st.Close()
 
-	engine, err := face.New(runtimePath, modelPaths.Detector, modelPaths.Recognizer)
+	var engine *face.Engine
+	if cfg.FaceModel == "by" {
+		engine, err = face.NewBy(runtimePath, modelPaths.Detector, modelPaths.Recognizer)
+	} else {
+		engine, err = face.New(runtimePath, modelPaths.Detector, modelPaths.Recognizer)
+	}
 	if err != nil {
 		return fmt.Errorf("启动人脸识别引擎失败: %w", err)
 	}
 	defer engine.Close()
-
 	livenessEngine, err := liveness.New(modelPaths.Liveness)
 	if err != nil {
 		return fmt.Errorf("启动活体检测引擎失败: %w", err)
@@ -79,6 +91,11 @@ func run(logger *slog.Logger) error {
 		return fmt.Errorf("启动人体检测引擎失败: %w", err)
 	}
 	defer personEngine.Close()
+
+	if err := st.ActivateFaceModel(context.Background(), engine.ModelVersion()); err != nil {
+		return fmt.Errorf("迁移人脸特征库到 %s 失败: %w", engine.ModelVersion(), err)
+	}
+	logger.Info("FaceSign face model active", "backend", engine.Backend(), "model_version", engine.ModelVersion())
 
 	webServer, err := webapp.New(logger, st, engine, livenessEngine, personEngine, cfg.MatchThreshold, cfg.DetectionThreshold, version)
 	if err != nil {
