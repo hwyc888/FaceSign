@@ -20,6 +20,10 @@ const (
 	livenessDecisionTimeout   = 1200 * time.Millisecond
 	livenessMinExposureScore  = 0.35
 	livenessMinSharpnessScore = 0.08
+	// A strong overall face-quality score permits the same sharpness floor
+	// already used by low-light mode, while exposure and spoof checks remain.
+	livenessAdaptiveFaceQuality = 0.70
+	livenessAdaptiveSharpness   = 0.05
 
 	livenessLowLightMaxFrames        = 3
 	livenessLowLightDecisionTimeout = 1200 * time.Millisecond
@@ -33,9 +37,10 @@ type recognitionObservation struct {
 	Student    store.Student
 	Similarity float64
 	LiveScore  float64
-	Exposure   float64
-	Sharpness    float64
-	LowLightMode    bool
+	FaceQuality float64
+	Exposure    float64
+	Sharpness   float64
+	LowLightMode bool
 	InferenceFailed bool
 }
 
@@ -173,7 +178,7 @@ func (t *recognitionTracker) Observe(sessionID string, observations []recognitio
 
 		track.InferenceFailures = 0
 		if !livenessObservationQualityUsable(observation) {
-			status := "光线不足或画面模糊，请调整摄像头"
+			status := livenessObservationQualityStatus(observation)
 			timedOut := !track.Verified && !track.Rejected && now.Sub(track.FirstSeen) >= decisionTimeout
 			if track.Verified {
 				status = livenessVerifiedStatus(track)
@@ -338,9 +343,36 @@ func livenessObservationQualityUsable(observation recognitionObservation) bool {
 	if observation.LowLightMode {
 		exposureThreshold = livenessLowLightMinExposureScore
 		sharpnessThreshold = livenessLowLightMinSharpnessScore
+	} else if observation.FaceQuality >= livenessAdaptiveFaceQuality {
+		// Identity recognition already accepted a clear, high-quality face.
+		// Relax only the sharpness gate to the existing low-light floor.
+		sharpnessThreshold = livenessAdaptiveSharpness
 	}
 	return observation.Exposure >= exposureThreshold &&
 		observation.Sharpness >= sharpnessThreshold
+}
+
+func livenessObservationQualityStatus(observation recognitionObservation) string {
+	exposureThreshold := livenessMinExposureScore
+	sharpnessThreshold := livenessMinSharpnessScore
+	if observation.LowLightMode {
+		exposureThreshold = livenessLowLightMinExposureScore
+		sharpnessThreshold = livenessLowLightMinSharpnessScore
+	} else if observation.FaceQuality >= livenessAdaptiveFaceQuality {
+		sharpnessThreshold = livenessAdaptiveSharpness
+	}
+	exposureLow := observation.Exposure < exposureThreshold
+	sharpnessLow := observation.Sharpness < sharpnessThreshold
+	switch {
+	case exposureLow && sharpnessLow:
+		return "光线不足且画面模糊，请补光并保持静止"
+	case exposureLow:
+		return "光线不足，请增加正面光线"
+	case sharpnessLow:
+		return "画面清晰度不足，请擦拭镜头并保持静止"
+	default:
+		return "画面质量不足，请调整摄像头"
+	}
 }
 
 func livenessObservationSpoofQualityUsable(observation recognitionObservation) bool {

@@ -46,6 +46,7 @@ function renderRecognition(r) {
     const quality = Number(f.quality_score || 0);
     const qualityHint = f.quality_hint ? ` · ${esc(f.quality_hint)}` : '';
     const qualityText = `人脸质量 ${(quality * 100).toFixed(0)}% · ${esc(f.quality_status || '等待清晰')}${qualityHint}`;
+    const livenessQualityText = `活体画面曝光 ${(Number(f.liveness_exposure || 0) * 100).toFixed(0)}% · 清晰度 ${(Number(f.liveness_sharpness || 0) * 100).toFixed(0)}%`;
     if (f.recognized && f.student) {
       const attendanceMeta = f.attendance
         ? ` | 首次 ${esc(String(f.attendance.checked_at || '').slice(-8))} | 最近 ${esc(String(f.attendance.last_seen_at || f.attendance.checked_at || '').slice(-8))} | 今日 ${Number(f.attendance.recognition_count || 1)}次`
@@ -76,7 +77,7 @@ function renderRecognition(r) {
       const timeoutClass = f.liveness_timed_out ? ' warning' : '';
       return `<div class="face-result pending${timeoutClass}">
         <div class="face-title">${esc(f.student.name)} · ${esc(f.status || '活体验证中')}</div>
-        <div class="face-meta">身份 ${(f.similarity * 100).toFixed(1)}% | 活体 ${(Number(f.liveness_score || 0) * 100).toFixed(1)}% | ${qualityText} | 连续帧 ${f.liveness_frames || 0}/${f.required_frames || r.liveness_fast_frames || 3}</div>
+        <div class="face-meta">身份 ${(f.similarity * 100).toFixed(1)}% | 活体 ${(Number(f.liveness_score || 0) * 100).toFixed(1)}% | ${qualityText} | ${livenessQualityText} | 连续帧 ${f.liveness_frames || 0}/${f.required_frames || r.liveness_fast_frames || 3}</div>
       </div>`;
     }
     if (quality < Number(r.face_quality_threshold || 0.45)) {

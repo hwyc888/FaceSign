@@ -35,6 +35,8 @@ type recognitionFace struct {
 	QualityStatus     string            `json:"quality_status,omitempty"`
 	QualityHint       string            `json:"quality_hint,omitempty"`
 	BestQuality       float64           `json:"best_quality,omitempty"`
+	LivenessExposure  float64           `json:"liveness_exposure"`
+	LivenessSharpness float64           `json:"liveness_sharpness"`
 	LivenessScore     float64           `json:"liveness_score,omitempty"`
 	LivenessStatus    string            `json:"liveness_status,omitempty"`
 	LivenessFrames    int               `json:"liveness_frames,omitempty"`
@@ -211,9 +213,11 @@ func (s *Server) recognizePreparedImage(
 		result := recognitionFace{
 			Status:        "等待清晰人脸",
 			Box:           boxFromRectangle(detected.Rectangle),
-			QualityScore:  quality.Score,
-			QualityStatus: quality.Status,
-			QualityHint:   quality.Hint,
+			QualityScore:      quality.Score,
+			QualityStatus:     quality.Status,
+			QualityHint:       quality.Hint,
+			LivenessExposure:  quality.Exposure,
+			LivenessSharpness: quality.Sharpness,
 		}
 
 		if trackIndex, ok := associateFaceToPerson(detected.Rectangle, tracks); ok {
@@ -375,6 +379,7 @@ func (s *Server) recognizePreparedImage(
 			observations = append(observations, recognitionObservation{
 				Student:        match.Student,
 				Similarity:     match.Similarity,
+				FaceQuality:    qualities[match.DetectionIndex].Score,
 				Exposure:       qualities[match.DetectionIndex].Exposure,
 				Sharpness:      qualities[match.DetectionIndex].Sharpness,
 				LowLightMode:   lowLightMode,
@@ -389,10 +394,11 @@ func (s *Server) recognizePreparedImage(
 		}
 		result.LivenessScore = score
 		observations = append(observations, recognitionObservation{
-			Student:    match.Student,
-			Similarity: match.Similarity,
-			LiveScore:  score,
-			Exposure:   qualities[match.DetectionIndex].Exposure,
+			Student:      match.Student,
+			Similarity:   match.Similarity,
+			LiveScore:    score,
+			FaceQuality:  qualities[match.DetectionIndex].Score,
+			Exposure:     qualities[match.DetectionIndex].Exposure,
 			Sharpness:    qualities[match.DetectionIndex].Sharpness,
 			LowLightMode: lowLightMode,
 		})
@@ -404,7 +410,11 @@ func (s *Server) recognizePreparedImage(
 		detectionIndex := observationDetectionIndexes[i]
 		result := &results[detectionIndex]
 		matchedCount++
-		result.LivenessScore = decision.LiveScore
+		// Keep the current model score visible when the quality gate has not
+		// accepted any frame yet; decision.LiveScore is then only an empty average.
+		if decision.Frames > 0 {
+			result.LivenessScore = decision.LiveScore
+		}
 		result.LivenessStatus = decision.LivenessStatus
 		result.LivenessFrames = decision.Frames
 		result.RequiredFrames = decision.RequiredFrames

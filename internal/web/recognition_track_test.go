@@ -436,3 +436,34 @@ func TestRecognitionTrackerPoorQualityFramesEventuallyTimeoutWithoutResettingClo
 		t.Fatalf("continuous poor-quality frames should end instead of remaining pending forever: %#v", decision)
 	}
 }
+
+func TestLivenessQualityGateAdaptsSharpnessForStrongFaceQuality(t *testing.T) {
+	observation := recognitionObservation{
+		FaceQuality: 0.72,
+		Exposure:    0.90,
+		Sharpness:   0.06,
+	}
+	if !livenessObservationQualityUsable(observation) {
+		t.Fatal("high-quality face should use the existing relaxed sharpness floor")
+	}
+	observation.FaceQuality = 0.69
+	if livenessObservationQualityUsable(observation) {
+		t.Fatal("ordinary face quality must keep the normal sharpness floor")
+	}
+	observation.FaceQuality = 0.72
+	observation.Sharpness = 0.04
+	if livenessObservationQualityUsable(observation) {
+		t.Fatal("adaptive quality must not accept severely blurred frames")
+	}
+}
+
+func TestLivenessObservationQualityStatusIdentifiesBlockingDimension(t *testing.T) {
+	observation := recognitionObservation{FaceQuality: 0.72, Exposure: 0.20, Sharpness: 0.04}
+	if got := livenessObservationQualityStatus(observation); got != "光线不足且画面模糊，请补光并保持静止" {
+		t.Fatalf("unexpected combined quality status: %q", got)
+	}
+	observation.Exposure = 0.90
+	if got := livenessObservationQualityStatus(observation); got != "画面清晰度不足，请擦拭镜头并保持静止" {
+		t.Fatalf("unexpected sharpness status: %q", got)
+	}
+}
