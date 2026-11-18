@@ -141,9 +141,9 @@ func newEngineWorker(spec modelLoadSpec) (*engineWorker, error) {
 		inputDim, outputDim = silentInputSize, 3
 		inputName, outputName = "input", "output"
 	}
-	input, err := ort.NewEmptyTensor[float32](ort.NewShape(1, 3, inputDim, inputDim))
+	input, err := ort.NewEmptyTensor[float32](ort.NewShape(1, 3, int64(inputDim), int64(inputDim)))
 	if err != nil { return nil, fmt.Errorf("create anti-spoof input tensor: %w", err) }
-	output, err := ort.NewEmptyTensor[float32](ort.NewShape(1, outputDim))
+	output, err := ort.NewEmptyTensor[float32](ort.NewShape(1, int64(outputDim)))
 	if err != nil { input.Destroy(); return nil, fmt.Errorf("create anti-spoof output tensor: %w", err) }
 	options, err := ort.NewSessionOptions()
 	if err != nil { output.Destroy(); input.Destroy(); return nil, fmt.Errorf("create anti-spoof session options: %w", err) }
