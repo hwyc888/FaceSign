@@ -248,17 +248,24 @@ func TestRecognitionTrackerDropsPendingEvidenceAfterMultipleMissingScans(t *test
 	}
 }
 
-func TestRecognitionTrackerKeepsShortTimeoutForFramesWithNoUsableEvidence(t *testing.T) {
+func TestRecognitionTrackerDoesNotTimeoutOnImageQualityMetrics(t *testing.T) {
 	tracker := newRecognitionTracker()
 	now := time.Now()
-	bad := recognitionObservation{
+	observation := recognitionObservation{
 		Student: store.Student{ID: 816}, Similarity: 0.90, LiveScore: 0.99,
 		Exposure: 0.05, Sharpness: 0.02,
 	}
-	tracker.Observe("crowded-unusable", []recognitionObservation{bad}, now)
-	decision := tracker.Observe("crowded-unusable", []recognitionObservation{bad}, now.Add(livenessDecisionTimeout+100*time.Millisecond))[0]
-	if !decision.TimedOut || decision.Verified || decision.Frames != 0 {
-		t.Fatalf("unusable frames must still expire promptly: %#v", decision)
+	first := tracker.Observe("crowded-unusable", []recognitionObservation{observation}, now)[0]
+	if first.Frames != 1 || first.TimedOut || first.Verified {
+		t.Fatalf("low image-quality metrics must not block the first model score: %#v", first)
+	}
+	second := tracker.Observe("crowded-unusable", []recognitionObservation{observation}, now.Add(livenessDecisionTimeout+100*time.Millisecond))[0]
+	if second.Frames != 2 || second.TimedOut || second.Verified {
+		t.Fatalf("collected model scores must use the bounded multi-frame window: %#v", second)
+	}
+	third := tracker.Observe("crowded-unusable", []recognitionObservation{observation}, now.Add(2*(livenessDecisionTimeout+100*time.Millisecond)))[0]
+	if !third.Verified || third.Frames != 3 {
+		t.Fatalf("three positive model scores should pass regardless of diagnostic image metrics: %#v", third)
 	}
 }
 
