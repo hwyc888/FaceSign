@@ -50,19 +50,15 @@ function renderRecognition(r) {
     const livenessExposure = Number(f.liveness_exposure || 0) * 100;
     const livenessSharpness = Number(f.liveness_sharpness || 0) * 100;
     const livenessBrightness = Number(f.liveness_brightness || 0) * 100;
-    const exposureFloor = Number(f.liveness_exposure_threshold || 0) * 100;
-    const sharpnessFloor = Number(f.liveness_sharpness_threshold || 0) * 100;
-    const livenessQualityStatus = esc(f.liveness_quality_status || '等待活体质量评估');
-    const livenessQualityText = `活体模式 ${livenessModeText} · 人脸区域亮度 ${livenessBrightness.toFixed(0)}% · 曝光 ${livenessExposure.toFixed(0)}%（最低 ${exposureFloor.toFixed(0)}%）· 清晰度 ${livenessSharpness.toFixed(0)}%（最低 ${sharpnessFloor.toFixed(0)}%）· ${livenessQualityStatus}`;
+    const livenessQualityStatus = esc(f.liveness_quality_status || '画面指标仅供诊断');
+    const livenessQualityText = `活体模型 ${livenessModeText} · 人脸区域亮度 ${livenessBrightness.toFixed(0)}% · 曝光 ${livenessExposure.toFixed(0)}% · 清晰度 ${livenessSharpness.toFixed(0)}% · ${livenessQualityStatus}`;
     if (f.recognized && f.student) {
       const attendanceMeta = f.attendance
         ? ` | 首次 ${esc(String(f.attendance.checked_at || '').slice(-8))} | 最近 ${esc(String(f.attendance.last_seen_at || f.attendance.checked_at || '').slice(-8))} | 今日 ${Number(f.attendance.recognition_count || 1)}次`
         : '';
       const livenessText = f.liveness_status === '活体检测已关闭'
         ? '活体检测已关闭'
-        : (f.liveness_status === '低光自动识别通过'
-          ? '低光自动识别'
-          : `活体 ${(Number(f.liveness_score || 0) * 100).toFixed(1)}%`);
+        : `活体 ${(Number(f.liveness_score || 0) * 100).toFixed(1)}%`;
       return `<div class="face-result known">
         <div class="face-title">${esc(f.student.name)} · ${f.first_checkin_today ? '签到成功' : '今日已签到'}</div>
         <div class="face-meta">${esc(f.student.student_no)} | ${esc(f.student.class_name || '-')} | 身份 ${(f.similarity * 100).toFixed(1)}% | ${livenessText} | ${qualityText} | ${livenessQualityText}${attendanceMeta}</div>

@@ -40,8 +40,6 @@ type recognitionFace struct {
 	LivenessBrightness         float64           `json:"liveness_brightness"`
 	LivenessMode               string            `json:"liveness_mode"`
 	LivenessQualityStatus      string            `json:"liveness_quality_status"`
-	LivenessExposureThreshold  float64           `json:"liveness_exposure_threshold"`
-	LivenessSharpnessThreshold float64           `json:"liveness_sharpness_threshold"`
 	LivenessScore     float64           `json:"liveness_score,omitempty"`
 	LivenessStatus    string            `json:"liveness_status,omitempty"`
 	LivenessFrames    int               `json:"liveness_frames,omitempty"`
@@ -168,20 +166,12 @@ func (s *Server) recognizePreparedImage(
 	personDetections []person.Detection,
 	detections []face.Detection,
 ) {
-	lowLightMode, settingsErr := s.store.LowLightRecognitionMode(r.Context())
-	if settingsErr != nil {
-		s.logger.Warn("read low-light recognition setting failed; using normal mode", "error", settingsErr)
-		lowLightMode = false
-	}
 	disableLivenessDetection, livenessSettingsErr := s.store.DisableLivenessDetection(r.Context())
 	if livenessSettingsErr != nil {
 		s.logger.Warn("read liveness detection setting failed; keeping liveness enabled", "error", livenessSettingsErr)
 		disableLivenessDetection = false
 	}
 	qualityThreshold := minRecognitionFaceQuality
-	if lowLightMode {
-		qualityThreshold = 0.38
-	}
 
 	s.tracker.SetLivenessMode(sessionID, disableLivenessDetection)
 	personDetections = addFaceFallbackPersons(personDetections, detections, img.Bounds())
@@ -215,15 +205,6 @@ func (s *Server) recognizePreparedImage(
 	for i, detected := range detections {
 		quality := scoreFaceQualityWithThreshold(img, detected, qualityThreshold)
 		qualities[i] = quality
-		livenessLowLight, livenessModeLabel := resolveLivenessMode(lowLightMode, quality.Brightness)
-		qualityObservation := recognitionObservation{
-			FaceQuality:    quality.Score,
-			Exposure:       quality.Exposure,
-			Sharpness:      quality.Sharpness,
-			FaceBrightness: quality.Brightness,
-			LowLightMode:   livenessLowLight,
-		}
-		exposureFloor, sharpnessFloor := livenessQualityThresholds(qualityObservation)
 		result := recognitionFace{
 			Status:                      "等待清晰人脸",
 			Box:                         boxFromRectangle(detected.Rectangle),
@@ -233,10 +214,8 @@ func (s *Server) recognizePreparedImage(
 			LivenessExposure:            quality.Exposure,
 			LivenessSharpness:           quality.Sharpness,
 			LivenessBrightness:          quality.Brightness / 255,
-			LivenessMode:                livenessModeLabel,
-			LivenessQualityStatus:       livenessObservationQualityStatus(qualityObservation),
-			LivenessExposureThreshold:   exposureFloor,
-			LivenessSharpnessThreshold:  sharpnessFloor,
+			LivenessMode:                "模型直判",
+			LivenessQualityStatus:       "亮度、曝光和清晰度仅供诊断，不拦截活体帧",
 		}
 
 		if trackIndex, ok := associateFaceToPerson(detected.Rectangle, tracks); ok {
@@ -401,7 +380,6 @@ func (s *Server) recognizePreparedImage(
 				FaceQuality:    qualities[match.DetectionIndex].Score,
 				Exposure:       qualities[match.DetectionIndex].Exposure,
 				Sharpness:      qualities[match.DetectionIndex].Sharpness,
-				LowLightMode:   lowLightMode,
 				InferenceFailed: true,
 			})
 			observationDetectionIndexes = append(observationDetectionIndexes, match.DetectionIndex)
@@ -419,8 +397,6 @@ func (s *Server) recognizePreparedImage(
 			FaceQuality:     qualities[match.DetectionIndex].Score,
 			Exposure:       qualities[match.DetectionIndex].Exposure,
 			Sharpness:      qualities[match.DetectionIndex].Sharpness,
-			FaceBrightness: qualities[match.DetectionIndex].Brightness,
-			LowLightMode:   results[match.DetectionIndex].LivenessMode != "普通模式",
 		})
 		observationDetectionIndexes = append(observationDetectionIndexes, match.DetectionIndex)
 	}
@@ -430,8 +406,7 @@ func (s *Server) recognizePreparedImage(
 		detectionIndex := observationDetectionIndexes[i]
 		result := &results[detectionIndex]
 		matchedCount++
-		// Keep the current model score visible when the quality gate has not
-		// accepted any frame yet; decision.LiveScore is then only an empty average.
+		// Keep the current model score visible before the first frame is accumulated.
 		if decision.Frames > 0 {
 			result.LivenessScore = decision.LiveScore
 		}
@@ -517,14 +492,13 @@ func (s *Server) recognizePreparedImage(
 		"unregistered_count":      unregisteredCount,
 		"threshold":               s.matchThreshold,
 		"face_quality_threshold":  qualityThreshold,
-		"low_light_mode_enabled":  lowLightMode,
 		"liveness_detection_disabled": disableLivenessDetection,
 		"liveness_model":          s.liveness.ModelName(),
 		"liveness_threshold":      livenessPassThreshold,
 		"liveness_fast_threshold": livenessFastPassThreshold,
 		"liveness_fast_frames":    livenessFastFrames,
 		"liveness_min_frames":     livenessMinFrames,
-		"liveness_max_frames":     livenessMaxFramesForMode(lowLightMode),
+		"liveness_max_frames":     livenessMaxFrames,
 		"liveness_timeout_ms":     livenessCollectionTimeout.Milliseconds(),
 	}
 	if statsErr == nil {
@@ -550,8 +524,6 @@ func (s *Server) recognizePreparedImage(
 		response["liveness_exposure"] = results[0].LivenessExposure
 		response["liveness_sharpness"] = results[0].LivenessSharpness
 		response["liveness_quality_status"] = results[0].LivenessQualityStatus
-		response["liveness_exposure_threshold"] = results[0].LivenessExposureThreshold
-		response["liveness_sharpness_threshold"] = results[0].LivenessSharpnessThreshold
 		if results[0].Student != nil {
 			response["student"] = results[0].Student
 			if results[0].Attendance != nil {

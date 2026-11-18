@@ -34,9 +34,6 @@ func TestAppSettingsAPI(t *testing.T) {
 	if current.AutoStartCheckin {
 		t.Fatal("auto start check-in should default off")
 	}
-	if current.LowLightRecognitionMode {
-		t.Fatal("low-light recognition mode should default off")
-	}
 	if current.DisableLivenessDetection {
 		t.Fatal("liveness detection should remain enabled by default")
 	}
@@ -129,22 +126,12 @@ func TestAppSettingsAPI(t *testing.T) {
 		!persisted.RealtimeStatusReason {
 		t.Fatal("partial realtime field update changed unrelated status fields")
 	}
-	lowLightPut := httptest.NewRequest(http.MethodPut, "/api/settings", strings.NewReader(`{"low_light_recognition_mode":true}`))
-	lowLightPut.Header.Set("Content-Type", "application/json")
-	lowLightRec := httptest.NewRecorder()
-	s.settings(lowLightRec, withTestAdmin(lowLightPut))
-	if lowLightRec.Code != http.StatusOK {
-		t.Fatalf("low-light setting PUT status=%d body=%s", lowLightRec.Code, lowLightRec.Body.String())
-	}
-	persisted, err = st.AppSettings(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !persisted.LowLightRecognitionMode {
-		t.Fatal("low-light recognition mode was not persisted")
-	}
-	if !persisted.AutoStartCheckin || persisted.RealtimeStatusEnabled {
-		t.Fatal("partial low-light setting update changed unrelated application settings")
+	legacyLowLightPut := httptest.NewRequest(http.MethodPut, "/api/settings", strings.NewReader(`{"low_light_recognition_mode":true}`))
+	legacyLowLightPut.Header.Set("Content-Type", "application/json")
+	legacyLowLightRec := httptest.NewRecorder()
+	s.settings(legacyLowLightRec, withTestAdmin(legacyLowLightPut))
+	if legacyLowLightRec.Code != http.StatusBadRequest {
+		t.Fatalf("removed low-light setting should be rejected: status=%d body=%s", legacyLowLightRec.Code, legacyLowLightRec.Body.String())
 	}
 	disableLivenessPut := httptest.NewRequest(http.MethodPut, "/api/settings", strings.NewReader(`{"disable_liveness_detection":true}`))
 	disableLivenessPut.Header.Set("Content-Type", "application/json")
@@ -160,7 +147,7 @@ func TestAppSettingsAPI(t *testing.T) {
 	if !persisted.DisableLivenessDetection {
 		t.Fatal("disable-liveness setting was not persisted")
 	}
-	if !persisted.LowLightRecognitionMode || !persisted.AutoStartCheckin || persisted.RealtimeStatusEnabled {
+	if !persisted.AutoStartCheckin || persisted.RealtimeStatusEnabled {
 		t.Fatal("partial disable-liveness update changed unrelated application settings")
 	}
 }

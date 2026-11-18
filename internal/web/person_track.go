@@ -326,19 +326,6 @@ func addFaceFallbackPersons(people []person.Detection, faces []face.Detection, b
 }
 
 
-// resolveLivenessMode chooses a per-face liveness quality profile. The
-// recognition low-light toggle remains an explicit override, while dark
-// face regions automatically use the conservative low-light quality floor.
-func resolveLivenessMode(manualLowLight bool, faceBrightness float64) (bool, string) {
-	if manualLowLight {
-		return true, "低光模式（手动）"
-	}
-	if faceBrightness < livenessAutoLowLightBrightness {
-		return true, "低光自适应（人脸区域自动）"
-	}
-	return false, "普通模式"
-}
-
 func scoreFaceQuality(img image.Image, detected face.Detection) faceQualityResult {
 	return scoreFaceQualityWithThreshold(img, detected, minRecognitionFaceQuality)
 }
@@ -357,9 +344,9 @@ func scoreFaceQualityWithThreshold(img image.Image, detected face.Detection, qua
 	hint := ""
 	switch {
 	case brightness < 10:
-		hint = "人脸区域光线极暗，建议增加正面补光"
+		hint = "人脸区域亮度极低，活体模型将直接判定"
 	case brightness < 35:
-		hint = "低光环境，已启用人脸区域自适应活体检测"
+		hint = "低光环境，活体模型直接判定"
 	case brightness > 235:
 		hint = "画面过曝，请避开强光直射"
 	case sharpnessScore < 0.12:
@@ -373,7 +360,7 @@ func scoreFaceQualityWithThreshold(img image.Image, detected face.Detection, qua
 	status := "等待清晰人脸"
 	switch {
 	case brightness < 35 && score >= qualityThreshold:
-		status = "低光可识别"
+		status = "可识别"
 	case hint != "":
 		status = "需调整画面"
 	case score >= 0.78:

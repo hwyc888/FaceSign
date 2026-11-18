@@ -23,32 +23,16 @@ const (
 	livenessPassThreshold     = 0.60
 	livenessSpoofThreshold    = 0.40
 	livenessDecisionTimeout   = 1200 * time.Millisecond
-	livenessMinExposureScore  = 0.35
-	livenessMinSharpnessScore = 0.08
-	// A strong overall face-quality score permits the same sharpness floor
-	// already used by low-light mode, while exposure and spoof checks remain.
-	livenessAdaptiveFaceQuality = 0.70
-	livenessAdaptiveSharpness   = 0.05
-
-	livenessLowLightMaxFrames        = 3
-	livenessLowLightDecisionTimeout = 1200 * time.Millisecond
-	livenessLowLightMinExposureScore = 0.20
-	livenessLowLightMinSharpnessScore = 0.05
-	// Automatically use the low-light quality profile for dark inner-face regions.
-	livenessAutoLowLightBrightness = 75
-	// Blurry low-light frames cannot reliably prove a photo/screen attack.
-	livenessLowLightSpoofMinSharpnessScore = 0.12
 )
 
 type recognitionObservation struct {
-	Student    store.Student
-	Similarity float64
-	LiveScore  float64
-	FaceQuality float64
-	Exposure    float64
-	Sharpness      float64
-	FaceBrightness float64
-	LowLightMode   bool
+	Student         store.Student
+	Similarity      float64
+	LiveScore       float64
+	FaceQuality     float64 // diagnostic only; never gates liveness model scores
+	Exposure        float64
+	Sharpness       float64
+	FaceBrightness  float64
 	InferenceFailed bool
 }
 
@@ -63,10 +47,9 @@ type recognitionTrack struct {
 	Verified         bool
 	Rejected         bool
 	Committed        bool
-	LowLightMode     bool
 	LivenessDisabled bool
-	SpoofVotes        int
-	RecoveryVotes     int
+	SpoofVotes       int
+	RecoveryVotes    int
 	InferenceFailures int
 }
 
@@ -171,17 +154,15 @@ func (t *recognitionTracker) Observe(sessionID string, observations []recognitio
 			track = &recognitionTrack{
 				ID:        fmt.Sprintf("%s-%d", sessionID, session.NextID),
 				FirstSeen: now,
-				Scores:    make([]float64, 0, livenessMaxFramesForMode(observation.LowLightMode)),
-				LowLightMode: observation.LowLightMode,
+				Scores:    make([]float64, 0, livenessMaxFrames),
 			}
 			session.Tracks[observation.Student.ID] = track
 		}
 		track.LastSeen = now
 		if track.Rejected {
-			// Keep rejecting a photo until two consecutive usable frames indicate
+			// Keep rejecting a photo until two consecutive model-positive frames indicate
 			// fresh live evidence. Never carry rejected votes into a new cycle.
 			if !observation.InferenceFailed &&
-				livenessObservationQualityUsable(observation) &&
 				observation.LiveScore >= livenessPassThreshold {
 				track.RecoveryVotes++
 			} else {
@@ -204,16 +185,14 @@ func (t *recognitionTracker) Observe(sessionID string, observations []recognitio
 			track = &recognitionTrack{
 				ID:           fmt.Sprintf("%s-%d", sessionID, session.NextID),
 				FirstSeen:    now,
-				Scores:       make([]float64, 0, livenessMaxFramesForMode(observation.LowLightMode)),
-				LowLightMode: observation.LowLightMode,
+				Scores:       make([]float64, 0, livenessMaxFrames),
 			}
 			session.Tracks[observation.Student.ID] = track
 		}
 		track.LastSeen = now
-		track.LowLightMode = observation.LowLightMode
-		decisionTimeout := livenessDecisionTimeoutForMode(track.LowLightMode)
+		decisionTimeout := livenessDecisionTimeout
 		if len(track.Scores) > 0 {
-			// The short deadline is for a frame with no usable evidence. Once
+			// The short deadline is for a track with no model score yet. Once
 			// positive/negative PAD scores are being collected, allow a bounded
 			// multi-person interval before resetting the three-frame vote.
 			decisionTimeout = livenessCollectionTimeout
@@ -242,38 +221,11 @@ func (t *recognitionTracker) Observe(sessionID string, observations []recognitio
 		}
 
 		track.InferenceFailures = 0
-		if !livenessObservationQualityUsable(observation) {
-			status := livenessObservationQualityStatus(observation)
-			timedOut := !track.Verified && !track.Rejected && now.Sub(track.FirstSeen) >= decisionTimeout
-			if track.Verified {
-				status = livenessVerifiedStatus(track)
-			} else if track.Rejected {
-				status = "疑似照片/屏幕"
-			} else if timedOut {
-				status = "光线不足或画面模糊，活体检测超时"
-			}
-			out[i] = trackDecision{
-				TrackID:         track.ID,
-				Frames:          len(track.Scores),
-				RequiredFrames:  requiredLivenessFrames(track),
-				LiveScore:       averageScores(track.Scores),
-				Similarity:      track.SimilaritySum / maxLivenessFloat(1, float64(track.Frames)),
-				Verified:        track.Verified,
-				Rejected:        track.Rejected,
-				TimedOut:        timedOut,
-				NeedsAttendance: track.Verified && !track.Committed,
-				LivenessStatus:  status,
-			}
-			if timedOut {
-				delete(session.Tracks, observation.Student.ID)
-			}
-			continue
-		}
-		maxFrames := livenessMaxFramesForMode(track.LowLightMode)
+		maxFrames := livenessMaxFrames
 		track.LastSeen = now
 		track.Frames++
 		track.SimilaritySum += observation.Similarity
-		if observation.LiveScore < livenessSpoofThreshold && livenessObservationSpoofQualityUsable(observation) {
+		if observation.LiveScore < livenessSpoofThreshold {
 			track.SpoofVotes++
 		}
 		track.Scores = append(track.Scores, observation.LiveScore)
@@ -402,68 +354,11 @@ func (t *recognitionTracker) Commit(sessionID, trackID string) {
 	}
 }
 
-func livenessQualityThresholds(observation recognitionObservation) (float64, float64) {
-	if observation.LowLightMode {
-		return livenessLowLightMinExposureScore, livenessLowLightMinSharpnessScore
-	}
-	sharpnessThreshold := livenessMinSharpnessScore
-	if observation.FaceQuality >= livenessAdaptiveFaceQuality {
-		// Identity recognition already accepted a clear, high-quality face.
-		// Relax only the sharpness gate to the existing low-light floor.
-		sharpnessThreshold = livenessAdaptiveSharpness
-	}
-	return livenessMinExposureScore, sharpnessThreshold
-}
-
-func livenessObservationQualityUsable(observation recognitionObservation) bool {
-	exposureThreshold, sharpnessThreshold := livenessQualityThresholds(observation)
-	return observation.Exposure >= exposureThreshold &&
-		observation.Sharpness >= sharpnessThreshold
-}
-
-func livenessObservationQualityStatus(observation recognitionObservation) string {
-	exposureThreshold, sharpnessThreshold := livenessQualityThresholds(observation)
-	exposureLow := observation.Exposure < exposureThreshold
-	sharpnessLow := observation.Sharpness < sharpnessThreshold
-	switch {
-	case exposureLow && sharpnessLow:
-		return "人脸区域曝光不足且清晰度不足"
-	case exposureLow:
-		return "人脸区域曝光不足"
-	case sharpnessLow:
-		return "人脸区域清晰度不足"
-	default:
-		return "画面质量达标，正在累计活体帧"
-	}
-}
-
-func livenessObservationSpoofQualityUsable(observation recognitionObservation) bool {
-	if !observation.LowLightMode {
-		return true
-	}
-	return observation.Exposure >= livenessLowLightMinExposureScore &&
-		observation.Sharpness >= livenessLowLightSpoofMinSharpnessScore
-}
-
 func livenessVerifiedStatus(track *recognitionTrack) string {
 	if track.LivenessDisabled {
 		return "活体检测已关闭"
 	}
 	return "活体通过"
-}
-
-func livenessMaxFramesForMode(lowLightMode bool) int {
-	if lowLightMode {
-		return livenessLowLightMaxFrames
-	}
-	return livenessMaxFrames
-}
-
-func livenessDecisionTimeoutForMode(lowLightMode bool) time.Duration {
-	if lowLightMode {
-		return livenessLowLightDecisionTimeout
-	}
-	return livenessDecisionTimeout
 }
 
 func requiredLivenessFrames(track *recognitionTrack) int {

@@ -173,27 +173,17 @@ func TestRecognitionTrackerPhotoRejectionRequiresConsecutiveGoodRecoveryFrames(t
 	if !first.Rejected {
 		t.Fatalf("first recovery candidate must remain blocked: %#v", first)
 	}
-	observation.Exposure = 0.1 // An unusable bright-looking score must break the streak.
-	unusable := tracker.Observe("camera-recovery-quality", []recognitionObservation{observation}, now.Add(400*time.Millisecond))[0]
-	if !unusable.Rejected {
-		t.Fatalf("unusable frame cannot reset a spoof track: %#v", unusable)
-	}
-	observation.Exposure = 1
-	second := tracker.Observe("camera-recovery-quality", []recognitionObservation{observation}, now.Add(500*time.Millisecond))[0]
-	if !second.Rejected || second.Verified {
-		t.Fatalf("recovery streak must restart after an unusable frame: %#v", second)
-	}
-	observation.LiveScore = 0.08
-	spoof := tracker.Observe("camera-recovery-quality", []recognitionObservation{observation}, now.Add(600*time.Millisecond))[0]
+	observation.LiveScore = 0.08 // A low model score breaks the recovery streak.
+	spoof := tracker.Observe("camera-recovery-quality", []recognitionObservation{observation}, now.Add(400*time.Millisecond))[0]
 	if !spoof.Rejected {
-		t.Fatalf("another photo frame must restore the rejection streak: %#v", spoof)
+		t.Fatalf("another low model score must keep the attack blocked: %#v", spoof)
 	}
 	observation.LiveScore = 0.80
-	firstAgain := tracker.Observe("camera-recovery-quality", []recognitionObservation{observation}, now.Add(700*time.Millisecond))[0]
+	firstAgain := tracker.Observe("camera-recovery-quality", []recognitionObservation{observation}, now.Add(500*time.Millisecond))[0]
 	if !firstAgain.Rejected {
-		t.Fatalf("one fresh candidate after spoof must still be rejected: %#v", firstAgain)
+		t.Fatalf("one fresh live-model score must still be blocked: %#v", firstAgain)
 	}
-	restart := tracker.Observe("camera-recovery-quality", []recognitionObservation{observation}, now.Add(800*time.Millisecond))[0]
+	restart := tracker.Observe("camera-recovery-quality", []recognitionObservation{observation}, now.Add(600*time.Millisecond))[0]
 	if restart.Rejected || restart.Verified || restart.Frames != 1 || restart.TrackID == firstAgain.TrackID {
 		t.Fatalf("two good recovery frames should reopen verification, not auto-approve: %#v", restart)
 	}
@@ -328,175 +318,87 @@ func TestRecognitionTrackerExpiresOldTrack(t *testing.T) {
 }
 
 
-func TestRecognitionTrackerDoesNotTreatPoorQualityFramesAsSpoofEvidence(t *testing.T) {
+func TestRecognitionTrackerUsesModelScoresWithoutLowLightQualityGate(t *testing.T) {
 	tracker := newRecognitionTracker()
 	now := time.Now()
-	student := store.Student{ID: 77, StudentNo: "S77", Name: "测试学生"}
-	var decision trackDecision
-	for i := 0; i < 4; i++ {
-		decision = tracker.Observe("camera-low-light", []recognitionObservation{{
-			Student: student, Similarity: 0.93, LiveScore: 0.05,
-			Exposure: 0.12, Sharpness: 0.04,
-		}}, now.Add(time.Duration(i)*180*time.Millisecond))[0]
-		if decision.Rejected || decision.Verified || decision.Frames != 0 {
-			t.Fatalf("poor quality frame must not count as spoof/live evidence: %#v", decision)
-		}
-		if decision.LivenessStatus != "人脸区域曝光不足且清晰度不足" {
-			t.Fatalf("unexpected low-quality status: %#v", decision)
-		}
-	}
-
-	for i := 0; i < livenessFastFrames; i++ {
-		decision = tracker.Observe("camera-low-light", []recognitionObservation{{
-			Student: student, Similarity: 0.93, LiveScore: 0.90,
-			Exposure: 0.9, Sharpness: 0.8,
-		}}, now.Add(900*time.Millisecond+time.Duration(i)*180*time.Millisecond))[0]
-	}
-	if !decision.Verified || decision.Rejected {
-		t.Fatalf("good quality live frames should still pass normally: %#v", decision)
-	}
-}
-
-
-func TestRecognitionTrackerLowLightModeAcceptsDimFramesButStillRequiresLiveScores(t *testing.T) {
-	tracker := newRecognitionTracker()
-	now := time.Now()
-	student := store.Student{ID: 88, StudentNo: "S88", Name: "夜间测试"}
+	student := store.Student{ID: 77, StudentNo: "S77", Name: "暗光真人"}
 	var decision trackDecision
 	for i := 0; i < livenessMinFrames; i++ {
-		decision = tracker.Observe("camera-low-light-enabled", []recognitionObservation{{
-			Student: student, Similarity: 0.90, LiveScore: 0.70,
-			Exposure: 0.25, Sharpness: 0.055, LowLightMode: true,
-		}}, now.Add(time.Duration(i)*250*time.Millisecond))[0]
-	}
-	if !decision.Verified || decision.Rejected {
-		t.Fatalf("usable dim live frames should pass in low-light mode: %#v", decision)
-	}
-	if decision.Frames != livenessMinFrames {
-		t.Fatalf("low-light mode unexpectedly changed live vote count: %#v", decision)
-	}
-}
-
-func TestRecognitionTrackerLowLightModeStillRejectsPhotoAndScreenScores(t *testing.T) {
-	tracker := newRecognitionTracker()
-	now := time.Now()
-	student := store.Student{ID: 89, StudentNo: "S89", Name: "照片攻击测试"}
-	var decision trackDecision
-	for i := 0; i < livenessFastFrames; i++ {
-		decision = tracker.Observe("camera-low-light-spoof", []recognitionObservation{{
-			Student: student, Similarity: 0.94, LiveScore: 0.10,
-			Exposure: 0.25, Sharpness: 0.15, LowLightMode: true,
-		}}, now.Add(time.Duration(i)*200*time.Millisecond))[0]
-	}
-	if !decision.Rejected || decision.Verified || decision.NeedsAttendance {
-		t.Fatalf("low-light mode must continue rejecting spoof evidence: %#v", decision)
-	}
-}
-
-func TestRecognitionTrackerLowLightUncertainScoresDoNotAutoPass(t *testing.T) {
-	tracker := newRecognitionTracker()
-	now := time.Now()
-	student := store.Student{ID: 90, StudentNo: "S90", Name: "夜间自动签到测试"}
-	var decision trackDecision
-	for i := 0; i < livenessLowLightMaxFrames; i++ {
-		decision = tracker.Observe("camera-low-light-uncertain", []recognitionObservation{{
-			Student: student, Similarity: 0.90, LiveScore: 0.55,
-			Exposure: 0.25, Sharpness: 0.055, LowLightMode: true,
-		}}, now.Add(time.Duration(i)*250*time.Millisecond))[0]
-		if i < livenessLowLightMaxFrames-1 && (decision.Verified || decision.TimedOut) {
-			t.Fatalf("uncertain low-light track decided before the frame limit: %#v", decision)
+		decision = tracker.Observe("camera-dark-live", []recognitionObservation{{
+			Student: student, Similarity: 0.93, LiveScore: 0.90,
+			FaceQuality: 0.68, FaceBrightness: 7, Exposure: 0.52, Sharpness: 0,
+		}}, now.Add(time.Duration(i)*180*time.Millisecond))[0]
+		if i < livenessMinFrames-1 && decision.Verified {
+			t.Fatalf("dark-scene model scores passed before three frames: %#v", decision)
 		}
 	}
-	if decision.Verified || decision.Rejected || decision.NeedsAttendance || !decision.TimedOut {
-		t.Fatalf("uncertain low-light score must not pass without liveness evidence: %#v", decision)
+	if !decision.Verified || decision.Rejected || decision.Frames != 3 {
+		t.Fatalf("positive model scores must accumulate despite low-light diagnostics: %#v", decision)
 	}
 }
 
-func TestLowLightModeUsesRelaxedQualityFloorButKeepsNormalFloor(t *testing.T) {
-	observation := recognitionObservation{Exposure: 0.25, Sharpness: 0.055}
-	if livenessObservationQualityUsable(observation) {
-		t.Fatal("normal mode must keep the standard exposure and sharpness floor")
-	}
-	observation.LowLightMode = true
-	if !livenessObservationQualityUsable(observation) {
-		t.Fatal("low-light mode should accept dim but still measurable frames")
-	}
-	if livenessMaxFramesForMode(true) != 3 || livenessMaxFramesForMode(false) != 3 ||
-		livenessDecisionTimeoutForMode(true) != livenessDecisionTimeout {
-		t.Fatal("low-light mode must use the same three-frame verification limit")
-	}
-}
-
-
-func TestRecognitionTrackerLowLightBlurDoesNotAutoPass(t *testing.T) {
+func TestRecognitionTrackerRejectsLowModelScoresRegardlessOfImageQuality(t *testing.T) {
 	tracker := newRecognitionTracker()
 	now := time.Now()
-	student := store.Student{ID: 91, StudentNo: "S91", Name: "低光模糊测试"}
+	student := store.Student{ID: 78, StudentNo: "S78", Name: "暗光低分测试"}
 	var decision trackDecision
-	for i := 0; i < livenessLowLightMaxFrames; i++ {
-		decision = tracker.Observe("camera-low-light-blur", []recognitionObservation{{
-			Student: student, Similarity: 0.816, LiveScore: 0.007,
-			Exposure: 0.25, Sharpness: 0.055, LowLightMode: true,
-		}}, now.Add(time.Duration(i)*200*time.Millisecond))[0]
-		if i < livenessLowLightMaxFrames-1 && (decision.Verified || decision.Rejected || decision.TimedOut) {
-			t.Fatalf("blurry low-light track decided before the frame limit: %#v", decision)
+	for i := 0; i < livenessMinFrames; i++ {
+		decision = tracker.Observe("camera-dark-low-score", []recognitionObservation{{
+			Student: student, Similarity: 0.894, LiveScore: 0.026,
+			FaceQuality: 0.68, FaceBrightness: 7, Exposure: 0.52, Sharpness: 0,
+		}}, now.Add(time.Duration(i)*180*time.Millisecond))[0]
+		if i < livenessMinFrames-1 && decision.Rejected {
+			t.Fatalf("low model score was rejected before enough frames: %#v", decision)
 		}
 	}
-	if decision.Verified || decision.Rejected || decision.NeedsAttendance || !decision.TimedOut {
-		t.Fatalf("blurry low-light match must not bypass enabled liveness: %#v", decision)
+	if !decision.Rejected || decision.Verified || decision.Frames != 3 {
+		t.Fatalf("three low MiniFAS scores must be rejected even when quality metrics are low: %#v", decision)
 	}
 }
 
-func TestRecognitionTrackerLowLightTooDarkFramesStayPending(t *testing.T) {
+func TestRecognitionTrackerUncertainModelScoresNeverAutoPass(t *testing.T) {
 	tracker := newRecognitionTracker()
 	now := time.Now()
-	student := store.Student{ID: 92, StudentNo: "S92", Name: "极暗画面测试"}
+	student := store.Student{ID: 79, StudentNo: "S79", Name: "不确定分数测试"}
+	var decision trackDecision
 	for i := 0; i < livenessMaxFrames; i++ {
-		decision := tracker.Observe("camera-low-light-too-dark", []recognitionObservation{{
-			Student: student, Similarity: 0.88, LiveScore: 0.01,
-			Exposure: 0.12, Sharpness: 0.04, LowLightMode: true,
-		}}, now.Add(time.Duration(i)*200*time.Millisecond))[0]
-		if decision.Verified || decision.Rejected || decision.NeedsAttendance || decision.Frames != 0 {
-			t.Fatalf("unusable dark frames must not auto-check-in or claim spoof: %#v", decision)
-		}
-	}
-}
-
-func TestRecognitionTrackerLowLightClearSpoofVoteBlocksAutomaticFallback(t *testing.T) {
-	tracker := newRecognitionTracker()
-	now := time.Now()
-	student := store.Student{ID: 94, StudentNo: "S94", Name: "混合画面测试"}
-	for i := 0; i < livenessLowLightMaxFrames; i++ {
-		score, sharpness := 0.55, 0.055
-		if i == 0 {
-			score, sharpness = 0.05, 0.18
-		}
-		decision := tracker.Observe("camera-low-light-mixed", []recognitionObservation{{
-			Student: student, Similarity: 0.91, LiveScore: score,
-			Exposure: 0.25, Sharpness: sharpness, LowLightMode: true,
-		}}, now.Add(time.Duration(i)*200*time.Millisecond))[0]
-		if decision.Verified || decision.NeedsAttendance {
-			t.Fatalf("reliable spoof evidence must block auto-approval: %#v", decision)
-		}
-		if i == livenessLowLightMaxFrames-1 && !decision.TimedOut {
-			t.Fatalf("ambiguous mixed evidence should end without attendance: %#v", decision)
-		}
-	}
-}
-
-func TestRecognitionTrackerLowLightSpoofNeedsClearFrames(t *testing.T) {
-	tracker := newRecognitionTracker()
-	now := time.Now()
-	student := store.Student{ID: 93, StudentNo: "S93", Name: "清晰照片测试"}
-	var decision trackDecision
-	for i := 0; i < livenessFastFrames; i++ {
-		decision = tracker.Observe("camera-low-light-clear-spoof", []recognitionObservation{{
-			Student: student, Similarity: 0.93, LiveScore: 0.05,
-			Exposure: 0.25, Sharpness: 0.18, LowLightMode: true,
+		decision = tracker.Observe("camera-uncertain-score", []recognitionObservation{{
+			Student: student, Similarity: 0.90, LiveScore: 0.55,
 		}}, now.Add(time.Duration(i)*180*time.Millisecond))[0]
 	}
-	if !decision.Rejected || decision.Verified {
-		t.Fatalf("clear low-light spoof evidence must still be rejected: %#v", decision)
+	if decision.Verified || decision.Rejected || decision.NeedsAttendance || !decision.TimedOut {
+		t.Fatalf("uncertain model scores must time out without attendance: %#v", decision)
+	}
+}
+
+func TestRecognitionTrackerPhotoRecoveryUsesOnlyModelEvidence(t *testing.T) {
+	tracker := newRecognitionTracker()
+	now := time.Now()
+	student := store.Student{ID: 80, StudentNo: "S80", Name: "照片切换真人"}
+	photo := recognitionObservation{Student: student, Similarity: 0.94, LiveScore: 0.05, Exposure: 0.1, Sharpness: 0}
+	var decision trackDecision
+	for i := 0; i < livenessMinFrames; i++ {
+		decision = tracker.Observe("camera-photo-live-recovery", []recognitionObservation{photo}, now.Add(time.Duration(i)*180*time.Millisecond))[0]
+	}
+	if !decision.Rejected {
+		t.Fatalf("photo should be rejected first: %#v", decision)
+	}
+	live := photo
+	live.LiveScore = 0.90
+	first := tracker.Observe("camera-photo-live-recovery", []recognitionObservation{live}, now.Add(600*time.Millisecond))[0]
+	if !first.Rejected {
+		t.Fatalf("first live score must not clear attack: %#v", first)
+	}
+	second := tracker.Observe("camera-photo-live-recovery", []recognitionObservation{live}, now.Add(780*time.Millisecond))[0]
+	if second.Rejected || second.Verified || second.Frames != 1 {
+		t.Fatalf("second live score must start a fresh three-frame cycle: %#v", second)
+	}
+	decision = second
+	for i := 0; i < 2; i++ {
+		decision = tracker.Observe("camera-photo-live-recovery", []recognitionObservation{live}, now.Add(time.Duration(960+i*180)*time.Millisecond))[0]
+	}
+	if !decision.Verified || decision.Rejected || decision.Frames != 3 {
+		t.Fatalf("real person should pass only after a fresh three-frame model vote: %#v", decision)
 	}
 }
 
@@ -573,104 +475,17 @@ func TestRecognitionTrackerInferenceFailureStopsAfterThreeAttemptsAndResets(t *t
 	}
 }
 
-func TestRecognitionTrackerPoorQualityFramesEventuallyTimeoutWithoutResettingClock(t *testing.T) {
+func TestRecognitionTrackerInferenceFailuresEventuallyTimeout(t *testing.T) {
 	tracker := newRecognitionTracker()
 	now := time.Now()
-	student := store.Student{ID: 311, StudentNo: "S311", Name: "低质量超时测试"}
+	student := store.Student{ID: 311, StudentNo: "S311", Name: "模型推理失败测试"}
 	var decision trackDecision
-	for i := 0; i < 7; i++ {
-		decision = tracker.Observe("camera-poor-quality-timeout", []recognitionObservation{{
-			Student: student, Similarity: 0.92, LiveScore: 0.9,
-			Exposure: 0.10, Sharpness: 0.02,
+	for i := 0; i < 3; i++ {
+		decision = tracker.Observe("camera-inference-failure", []recognitionObservation{{
+			Student: student, Similarity: 0.92, InferenceFailed: true,
 		}}, now.Add(time.Duration(i)*200*time.Millisecond))[0]
 	}
-	if !decision.TimedOut || decision.LivenessStatus != "光线不足或画面模糊，活体检测超时" {
-		t.Fatalf("continuous poor-quality frames should end instead of remaining pending forever: %#v", decision)
-	}
-}
-
-func TestLivenessQualityGateAdaptsSharpnessForStrongFaceQuality(t *testing.T) {
-	observation := recognitionObservation{
-		FaceQuality: 0.72,
-		Exposure:    0.90,
-		Sharpness:   0.06,
-	}
-	if !livenessObservationQualityUsable(observation) {
-		t.Fatal("high-quality face should use the existing relaxed sharpness floor")
-	}
-	observation.FaceQuality = 0.69
-	if livenessObservationQualityUsable(observation) {
-		t.Fatal("ordinary face quality must keep the normal sharpness floor")
-	}
-	observation.FaceQuality = 0.72
-	observation.Sharpness = 0.04
-	if livenessObservationQualityUsable(observation) {
-		t.Fatal("adaptive quality must not accept severely blurred frames")
-	}
-}
-
-func TestLivenessObservationQualityStatusIdentifiesBlockingDimension(t *testing.T) {
-	observation := recognitionObservation{FaceQuality: 0.72, Exposure: 0.20, Sharpness: 0.04}
-	if got := livenessObservationQualityStatus(observation); got != "人脸区域曝光不足且清晰度不足" {
-		t.Fatalf("unexpected combined quality status: %q", got)
-	}
-	observation.Exposure = 0.90
-	if got := livenessObservationQualityStatus(observation); got != "人脸区域清晰度不足" {
-		t.Fatalf("unexpected sharpness status: %q", got)
-	}
-}
-
-func TestAutoLowLightProfileAcceptsDimButMeasurableFaceRegion(t *testing.T) {
-	lowLight, _ := resolveLivenessMode(false, 24)
-	observation := recognitionObservation{
-		FaceQuality: 0.67,
-		FaceBrightness: 24,
-		Exposure: 0.51,
-		Sharpness: 0.055,
-		LowLightMode: lowLight,
-	}
-	if !lowLight || !livenessObservationQualityUsable(observation) {
-		t.Fatalf("measurable dim face should enter anti-spoof inference and frame accumulation: %#v", observation)
-	}
-	if livenessObservationQualityStatus(observation) != "画面质量达标，正在累计活体帧" {
-		t.Fatalf("unexpected adaptive low-light status: %s", livenessObservationQualityStatus(observation))
-	}
-}
-
-func TestAutoLowLightProfileDoesNotAcceptExtremelyDarkOrBlurredFrames(t *testing.T) {
-	lowLight, _ := resolveLivenessMode(false, 12)
-	observation := recognitionObservation{
-		FaceQuality: 0.67,
-		FaceBrightness: 12,
-		Exposure: 0.12,
-		Sharpness: 0.02,
-		LowLightMode: lowLight,
-	}
-	if !lowLight || livenessObservationQualityUsable(observation) {
-		t.Fatalf("extremely dark and blurred face must remain blocked: %#v", observation)
-	}
-	if livenessObservationQualityStatus(observation) != "人脸区域曝光不足且清晰度不足" {
-		t.Fatalf("unexpected blocked status: %s", livenessObservationQualityStatus(observation))
-	}
-}
-
-func TestAutoLowLightProfileStillRequiresThreePositiveAntiSpoofFrames(t *testing.T) {
-	tracker := newRecognitionTracker()
-	now := time.Now()
-	student := store.Student{ID: 312, StudentNo: "S312", Name: "自动低光活体测试"}
-	lowLight, _ := resolveLivenessMode(false, 24)
-	var decision trackDecision
-	for i := 0; i < livenessMinFrames; i++ {
-		decision = tracker.Observe("camera-auto-low-light-live", []recognitionObservation{{
-			Student: student, Similarity: 0.91, LiveScore: 0.70,
-			FaceQuality: 0.67, FaceBrightness: 24, Exposure: 0.51,
-			Sharpness: 0.055, LowLightMode: lowLight,
-		}}, now.Add(time.Duration(i)*220*time.Millisecond))[0]
-		if i < livenessMinFrames-1 && decision.Verified {
-			t.Fatalf("auto low-light mode passed before three anti-spoof frames: %#v", decision)
-		}
-	}
-	if !decision.Verified || decision.Rejected || decision.Frames != 3 {
-		t.Fatalf("three positive anti-spoof frames should pass in auto low-light mode: %#v", decision)
+	if !decision.TimedOut || decision.Verified || decision.NeedsAttendance {
+		t.Fatalf("repeated inference failures must stop without attendance: %#v", decision)
 	}
 }
