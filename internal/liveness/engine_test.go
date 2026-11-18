@@ -28,18 +28,6 @@ func TestSilentFaceModelSelectionAndInput(t *testing.T) {
 	}
 }
 
-package liveness
-
-import (
-	"os"
-	"image"
-	"image/color"
-	"math"
-	"testing"
-
-	ort "github.com/yalue/onnxruntime_go"
-)
-
 
 func TestMiniFASModelSelectionAndRGBInput(t *testing.T) {
 	if modelKindForPath("C:/models/minifasnet-v2se.onnx") != modelMiniFASV2SE || modelKindForPath("anti-spoof-mn3.onnx") != modelMN3 {
