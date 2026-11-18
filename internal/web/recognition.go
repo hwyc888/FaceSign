@@ -519,6 +519,7 @@ func (s *Server) recognizePreparedImage(
 		"face_quality_threshold":  qualityThreshold,
 		"low_light_mode_enabled":  lowLightMode,
 		"liveness_detection_disabled": disableLivenessDetection,
+		"liveness_model":          s.liveness.ModelName(),
 		"liveness_threshold":      livenessPassThreshold,
 		"liveness_fast_threshold": livenessFastPassThreshold,
 		"liveness_fast_frames":    livenessFastFrames,

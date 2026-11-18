@@ -19,9 +19,18 @@ const (
 // ResolveBy resolves the By model set. SCRFD/ArcFace weights are never fetched
 // automatically because upstream InsightFace model-zoo weights are restricted
 // to non-commercial research unless a separate licence is obtained.
+func livenessModelSpec() spec {
+	if strings.EqualFold(strings.TrimSpace(os.Getenv("FACESIGN_LIVENESS_BACKEND")), "mn3") {
+		return spec{Name: "anti-spoof-mn3.onnx", SHA256: "c4c99af04603b62d7e44f6f4daeb33e0daeccc696008c0b1d62f6f5cebbb3262"}
+	}
+	// Trial model (Apache-2.0 upstream; CelebA-Spoof training dataset is noncommercial).
+	return spec{Name: "minifasnet-v2se.onnx", SHA256: "af2381b88f38769222ed93379e12444e2a50814575de1c46170de570c55a42b6", URL: "https://github.com/facenox/face-antispoof-onnx/releases/download/v1.0.0/best_model.onnx"}
+}
+
 func ResolveBy(assetsPath string) (Paths, error) {
+	livenessSpec := livenessModelSpec()
 	supportSpecs := []spec{
-		{Name: "anti-spoof-mn3.onnx", SHA256: "c4c99af04603b62d7e44f6f4daeb33e0daeccc696008c0b1d62f6f5cebbb3262"},
+		livenessSpec,
 		{Name: "yolox_nano.onnx", SHA256: "c789161ed43c8269fcd4e67c67eeeb4e80c622da2eb296a20bc6007bd18a0b7d", URL: "https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/yolox_nano.onnx"},
 	}
 	support, err := resolve(assetsPath, candidateDirectories(assetsPath), defaultBaseURL, supportSpecs)
@@ -57,7 +66,7 @@ func ResolveBy(assetsPath string) (Paths, error) {
 	paths := Paths{
 		Detector: filepath.Join(modelDir, bySCRFDFile),
 		Recognizer: filepath.Join(modelDir, byArcFaceFile),
-		Liveness: support.Liveness,
+		Liveness: filepath.Join(filepath.Dir(support.Liveness), livenessSpec.Name),
 		Person: support.Person,
 		Directory: modelDir,
 		Backend: "by",

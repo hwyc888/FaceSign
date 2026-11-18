@@ -72,6 +72,7 @@ func run(logger *slog.Logger) error {
 		return fmt.Errorf("启动活体检测引擎失败: %w", err)
 	}
 	defer livenessEngine.Close()
+	logger.Info("FaceSign liveness model active", "model", livenessEngine.ModelName(), "path", modelPaths.Liveness)
 
 	personEngine, err := person.New(modelPaths.Person)
 	if err != nil {

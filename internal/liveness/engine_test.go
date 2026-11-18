@@ -1,11 +1,52 @@
 package liveness
 
 import (
+	"os"
 	"image"
 	"image/color"
 	"math"
 	"testing"
+
+	ort "github.com/yalue/onnxruntime_go"
 )
+
+func TestMiniFASModelSelectionAndRGBInput(t *testing.T) {
+	if modelKindForPath("C:/models/minifasnet-v2se.onnx") != modelMiniFASV2SE || modelKindForPath("anti-spoof-mn3.onnx") != modelMN3 {
+		t.Fatal("incorrect liveness model selection")
+	}
+	if got := (&Engine{kind:modelMiniFASV2SE}).ModelName(); got != "MiniFASNetV2-SE" { t.Fatalf("name: %q",got) }
+	img := image.NewRGBA(image.Rect(0,0,inputSize,inputSize))
+	img.SetRGBA(0,0,color.RGBA{R:255,G:128,B:64,A:255})
+	data := make([]float32,3*inputSize*inputSize)
+	fillMiniFASInput(data,img)
+	const plane=inputSize*inputSize
+	if data[0]!=1 || math.Abs(float64(data[plane]-float32(128.0/255)))>1e-6 || math.Abs(float64(data[2*plane]-float32(64.0/255)))>1e-6 {
+		t.Fatalf("unexpected RGB/255 input: %v,%v,%v",data[0],data[plane],data[2*plane])
+	}
+	for _, a := range []struct{p,w int}{{-1,1},{-2,2},{12,10},{13,9}} {
+		if got := reflect101(a.p,12); got != a.w {t.Fatalf("reflect101(%d)=%d",a.p,got)}
+	}
+	if got:=resizeMiniFASFaceCrop(img,image.Rect(0,0,12,12));got.Bounds()!=image.Rect(0,0,inputSize,inputSize) {
+		t.Fatalf("crop size: %v",got.Bounds())
+	}
+}
+
+// Exercised against the real downloaded ONNX and DLL by Windows CI.
+func TestMiniFASModelRuntime(t *testing.T) {
+	model, dll := os.Getenv("FACESIGN_TEST_MINIFAS_MODEL"), os.Getenv("FACESIGN_TEST_ONNX_DLL")
+	if model == "" || dll == "" { t.Skip("requires actual packaged ONNX and runtime") }
+	ort.SetSharedLibraryPath(dll)
+	if err:=ort.InitializeEnvironment();err!=nil {t.Fatal(err)}
+	defer ort.DestroyEnvironment()
+	e,err:=New(model)
+	if err!=nil {t.Fatalf("load MiniFAS ONNX: %v",err)}
+	defer e.Close()
+	img:=image.NewRGBA(image.Rect(0,0,256,256))
+	for y:=0;y<256;y++ {for x:=0;x<256;x++ {img.SetRGBA(x,y,color.RGBA{R:uint8(x),G:uint8(y),B:127,A:255})}}
+	score,err:=e.Score(img,image.Rect(80,80,155,169))
+	if err!=nil {t.Fatalf("execute MiniFAS ONNX: %v",err)}
+	if math.IsNaN(score)||score<0||score>1 {t.Fatalf("invalid score: %v",score)}
+}
 
 func TestExpandedFaceRectMatchesUpstreamCropRatio(t *testing.T) {
 	bounds := image.Rect(0, 0, 640, 480)

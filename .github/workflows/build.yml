@@ -221,12 +221,35 @@ jobs:
           foreach ($file in @(
             'anti-spoof-mn3.onnx',
             'ANTI_SPOOF_LICENSE.txt',
+            'MINIFAS_LICENSE.txt',
             'YOLOX_LICENSE.txt',
             'SHA256SUMS',
             'README.md'
           )) {
             Copy-Item (Join-Path 'models' $file) (Join-Path 'dist-full\models' $file) -Force
           }
+
+          # Download the pinned MiniFASNet model; always verify its official SHA-256.
+          $miniModel = 'dist-full\models\minifasnet-v2se.onnx'
+          $expectedMini = 'af2381b88f38769222ed93379e12444e2a50814575de1c46170de570c55a42b6'
+          $miniURLs = @(
+            'https://github.com/facenox/face-antispoof-onnx/releases/download/v1.0.0/best_model.onnx',
+            'https://raw.githubusercontent.com/facenox/face-antispoof-onnx/2f8dd93dd0fd9d120f08e83d9020719f67ffdb68/models/best/98.20/best_model.onnx'
+          )
+          $miniReady = $false
+          foreach ($url in $miniURLs) {
+            try {
+              Invoke-WebRequest -Uri $url -OutFile $miniModel -UseBasicParsing -ErrorAction Stop
+              $actualMini = (Get-FileHash $miniModel -Algorithm SHA256).Hash.ToLowerInvariant()
+              if ($actualMini -ne $expectedMini) { throw "MiniFASNet SHA-256 mismatch: $actualMini" }
+              $miniReady = $true
+              break
+            } catch {
+              Write-Warning "MiniFASNet download source failed: $url $_"
+              Remove-Item $miniModel -Force -ErrorAction SilentlyContinue
+            }
+          }
+          if (-not $miniReady) { throw 'Could not obtain verified MiniFASNetV2-SE ONNX' }
 
           $personModel = 'dist-full\models\yolox_nano.onnx'
           Invoke-WebRequest -Uri 'https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/yolox_nano.onnx' -OutFile $personModel -UseBasicParsing
@@ -249,6 +272,14 @@ jobs:
           Remove-Item 'dist-no-models-no-ffmpeg\licenses\FFMPEG_LGPLv3.txt' -Force -ErrorAction SilentlyContinue
           Remove-Item 'dist-no-models-no-ffmpeg\licenses\FFMPEG_NOTICE.txt' -Force -ErrorAction SilentlyContinue
 
+      - name: Smoke test MiniFASNet ONNX
+        shell: pwsh
+        run: |
+          $env:FACESIGN_TEST_MINIFAS_MODEL = (Resolve-Path 'dist-full\models\minifasnet-v2se.onnx').Path
+          $env:FACESIGN_TEST_ONNX_DLL = (Resolve-Path 'dist-full\onnxruntime.dll').Path
+          go test -count=1 -v ./internal/liveness -run '^TestMiniFASModelRuntime$'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Verify release variants
         shell: pwsh
         run: |
@@ -258,7 +289,7 @@ jobs:
           if (-not (Test-Path 'dist-full-no-ffmpeg\models' -PathType Container)) { throw 'Full no-FFmpeg package is missing the models directory' }
 
           $onnxFiles = @(Get-ChildItem -Path 'dist-full\models' -Filter '*.onnx' -File)
-          if ($onnxFiles.Count -ne 2) { throw "Full package must contain exactly 2 support ONNX model files, got $($onnxFiles.Count)" }
+          if ($onnxFiles.Count -ne 3) { throw "Full package must contain exactly 3 support ONNX model files, got $($onnxFiles.Count)" }
           if (-not (Test-Path 'dist-full\models\by\README.md' -PathType Leaf)) { throw 'Full package is missing By model installation instructions' }
 
           $checksums = Get-Content 'models\SHA256SUMS'
@@ -300,7 +331,7 @@ jobs:
           if (Test-Path 'dist-full-no-ffmpeg\ffmpeg.exe' -PathType Leaf) { throw 'No-FFmpeg package must not contain ffmpeg.exe' }
           if (Test-Path 'dist-full-no-ffmpeg\licenses\FFMPEG_NOTICE.txt' -PathType Leaf) { throw 'No-FFmpeg package must not contain FFmpeg notices' }
           $noFFmpegModels = @(Get-ChildItem -Path 'dist-full-no-ffmpeg\models' -Filter '*.onnx' -File)
-          if ($noFFmpegModels.Count -ne 2) { throw "Full no-FFmpeg package must contain exactly 2 support ONNX model files, got $($noFFmpegModels.Count)" }
+          if ($noFFmpegModels.Count -ne 3) { throw "Full no-FFmpeg package must contain exactly 3 support ONNX model files, got $($noFFmpegModels.Count)" }
 
           $minimalExe = (Get-FileHash 'dist-no-models-no-ffmpeg\FaceSign.exe' -Algorithm SHA256).Hash
           $minimalManager = (Get-FileHash 'dist-no-models-no-ffmpeg\FaceSignManager.exe' -Algorithm SHA256).Hash

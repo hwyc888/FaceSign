@@ -5,8 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"image"
+	"image/color"
 	"math"
 	"os"
+	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -18,6 +21,26 @@ import (
 
 const inputSize = 128
 
+type modelKind uint8
+
+const (
+	modelMN3 modelKind = iota
+	modelMiniFASV2SE
+)
+
+func modelKindForPath(path string) modelKind {
+	if strings.EqualFold(filepath.Base(path), "minifasnet-v2se.onnx") {
+		return modelMiniFASV2SE
+	}
+	return modelMN3
+}
+
+func (e *Engine) ModelName() string {
+	if e == nil { return "未加载" }
+	if e.kind == modelMiniFASV2SE { return "MiniFASNetV2-SE" }
+	return "anti-spoof-mn3"
+}
+
 var ErrInvalidFace = errors.New("invalid face crop")
 
 type engineWorker struct {
@@ -27,6 +50,7 @@ type engineWorker struct {
 }
 
 type Engine struct {
+	kind      modelKind
 	mu        sync.RWMutex
 	workers   []*engineWorker
 	available chan *engineWorker
@@ -44,9 +68,10 @@ func New(modelPath string) (*Engine, error) {
 		return nil, errors.New("ONNX Runtime environment is not initialized")
 	}
 
-	engine := &Engine{available: make(chan *engineWorker, engineWorkerCount)}
+	kind := modelKindForPath(modelPath)
+	engine := &Engine{kind: kind, available: make(chan *engineWorker, engineWorkerCount)}
 	for i := 0; i < engineWorkerCount; i++ {
-		worker, err := newEngineWorker(modelPath)
+		worker, err := newEngineWorker(modelPath, kind)
 		if err != nil {
 			for _, existing := range engine.workers {
 				existing.close()
@@ -59,7 +84,7 @@ func New(modelPath string) (*Engine, error) {
 	return engine, nil
 }
 
-func newEngineWorker(modelPath string) (*engineWorker, error) {
+func newEngineWorker(modelPath string, kind modelKind) (*engineWorker, error) {
 	input, err := ort.NewEmptyTensor[float32](ort.NewShape(1, 3, inputSize, inputSize))
 	if err != nil {
 		return nil, fmt.Errorf("create anti-spoof input tensor: %w", err)
@@ -87,10 +112,14 @@ func newEngineWorker(modelPath string) (*engineWorker, error) {
 		input.Destroy()
 		return nil, fmt.Errorf("configure anti-spoof inter-op threads: %w", err)
 	}
+	inputName, outputName := "actual_input_1", "output1"
+	if kind == modelMiniFASV2SE {
+		inputName, outputName = "input", "output"
+	}
 	session, err := ort.NewAdvancedSession(
 		modelPath,
-		[]string{"actual_input_1"},
-		[]string{"output1"},
+		[]string{inputName},
+		[]string{outputName},
 		[]ort.Value{input},
 		[]ort.Value{output},
 		options,
@@ -159,10 +188,9 @@ func (e *Engine) Score(img image.Image, faceRect image.Rectangle) (float64, erro
 	if img == nil || faceRect.Empty() {
 		return 0, ErrInvalidFace
 	}
+	if faceRect.Intersect(img.Bounds()).Empty() { return 0, ErrInvalidFace }
 	crop := expandedFaceRect(faceRect, img.Bounds())
-	if crop.Empty() {
-		return 0, ErrInvalidFace
-	}
+	if e.kind == modelMN3 && crop.Empty() { return 0, ErrInvalidFace }
 
 	ctx, cancel := context.WithTimeout(context.Background(), 1500*time.Millisecond)
 	defer cancel()
@@ -177,8 +205,12 @@ func (e *Engine) Score(img image.Image, faceRect image.Rectangle) (float64, erro
 	}
 	defer releaseInference()
 
-	resized := resizeFaceCrop(img, crop)
-	fillInput(worker.input.GetData(), resized)
+	if e.kind == modelMiniFASV2SE {
+		// The MiniFAS 1.5x reflected square RGB/255 preprocessing differs from MN3.
+		fillMiniFASInput(worker.input.GetData(), resizeMiniFASFaceCrop(img, faceRect))
+	} else {
+		fillInput(worker.input.GetData(), resizeFaceCrop(img, crop))
+	}
 	if err := worker.session.Run(); err != nil {
 		return 0, fmt.Errorf("run anti-spoof model: %w", err)
 	}
@@ -187,6 +219,50 @@ func (e *Engine) Score(img image.Image, faceRect image.Rectangle) (float64, erro
 		return 0, errors.New("anti-spoof model returned invalid output")
 	}
 	return realProbability(float64(data[0]), float64(data[1])), nil
+}
+
+// MiniFASNetV2-SE: square face crop at 1.5x, reflected borders and RGB/255.
+func resizeMiniFASFaceCrop(img image.Image, faceRect image.Rectangle) *image.RGBA {
+	bounds := img.Bounds()
+	side := int(math.Max(float64(faceRect.Dx()), float64(faceRect.Dy())) * 1.5)
+	if side < 1 { side = 1 }
+	cx := float64(faceRect.Min.X+faceRect.Max.X) / 2
+	cy := float64(faceRect.Min.Y+faceRect.Max.Y) / 2
+	x0 := int(math.Floor(cx - float64(side)/2))
+	y0 := int(math.Floor(cy - float64(side)/2))
+	crop := image.NewRGBA(image.Rect(0, 0, side, side))
+	for y := 0; y < side; y++ {
+		sy := bounds.Min.Y + reflect101(y0+y-bounds.Min.Y, bounds.Dy())
+		for x := 0; x < side; x++ {
+			sx := bounds.Min.X + reflect101(x0+x-bounds.Min.X, bounds.Dx())
+			r, g, b, _ := img.At(sx, sy).RGBA()
+			crop.SetRGBA(x, y, color.RGBA{R: uint8(r >> 8), G: uint8(g >> 8), B: uint8(b >> 8), A: 255})
+		}
+	}
+	out := image.NewRGBA(image.Rect(0, 0, inputSize, inputSize))
+	xdraw.CatmullRom.Scale(out, out.Bounds(), crop, crop.Bounds(), xdraw.Src, nil)
+	return out
+}
+
+func reflect101(pos, n int) int {
+	if n <= 1 { return 0 }
+	for pos < 0 || pos >= n {
+		if pos < 0 { pos = -pos } else { pos = 2*n - 2 - pos }
+	}
+	return pos
+}
+
+func fillMiniFASInput(dst []float32, img *image.RGBA) {
+	const plane = inputSize * inputSize
+	for y := 0; y < inputSize; y++ {
+		for x := 0; x < inputSize; x++ {
+			px := img.RGBAAt(x, y)
+			i := y*inputSize + x
+			dst[i] = float32(px.R) / 255
+			dst[plane+i] = float32(px.G) / 255
+			dst[2*plane+i] = float32(px.B) / 255
+		}
+	}
 }
 
 func resizeFaceCrop(img image.Image, crop image.Rectangle) *image.RGBA {

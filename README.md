@@ -8,7 +8,7 @@ This branch has one supported face-recognition pipeline:
 
 - **SCRFD-10GF**: face detection and five facial landmarks.
 - **ArcFace ResNet50**: 512-dimensional identity embeddings.
-- **anti-spoof-mn3**: passive RGB presentation-attack screening with multi-frame voting.
+- **MiniFASNetV2-SE (trial)**: default RGB presentation-attack screening; MN3 remains selectable with `FACESIGN_LIVENESS_BACKEND=mn3` for A/B comparison (see [model terms](models/README.md)).
 - **YOLOX-Nano**: person detection used by the person-tracking workflow.
 - **ONNX Runtime CPU**: inference without a GPU requirement.
 
