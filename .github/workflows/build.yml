@@ -125,10 +125,25 @@ jobs:
         shell: pwsh
         run: |
           $ortZip = Join-Path $env:RUNNER_TEMP 'ort.zip'
-          Invoke-WebRequest -Uri "https://github.com/microsoft/onnxruntime/releases/download/v$env:ORT_VERSION/onnxruntime-win-x64-$env:ORT_VERSION.zip" -OutFile $ortZip -UseBasicParsing
           $ortDir = Join-Path $env:RUNNER_TEMP 'ort'
-          Expand-Archive -Path $ortZip -DestinationPath $ortDir -Force
-          Copy-Item (Join-Path $ortDir "onnxruntime-win-x64-$env:ORT_VERSION\lib\onnxruntime.dll") dist\onnxruntime.dll -Force
+          $ortDll = Join-Path $ortDir "onnxruntime-win-x64-$env:ORT_VERSION\lib\onnxruntime.dll"
+          try {
+            Invoke-WebRequest -Uri "https://github.com/microsoft/onnxruntime/releases/download/v$env:ORT_VERSION/onnxruntime-win-x64-$env:ORT_VERSION.zip" -OutFile $ortZip -UseBasicParsing -ErrorAction Stop
+            Expand-Archive -Path $ortZip -DestinationPath $ortDir -Force -ErrorAction Stop
+          } catch {
+            # Keep the pinned ORT version even when the GitHub release asset
+            # temporarily fails. NuGet carries Microsoft's official x64 DLL.
+            Write-Warning "ORT GitHub release download failed; falling back to the official NuGet package: $_"
+            $nugetZip = Join-Path $env:RUNNER_TEMP 'onnxruntime-nuget.zip'
+            $nugetDir = Join-Path $env:RUNNER_TEMP 'onnxruntime-nuget'
+            $packageName = "microsoft.ml.onnxruntime.$env:ORT_VERSION.nupkg"
+            $nugetUrl = "https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/$env:ORT_VERSION/$packageName"
+            Invoke-WebRequest -Uri $nugetUrl -OutFile $nugetZip -UseBasicParsing -ErrorAction Stop
+            Expand-Archive -Path $nugetZip -DestinationPath $nugetDir -Force -ErrorAction Stop
+            $ortDll = Join-Path $nugetDir 'runtimes\win-x64\native\onnxruntime.dll'
+          }
+          if (-not (Test-Path $ortDll)) { throw "ONNX Runtime DLL missing from both official $env:ORT_VERSION packages" }
+          Copy-Item $ortDll dist\onnxruntime.dll -Force
           foreach ($dll in @('msvcp140.dll','msvcp140_1.dll','vcruntime140.dll','vcruntime140_1.dll')) {
             $source = Join-Path $env:WINDIR "System32\$dll"
             if (Test-Path $source) { Copy-Item $source (Join-Path 'dist' $dll) -Force }
