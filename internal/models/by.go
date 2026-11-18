@@ -19,21 +19,29 @@ const (
 // ResolveBy resolves the By model set. SCRFD/ArcFace weights are never fetched
 // automatically because upstream InsightFace model-zoo weights are restricted
 // to non-commercial research unless a separate licence is obtained.
-func livenessModelSpec() spec {
-	// MN3 is the stable/default backend. MiniFASNetV2-SE remains available for A/B testing.
-	if !strings.EqualFold(strings.TrimSpace(os.Getenv("FACESIGN_LIVENESS_BACKEND")), "minifas") {
-		return spec{Name: "anti-spoof-mn3.onnx", SHA256: "c4c99af04603b62d7e44f6f4daeb33e0daeccc696008c0b1d62f6f5cebbb3262"}
-	}
-	// Trial model (Apache-2.0 upstream; CelebA-Spoof training dataset is noncommercial).
-	return spec{Name: "minifasnet-v2se.onnx", SHA256: "af2381b88f38769222ed93379e12444e2a50814575de1c46170de570c55a42b6", URL: "https://github.com/facenox/face-antispoof-onnx/releases/download/v1.0.0/best_model.onnx"}
+func livenessModelBackend() string {
+	backend := strings.ToLower(strings.TrimSpace(os.Getenv("FACESIGN_LIVENESS_BACKEND")))
+	if backend == "" { return "silent" }
+	return backend
 }
 
+func livenessModelSpec() spec {
+	switch livenessModelBackend() {
+	case "mn3":
+		return spec{Name: "anti-spoof-mn3.onnx", SHA256: "c4c99af04603b62d7e44f6f4daeb33e0daeccc696008c0b1d62f6f5cebbb3262"}
+	case "minifas":
+		return spec{Name: "minifasnet-v2se.onnx", SHA256: "af2381b88f38769222ed93379e12444e2a50814575de1c46170de570c55a42b6", URL: "https://github.com/facenox/face-antispoof-onnx/releases/download/v1.0.0/best_model.onnx"}
+	default:
+		return spec{Name: "MiniFASNetV2.onnx", SHA256: "b32929adc2d9c34b9486f8c4c7bc97c1b69bc0ea9befefc380e4faae4e463907", URL: "https://github.com/yakhyo/face-anti-spoofing/releases/download/weights/MiniFASNetV2.onnx"}
+	}
+}
 func ResolveBy(assetsPath string) (Paths, error) {
 	livenessSpec := livenessModelSpec()
-	supportSpecs := []spec{
-		livenessSpec,
-		{Name: "yolox_nano.onnx", SHA256: "c789161ed43c8269fcd4e67c67eeeb4e80c622da2eb296a20bc6007bd18a0b7d", URL: "https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/yolox_nano.onnx"},
+	supportSpecs := []spec{livenessSpec}
+	if livenessModelBackend() == "silent" {
+		supportSpecs = append(supportSpecs, spec{Name: "MiniFASNetV1SE.onnx", SHA256: "ebab7f90c7833fbccd46d3a555410e78d969db5438e169b6524be444862b3676", URL: "https://github.com/yakhyo/face-anti-spoofing/releases/download/weights/MiniFASNetV1SE.onnx"})
 	}
+	supportSpecs = append(supportSpecs, spec{Name: "yolox_nano.onnx", SHA256: "c789161ed43c8269fcd4e67c67eeeb4e80c622da2eb296a20bc6007bd18a0b7d", URL: "https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/yolox_nano.onnx"})
 	support, err := resolve(assetsPath, candidateDirectories(assetsPath), defaultBaseURL, supportSpecs)
 	if err != nil {
 		return Paths{}, fmt.Errorf("resolve liveness/person models: %w", err)

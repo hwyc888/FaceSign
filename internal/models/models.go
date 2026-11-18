@@ -226,9 +226,16 @@ func writeVerified(target, expectedSHA string, write func(io.Writer) error) erro
 }
 
 func buildPaths(dir string) Paths {
+	livenessName := "MiniFASNetV2.onnx"
+	switch livenessModelBackend() {
+	case "mn3":
+		livenessName = "anti-spoof-mn3.onnx"
+	case "minifas":
+		livenessName = "minifasnet-v2se.onnx"
+	}
 	return Paths{
-		Liveness:  filepath.Join(dir, "anti-spoof-mn3.onnx"),
-		Person:    filepath.Join(dir, "yolox_nano.onnx"),
+		Liveness: filepath.Join(dir, livenessName),
+		Person: filepath.Join(dir, "yolox_nano.onnx"),
 		Directory: dir,
 	}
 }

@@ -2,22 +2,21 @@
 
 FaceSign By uses SCRFD-10GF + ArcFace ResNet50 for identity recognition. Place independently authorized weights under `models/by/` following [the installation guide](by/README.md).
 
-## anti-spoof-mn3 (stable default)
+## Silent-Face MiniFASNet ensemble (new default)
 
-- Filename: `anti-spoof-mn3.onnx`.
-- Expected SHA-256: `c4c99af04603b62d7e44f6f4daeb33e0daeccc696008c0b1d62f6f5cebbb3262`.
-- Input: 128x128 RGB with the MN3-specific mean/scale normalization.
-- This is the stable default backend retained for the known-good camera baseline.
+The default passive PAD backend is the upstream-style **MiniFASNetV2 + MiniFASNetV1SE ensemble**.
 
-## MiniFASNetV2-SE trial (A/B only)
+- `MiniFASNetV2.onnx`: SHA-256 `b32929adc2d9c34b9486f8c4c7bc97c1b69bc0ea9befefc380e4faae4e463907`, crop scale 2.7.
+- `MiniFASNetV1SE.onnx`: SHA-256 `ebab7f90c7833fbccd46d3a555410e78d969db5438e169b6524be444862b3676`, crop scale 4.0.
+- Both use 80x80 BGR CHW input with raw 0..255 values, no mean/scale normalization, and 3-class logits. Class 1 is the bona-fide/live class; classes 0 and 2 are attack classes.
+- Face crop follows the original Silent-Face CropImage behavior.
+- The two model live probabilities are averaged before the existing temporal PAD logic.
 
-- Filename: `minifasnet-v2se.onnx` (official [facenox/face-antispoof-onnx v1.0.0](https://github.com/facenox/face-antispoof-onnx/releases/download/v1.0.0/best_model.onnx)).
-- Expected SHA-256: `af2381b88f38769222ed93379e12444e2a50814575de1c46170de570c55a42b6`; FaceSign verifies the hash before loading a downloaded model.
-- Preprocessing: 1.5x square face crop (reflection padding), 128x128 RGB CHW [0,1]. ONNX class 0 = real; class 1 = spoof.
-- To A/B test MiniFAS instead of MN3: set `FACESIGN_LIVENESS_BACKEND=minifas` **before launching FaceSign**, then restart. Leaving the variable unset or setting it to any value other than `minifas` selects MN3.
-- The active model name appears in the check-in result panel and startup logs.
-- Both models retain the same three-frame PAD rules and photo/screen rejection. Identity matching alone never bypasses PAD.
+The ONNX exports come from yakhyo/face-anti-spoofing and are based on Minivision's Silent-Face-Anti-Spoofing project. The models are Apache-2.0 licensed.
 
-**Noncommercial trial:** The facenox repository is Apache-2.0 (license copied to `MINIFAS_LICENSE.txt`), but its checkpoint is trained on CelebA-Spoof, which limits dataset usage to noncommercial research. Confirm weight/training-data permissions before commercial use or redistribution beyond permitted evaluation.
+## Legacy backends
 
-The other support model is `yolox_nano.onnx`, used for person tracking. MiniFASNetV2-SE is retained only as an optional A/B model; MN3 is the default stable backend.
+- `anti-spoof-mn3.onnx`: legacy MN3 backend. Set `FACESIGN_LIVENESS_BACKEND=mn3` before startup.
+- `minifasnet-v2se.onnx`: previous FaceSign A/B model. Set `FACESIGN_LIVENESS_BACKEND=minifas` before startup.
+
+The legacy backends remain available for comparison; the new default is the Silent-Face ensemble.
