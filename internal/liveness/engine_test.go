@@ -51,7 +51,7 @@ func TestMiniFASModelRuntime(t *testing.T) {
 func TestExpandedFaceRectMatchesUpstreamCropRatio(t *testing.T) {
 	bounds := image.Rect(0, 0, 640, 480)
 	got := expandedFaceRect(image.Rect(100, 100, 200, 220), bounds)
-	want := image.Rect(83, 84, 217, 236)
+	want := image.Rect(83, 79, 218, 241)
 	if got != want {
 		t.Fatalf("face crop=%v, want FaceSign MN3-compatible 1.35x1.35 crop %v", got, want)
 	}

@@ -252,7 +252,6 @@ func (t *recognitionTracker) Observe(sessionID string, observations []recognitio
 			track.Scores = append([]float64(nil), track.Scores[len(track.Scores)-maxFrames:]...)
 		}
 
-		average := averageScores(track.Scores)
 		median := medianScore(track.Scores)
 		liveVotes := 0
 		for _, score := range track.Scores {
