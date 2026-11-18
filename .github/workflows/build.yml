@@ -303,7 +303,8 @@ jobs:
           $env:FACESIGN_TEST_MINIFAS_MODEL = (Resolve-Path 'dist-full\models\minifasnet-v2se.onnx').Path
           $env:FACESIGN_TEST_SILENT_V2_MODEL = (Resolve-Path 'dist-full\models\MiniFASNetV2.onnx').Path
           $env:FACESIGN_TEST_ONNX_DLL = (Resolve-Path 'dist-full\onnxruntime.dll').Path
-          go test -count=1 -v ./internal/liveness -run '^(TestMiniFASModelRuntime|TestSilentFaceModelRuntime)
+          go test -count=1 -v ./internal/liveness -run "TestMiniFASModelRuntime|TestSilentFaceModelRuntime"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Verify release variants
         shell: pwsh
