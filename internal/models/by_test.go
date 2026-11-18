@@ -7,11 +7,16 @@ import (
 	"testing"
 )
 
-func TestLivenessModelSpecSelectsMN3ByDefaultAndMiniFASForABTest(t *testing.T) {
+func TestLivenessModelSpecSelectsSilentFaceByDefaultAndLegacyBackends(t *testing.T) {
 	t.Setenv("FACESIGN_LIVENESS_BACKEND", "")
 	spec := livenessModelSpec()
+	if spec.Name != "MiniFASNetV2.onnx" || spec.SHA256 != "b32929adc2d9c34b9486f8c4c7bc97c1b69bc0ea9befefc380e4faae4e463907" || spec.URL == "" {
+		t.Fatalf("Silent-Face ensemble must be the default: %#v", spec)
+	}
+	t.Setenv("FACESIGN_LIVENESS_BACKEND", "mn3")
+	spec = livenessModelSpec()
 	if spec.Name != "anti-spoof-mn3.onnx" || spec.SHA256 == "" || spec.URL != "" {
-		t.Fatalf("MN3 must be the stable default: %#v", spec)
+		t.Fatalf("MN3 legacy selection failed: %#v", spec)
 	}
 	t.Setenv("FACESIGN_LIVENESS_BACKEND", "minifas")
 	spec = livenessModelSpec()
