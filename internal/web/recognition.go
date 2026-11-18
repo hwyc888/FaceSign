@@ -524,7 +524,7 @@ func (s *Server) recognizePreparedImage(
 		"liveness_fast_frames":    livenessFastFrames,
 		"liveness_min_frames":     livenessMinFrames,
 		"liveness_max_frames":     livenessMaxFramesForMode(lowLightMode),
-		"liveness_timeout_ms":     livenessDecisionTimeoutForMode(lowLightMode).Milliseconds(),
+		"liveness_timeout_ms":     livenessCollectionTimeout.Milliseconds(),
 	}
 	if statsErr == nil {
 		response["verified_total"] = cumulativeStats.Verified

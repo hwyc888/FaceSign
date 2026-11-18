@@ -10,6 +10,11 @@ import (
 
 const (
 	livenessTrackTTL          = 3 * time.Second
+	// Multi-person CPU inference can take seconds between valid snapshots.
+	// Keep pending evidence briefly, but never indefinitely or across long absences.
+	livenessPendingTrackTTL   = 6 * time.Second
+	livenessCollectionTimeout = 12 * time.Second
+	livenessMaxMissedFrames    = 3
 	livenessFastFrames        = 3
 	livenessMinFrames         = 3
 	livenessMaxFrames         = 3
@@ -52,6 +57,7 @@ type recognitionTrack struct {
 	FirstSeen        time.Time
 	LastSeen         time.Time
 	Frames           int
+	MissedFrames     int
 	Scores           []float64
 	SimilaritySum    float64
 	Verified         bool
@@ -127,14 +133,30 @@ func (t *recognitionTracker) Observe(sessionID string, observations []recognitio
 	}
 
 	for studentID, track := range session.Tracks {
-		if now.Sub(track.LastSeen) > livenessTrackTTL {
+		ttl := livenessTrackTTL
+		if !track.Verified && !track.Rejected && !track.Committed && len(track.Scores) > 0 {
+			ttl = livenessPendingTrackTTL
+		}
+		if now.Sub(track.LastSeen) > ttl {
 			delete(session.Tracks, studentID)
+			continue
+		}
+		// Do not combine old and new face evidence across several scans where
+		// the student was no longer matched, even if each scan was slow.
+		if !track.Committed {
+			track.MissedFrames++
+			if track.MissedFrames > livenessMaxMissedFrames {
+				delete(session.Tracks, studentID)
+			}
 		}
 	}
 
 	out := make([]trackDecision, len(observations))
 	for i, observation := range observations {
 		track := session.Tracks[observation.Student.ID]
+		if track != nil {
+			track.MissedFrames = 0
+		}
 		if track != nil && track.Committed {
 			out[i] = trackDecision{
 				TrackID:        track.ID,
@@ -190,6 +212,12 @@ func (t *recognitionTracker) Observe(sessionID string, observations []recognitio
 		track.LastSeen = now
 		track.LowLightMode = observation.LowLightMode
 		decisionTimeout := livenessDecisionTimeoutForMode(track.LowLightMode)
+		if len(track.Scores) > 0 {
+			// The short deadline is for a frame with no usable evidence. Once
+			// positive/negative PAD scores are being collected, allow a bounded
+			// multi-person interval before resetting the three-frame vote.
+			decisionTimeout = livenessCollectionTimeout
+		}
 
 		if observation.InferenceFailed {
 			track.InferenceFailures++

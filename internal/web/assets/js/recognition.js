@@ -260,7 +260,9 @@ function recognitionFrameIntervalMS() {
     const protectionIntervalMS = loadProfile.level === 'normal'
       ? 0 : Math.ceil(1000 / Math.max(1, Number(loadProfile.maxFPS || 1)));
     const targetIntervalMS = Math.max(manualIntervalMS, captureIntervalMS, protectionIntervalMS);
-    const minGapMS = loadProfile.level === 'normal' ? 0 : Number(loadProfile.minGapMS || 100);
+    const minGapMS = loadProfile.level === 'normal'
+      ? (activeCamera?.kind !== 'browser' ? 120 : 0)
+      : Number(loadProfile.minGapMS || 100);
     return Math.max(minGapMS, targetIntervalMS - recognitionLastDurationMS);
   }
   if (activeCamera && activeCamera.kind !== 'browser') {
@@ -331,9 +333,14 @@ async function runAutoRecognitionLoop() {
   }
   const result = await recognizeFrame({silent: true});
   if ($('#autoScan')?.checked && cameraOpen && $('#page-checkin')?.classList.contains('active')) {
-    // Avoid a zero-delay failure loop when a model or camera is unavailable.
-    autoTimer = setTimeout(runAutoRecognitionLoop,
-      result ? recognitionFrameIntervalMS() : Math.max(500, recognitionFrameIntervalMS()));
+    if (result && !result.skipped) {
+      autoTimer = setTimeout(runAutoRecognitionLoop, recognitionFrameIntervalMS());
+    } else {
+      // The camera has a server-side idle gate; skipped/busy replies need
+      // backoff instead of a zero-delay loop that keeps returning the same UI.
+      const retryMS = result?.busy ? 150 : 500;
+      autoTimer = setTimeout(runAutoRecognitionLoop, Math.max(retryMS, recognitionFrameIntervalMS()));
+    }
   } else {
     autoTimer = null;
   }

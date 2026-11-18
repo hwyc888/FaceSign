@@ -199,6 +199,79 @@ func TestRecognitionTrackerPhotoRejectionRequiresConsecutiveGoodRecoveryFrames(t
 	}
 }
 
+func TestRecognitionTrackerCollectsThreeLiveFramesUnderSlowMultiPersonInference(t *testing.T) {
+	tracker := newRecognitionTracker()
+	now := time.Now()
+	students := []store.Student{{ID: 811}, {ID: 812}, {ID: 813}}
+	observations := make([]recognitionObservation, len(students))
+	for i, student := range students {
+		observations[i] = recognitionObservation{
+			Student: student, Similarity: 0.87, LiveScore: 0.998,
+			FaceQuality: 0.82, Exposure: 1, Sharpness: 0.34,
+		}
+	}
+	for frame, offset := range []time.Duration{0, 2500 * time.Millisecond, 5000 * time.Millisecond} {
+		decisions := tracker.Observe("crowded-slow-camera", observations, now.Add(offset))
+		for i, decision := range decisions {
+			if frame < 2 && (decision.TimedOut || decision.Verified || decision.Rejected || decision.Frames != frame+1) {
+				t.Fatalf("student %d lost pending evidence on slow frame %d: %#v", i, frame+1, decision)
+			}
+			if frame == 2 && (!decision.Verified || decision.TimedOut || decision.Rejected || decision.Frames != 3 || !decision.NeedsAttendance) {
+				t.Fatalf("student %d never passed three good live frames: %#v", i, decision)
+			}
+		}
+	}
+}
+
+func TestRecognitionTrackerRejectsPhotosUnderSlowMultiPersonInference(t *testing.T) {
+	tracker := newRecognitionTracker()
+	now := time.Now()
+	photo := recognitionObservation{
+		Student: store.Student{ID: 814}, Similarity: 0.90, LiveScore: 0.05,
+		FaceQuality: 0.83, Exposure: 1, Sharpness: 0.3,
+	}
+	for i, offset := range []time.Duration{0, 2600 * time.Millisecond, 5200 * time.Millisecond} {
+		decision := tracker.Observe("crowded-photo-camera", []recognitionObservation{photo}, now.Add(offset))[0]
+		if i < 2 && (decision.Verified || decision.Rejected || decision.TimedOut) {
+			t.Fatalf("photo evidence decided too early on frame %d: %#v", i+1, decision)
+		}
+		if i == 2 && (!decision.Rejected || decision.Verified || decision.TimedOut) {
+			t.Fatalf("three slow photo frames must remain blocked: %#v", decision)
+		}
+	}
+}
+
+func TestRecognitionTrackerDropsPendingEvidenceAfterMultipleMissingScans(t *testing.T) {
+	tracker := newRecognitionTracker()
+	now := time.Now()
+	live := recognitionObservation{
+		Student: store.Student{ID: 815}, Similarity: 0.90, LiveScore: 0.98,
+		Exposure: 1, Sharpness: 1,
+	}
+	first := tracker.Observe("crowded-leave", []recognitionObservation{live}, now)[0]
+	for i := 0; i <= livenessMaxMissedFrames; i++ {
+		tracker.Observe("crowded-leave", nil, now.Add(time.Duration(i+1)*100*time.Millisecond))
+	}
+	next := tracker.Observe("crowded-leave", []recognitionObservation{live}, now.Add(600*time.Millisecond))[0]
+	if next.TrackID == first.TrackID || next.Frames != 1 || next.Verified {
+		t.Fatalf("old PAD evidence cannot be reused after a person disappears: first=%#v next=%#v", first, next)
+	}
+}
+
+func TestRecognitionTrackerKeepsShortTimeoutForFramesWithNoUsableEvidence(t *testing.T) {
+	tracker := newRecognitionTracker()
+	now := time.Now()
+	bad := recognitionObservation{
+		Student: store.Student{ID: 816}, Similarity: 0.90, LiveScore: 0.99,
+		Exposure: 0.05, Sharpness: 0.02,
+	}
+	tracker.Observe("crowded-unusable", []recognitionObservation{bad}, now)
+	decision := tracker.Observe("crowded-unusable", []recognitionObservation{bad}, now.Add(livenessDecisionTimeout+100*time.Millisecond))[0]
+	if !decision.TimedOut || decision.Verified || decision.Frames != 0 {
+		t.Fatalf("unusable frames must still expire promptly: %#v", decision)
+	}
+}
+
 func TestRecognitionTrackerTimesOutWithinTwoSecondsAndResets(t *testing.T) {
 	tracker := newRecognitionTracker()
 	now := time.Now()
@@ -248,7 +321,7 @@ func TestRecognitionTrackerExpiresOldTrack(t *testing.T) {
 	}}, now)[0]
 	second := tracker.Observe("camera-expire", []recognitionObservation{{
 		Student: student, Similarity: 0.9, LiveScore: 0.9, Exposure: 1, Sharpness: 1,
-	}}, now.Add(livenessTrackTTL+time.Second))[0]
+	}}, now.Add(livenessPendingTrackTTL+time.Second))[0]
 	if first.TrackID == second.TrackID || second.Frames != 1 {
 		t.Fatalf("expired track was reused: first=%#v second=%#v", first, second)
 	}
