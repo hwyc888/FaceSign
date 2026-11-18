@@ -183,7 +183,7 @@ func (t *recognitionTracker) Observe(sessionID string, observations []recognitio
 					goodRecoveryFrames++
 				}
 			}
-			if goodRecoveryFrames < 2 {
+			if goodRecoveryFrames < 2 || observation.InferenceFailed || observation.LiveScore < livenessPassThreshold {
 				out[i] = trackDecision{
 					TrackID:        track.ID,
 					Frames:         len(track.RecoveryScores),
