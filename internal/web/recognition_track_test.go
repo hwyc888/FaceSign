@@ -120,6 +120,85 @@ func TestRecognitionTrackerRejectsLowLivenessInThreeFrames(t *testing.T) {
 	}
 }
 
+func TestRecognitionTrackerRechecksPhotoWhenRealFaceAppearsWithoutLeaving(t *testing.T) {
+	tracker := newRecognitionTracker()
+	now := time.Now()
+	student := store.Student{ID: 401, StudentNo: "S401", Name: "照片切换真人"}
+	observation := recognitionObservation{
+		Student: student, Similarity: 0.94, LiveScore: 0.10, Exposure: 1, Sharpness: 1,
+	}
+	var rejected trackDecision
+	for i := 0; i < livenessMinFrames; i++ {
+		rejected = tracker.Observe("camera-photo-to-live", []recognitionObservation{observation}, now.Add(time.Duration(i)*100*time.Millisecond))[0]
+	}
+	if !rejected.Rejected {
+		t.Fatalf("expected photograph to be rejected: %#v", rejected)
+	}
+	stillPhoto := tracker.Observe("camera-photo-to-live", []recognitionObservation{observation}, now.Add(300*time.Millisecond))[0]
+	if !stillPhoto.Rejected || stillPhoto.TrackID != rejected.TrackID {
+		t.Fatalf("continuing photo must remain rejected: %#v", stillPhoto)
+	}
+
+	observation.LiveScore = 0.72
+	firstLive := tracker.Observe("camera-photo-to-live", []recognitionObservation{observation}, now.Add(400*time.Millisecond))[0]
+	if !firstLive.Rejected || firstLive.Verified {
+		t.Fatalf("one live-like frame must not clear a spoof decision: %#v", firstLive)
+	}
+	secondLive := tracker.Observe("camera-photo-to-live", []recognitionObservation{observation}, now.Add(500*time.Millisecond))[0]
+	if secondLive.TrackID == rejected.TrackID || secondLive.Rejected || secondLive.Verified || secondLive.Frames != 1 {
+		t.Fatalf("fresh live evidence must start a separate verification cycle: %#v", secondLive)
+	}
+	thirdLive := tracker.Observe("camera-photo-to-live", []recognitionObservation{observation}, now.Add(600*time.Millisecond))[0]
+	if thirdLive.Verified || thirdLive.Frames != 2 {
+		t.Fatalf("recovered track must still collect three live frames: %#v", thirdLive)
+	}
+	verified := tracker.Observe("camera-photo-to-live", []recognitionObservation{observation}, now.Add(700*time.Millisecond))[0]
+	if !verified.Verified || verified.Rejected || !verified.NeedsAttendance || verified.Frames != 3 {
+		t.Fatalf("real student must pass after independent three-frame voting: %#v", verified)
+	}
+}
+
+func TestRecognitionTrackerPhotoRejectionRequiresConsecutiveGoodRecoveryFrames(t *testing.T) {
+	tracker := newRecognitionTracker()
+	now := time.Now()
+	student := store.Student{ID: 402}
+	observation := recognitionObservation{
+		Student: student, Similarity: 0.92, LiveScore: 0.08, Exposure: 1, Sharpness: 1,
+	}
+	for i := 0; i < 3; i++ {
+		tracker.Observe("camera-recovery-quality", []recognitionObservation{observation}, now.Add(time.Duration(i)*100*time.Millisecond))
+	}
+	observation.LiveScore = 0.80
+	first := tracker.Observe("camera-recovery-quality", []recognitionObservation{observation}, now.Add(300*time.Millisecond))[0]
+	if !first.Rejected {
+		t.Fatalf("first recovery candidate must remain blocked: %#v", first)
+	}
+	observation.Exposure = 0.1 // An unusable bright-looking score must break the streak.
+	unusable := tracker.Observe("camera-recovery-quality", []recognitionObservation{observation}, now.Add(400*time.Millisecond))[0]
+	if !unusable.Rejected {
+		t.Fatalf("unusable frame cannot reset a spoof track: %#v", unusable)
+	}
+	observation.Exposure = 1
+	second := tracker.Observe("camera-recovery-quality", []recognitionObservation{observation}, now.Add(500*time.Millisecond))[0]
+	if !second.Rejected || second.Verified {
+		t.Fatalf("recovery streak must restart after an unusable frame: %#v", second)
+	}
+	observation.LiveScore = 0.08
+	spoof := tracker.Observe("camera-recovery-quality", []recognitionObservation{observation}, now.Add(600*time.Millisecond))[0]
+	if !spoof.Rejected {
+		t.Fatalf("another photo frame must restore the rejection streak: %#v", spoof)
+	}
+	observation.LiveScore = 0.80
+	firstAgain := tracker.Observe("camera-recovery-quality", []recognitionObservation{observation}, now.Add(700*time.Millisecond))[0]
+	if !firstAgain.Rejected {
+		t.Fatalf("one fresh candidate after spoof must still be rejected: %#v", firstAgain)
+	}
+	restart := tracker.Observe("camera-recovery-quality", []recognitionObservation{observation}, now.Add(800*time.Millisecond))[0]
+	if restart.Rejected || restart.Verified || restart.Frames != 1 || restart.TrackID == firstAgain.TrackID {
+		t.Fatalf("two good recovery frames should reopen verification, not auto-approve: %#v", restart)
+	}
+}
+
 func TestRecognitionTrackerTimesOutWithinTwoSecondsAndResets(t *testing.T) {
 	tracker := newRecognitionTracker()
 	now := time.Now()

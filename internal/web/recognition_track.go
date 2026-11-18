@@ -60,6 +60,7 @@ type recognitionTrack struct {
 	LowLightMode     bool
 	LivenessDisabled bool
 	SpoofVotes        int
+	RecoveryVotes     int
 	InferenceFailures int
 }
 
@@ -149,6 +150,39 @@ func (t *recognitionTracker) Observe(sessionID string, observations []recognitio
 				ID:        fmt.Sprintf("%s-%d", sessionID, session.NextID),
 				FirstSeen: now,
 				Scores:    make([]float64, 0, livenessMaxFramesForMode(observation.LowLightMode)),
+				LowLightMode: observation.LowLightMode,
+			}
+			session.Tracks[observation.Student.ID] = track
+		}
+		track.LastSeen = now
+		if track.Rejected {
+			// Keep rejecting a photo until two consecutive usable frames indicate
+			// fresh live evidence. Never carry rejected votes into a new cycle.
+			if !observation.InferenceFailed &&
+				livenessObservationQualityUsable(observation) &&
+				observation.LiveScore >= livenessPassThreshold {
+				track.RecoveryVotes++
+			} else {
+				track.RecoveryVotes = 0
+			}
+			if track.RecoveryVotes < 2 {
+				out[i] = trackDecision{
+					TrackID:        track.ID,
+					Frames:         len(track.Scores),
+					RequiredFrames: livenessMinFrames,
+					LiveScore:      averageScores(track.Scores),
+					Rejected:       true,
+					LivenessStatus: "疑似照片/屏幕",
+				}
+				continue
+			}
+			// The scene may change from a photo to the real student without the
+			// student ID or person box changing. Start independent PAD voting.
+			session.NextID++
+			track = &recognitionTrack{
+				ID:           fmt.Sprintf("%s-%d", sessionID, session.NextID),
+				FirstSeen:    now,
+				Scores:       make([]float64, 0, livenessMaxFramesForMode(observation.LowLightMode)),
 				LowLightMode: observation.LowLightMode,
 			}
 			session.Tracks[observation.Student.ID] = track

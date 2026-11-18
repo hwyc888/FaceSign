@@ -112,6 +112,17 @@
               <button class="primary" id="startCamera">打开摄像头</button>
               <button id="recognize" disabled>识别并签到</button>
               <label class="switch"><input id="autoScan" type="checkbox"> 自动识别</label>
+              <label class="recognition-interval-control" title="调整自动识别的目标间隔；实际速度取决于模型耗时、摄像头帧率和保护降载">
+                识别间隔
+                <select id="recognitionInterval">
+                  <option value="auto">智能自动</option>
+                  <option value="100">0.1 秒</option>
+                  <option value="200">0.2 秒</option>
+                  <option value="300">0.3 秒</option>
+                  <option value="500">0.5 秒</option>
+                  <option value="1000">1 秒</option>
+                </select>
+              </label>
               <span class="camera-active-name" id="checkinCameraName">当前访问设备摄像头</span>
               <div class="camera-audio-controls" aria-label="摄像头声音控制">
                 <button type="button" data-camera-audio-toggle disabled>声音：关</button>

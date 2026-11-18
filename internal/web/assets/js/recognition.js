@@ -244,6 +244,25 @@ async function recognizeFrame(options = {}) {
 }
 
 function recognitionFrameIntervalMS() {
+  const selection = $('#recognitionInterval')?.value || 'auto';
+  const manualIntervalMS = ['100', '200', '300', '500', '1000'].includes(selection)
+    ? Number(selection) : 0;
+  if (manualIntervalMS) {
+    const loadProfile = typeof cameraRecognitionLoadProfile === 'function'
+      ? cameraRecognitionLoadProfile()
+      : {level: 'normal', maxFPS: 5, minGapMS: 100};
+    // Do not count repeated cached camera frames as independent PAD evidence.
+    const captureFPS = activeCamera && activeCamera.kind !== 'browser'
+      ? Math.max(1, Number(activeCamera.fps || 5)) : 0;
+    const maxCaptureFPS = activeCamera?.kind === 'network' ? 12 : 30;
+    const captureIntervalMS = captureFPS > 0
+      ? Math.ceil(1000 / Math.min(captureFPS, maxCaptureFPS)) : 0;
+    const protectionIntervalMS = loadProfile.level === 'normal'
+      ? 0 : Math.ceil(1000 / Math.max(1, Number(loadProfile.maxFPS || 1)));
+    const targetIntervalMS = Math.max(manualIntervalMS, captureIntervalMS, protectionIntervalMS);
+    const minGapMS = loadProfile.level === 'normal' ? 0 : Number(loadProfile.minGapMS || 100);
+    return Math.max(minGapMS, targetIntervalMS - recognitionLastDurationMS);
+  }
   if (activeCamera && activeCamera.kind !== 'browser') {
     const loadProfile = typeof cameraRecognitionLoadProfile === 'function'
       ? cameraRecognitionLoadProfile()
@@ -310,9 +329,11 @@ async function runAutoRecognitionLoop() {
     autoTimer = null;
     return;
   }
-  await recognizeFrame({silent: true});
+  const result = await recognizeFrame({silent: true});
   if ($('#autoScan')?.checked && cameraOpen && $('#page-checkin')?.classList.contains('active')) {
-    autoTimer = setTimeout(runAutoRecognitionLoop, recognitionFrameIntervalMS());
+    // Avoid a zero-delay failure loop when a model or camera is unavailable.
+    autoTimer = setTimeout(runAutoRecognitionLoop,
+      result ? recognitionFrameIntervalMS() : Math.max(500, recognitionFrameIntervalMS()));
   } else {
     autoTimer = null;
   }
@@ -341,6 +362,21 @@ async function setAutoRecognitionEnabled(enabled) {
     checkbox.checked = false;
     throw e;
   }
+}
+
+const recognitionIntervalSelect = $('#recognitionInterval');
+if (recognitionIntervalSelect) {
+  const allowedIntervals = ['auto', '100', '200', '300', '500', '1000'];
+  try {
+    const saved = localStorage.getItem('facesign.recognitionIntervalMS');
+    if (allowedIntervals.includes(saved)) recognitionIntervalSelect.value = saved;
+  } catch {}
+  recognitionIntervalSelect.addEventListener('change', () => {
+    if (!allowedIntervals.includes(recognitionIntervalSelect.value)) recognitionIntervalSelect.value = 'auto';
+    try {
+      localStorage.setItem('facesign.recognitionIntervalMS', recognitionIntervalSelect.value);
+    } catch {}
+  });
 }
 
 $('#startCamera').addEventListener('click', toggleCamera);
