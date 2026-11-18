@@ -20,7 +20,8 @@ const (
 // automatically because upstream InsightFace model-zoo weights are restricted
 // to non-commercial research unless a separate licence is obtained.
 func livenessModelSpec() spec {
-	if strings.EqualFold(strings.TrimSpace(os.Getenv("FACESIGN_LIVENESS_BACKEND")), "mn3") {
+	// MN3 is the stable/default backend. MiniFASNetV2-SE remains available for A/B testing.
+	if !strings.EqualFold(strings.TrimSpace(os.Getenv("FACESIGN_LIVENESS_BACKEND")), "minifas") {
 		return spec{Name: "anti-spoof-mn3.onnx", SHA256: "c4c99af04603b62d7e44f6f4daeb33e0daeccc696008c0b1d62f6f5cebbb3262"}
 	}
 	// Trial model (Apache-2.0 upstream; CelebA-Spoof training dataset is noncommercial).

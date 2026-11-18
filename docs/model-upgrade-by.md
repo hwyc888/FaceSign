@@ -8,7 +8,7 @@ The By branch replaces YuNet + SFace with one supported face-recognition pipelin
 - ArcFace ResNet50 ONNX: five-point similarity alignment, 112x112 BGR input, 512-D output, L2 normalization.
 - ONNX Runtime CPU.
 - YOLOX-Nano person detection/tracking remains.
-- anti-spoof-mn3 passive PAD and existing multi-frame voting remain.
+- anti-spoof-mn3 is the stable/default passive PAD backend; MiniFASNetV2-SE remains available only for explicit A/B testing via `FACESIGN_LIVENESS_BACKEND=minifas`.
 
 ## Weights
 

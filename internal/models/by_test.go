@@ -7,16 +7,16 @@ import (
 	"testing"
 )
 
-func TestLivenessModelSpecSelectsMiniFASByDefaultAndMN3OnRollback(t *testing.T) {
+func TestLivenessModelSpecSelectsMN3ByDefaultAndMiniFASForABTest(t *testing.T) {
 	t.Setenv("FACESIGN_LIVENESS_BACKEND", "")
 	spec := livenessModelSpec()
-	if spec.Name != "minifasnet-v2se.onnx" || spec.SHA256 != "af2381b88f38769222ed93379e12444e2a50814575de1c46170de570c55a42b6" || spec.URL == "" {
-		t.Fatalf("invalid MiniFAS model spec: %#v", spec)
+	if spec.Name != "anti-spoof-mn3.onnx" || spec.SHA256 == "" || spec.URL != "" {
+		t.Fatalf("MN3 must be the stable default: %#v", spec)
 	}
-	t.Setenv("FACESIGN_LIVENESS_BACKEND", "mn3")
+	t.Setenv("FACESIGN_LIVENESS_BACKEND", "minifas")
 	spec = livenessModelSpec()
-	if spec.Name != "anti-spoof-mn3.onnx" || spec.SHA256 == "" {
-		t.Fatalf("legacy model rollback failed: %#v", spec)
+	if spec.Name != "minifasnet-v2se.onnx" || spec.SHA256 != "af2381b88f38769222ed93379e12444e2a50814575de1c46170de570c55a42b6" || spec.URL == "" {
+		t.Fatalf("MiniFAS A/B selection failed: %#v", spec)
 	}
 }
 
