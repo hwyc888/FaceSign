@@ -33,7 +33,9 @@ func TestMiniFASModelSelectionAndRGBInput(t *testing.T) {
 	if modelKindForPath("C:/models/minifasnet-v2se.onnx") != modelMiniFASV2SE || modelKindForPath("anti-spoof-mn3.onnx") != modelMN3 {
 		t.Fatal("incorrect liveness model selection")
 	}
-	if got := (&Engine{kind:modelMiniFASV2SE}).ModelName(); got != "MiniFASNetV2-SE" { t.Fatalf("name: %q",got) }
+	if got := (&Engine{kind: modelMiniFASV2SE, pools: []*modelPool{{}}}).ModelName(); got != "MiniFASNetV2-SE" {
+		t.Fatalf("name: %q", got)
+	}
 	img := image.NewRGBA(image.Rect(0,0,inputSize,inputSize))
 	img.SetRGBA(0,0,color.RGBA{R:255,G:128,B:64,A:255})
 	data := make([]float32,3*inputSize*inputSize)
