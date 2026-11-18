@@ -52,6 +52,19 @@ func TestMiniFASModelSelectionAndRGBInput(t *testing.T) {
 	}
 }
 
+func TestSilentFaceCropClipsFrameEdgesLikeUpstream(t *testing.T) {
+	bounds := image.Rect(0, 0, 100, 100)
+	faceRect := image.Rect(5, 30, 25, 50)
+	got, err := silentFaceCropRect(bounds, faceRect, 2.7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := image.Rect(0, 13, 43, 68)
+	if got != want {
+		t.Fatalf("crop=%v, want upstream independently-clamped crop %v", got, want)
+	}
+}
+
 func TestSilentFaceModelRuntime(t *testing.T) {
 	model, dll := os.Getenv("FACESIGN_TEST_SILENT_V2_MODEL"), os.Getenv("FACESIGN_TEST_ONNX_DLL")
 	if model == "" || dll == "" { t.Skip("requires actual Silent-Face ONNX and runtime") }

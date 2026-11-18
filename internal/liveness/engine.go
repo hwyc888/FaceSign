@@ -233,29 +233,59 @@ func (e *Engine) Score(img image.Image, faceRect image.Rectangle) (float64, erro
 	return silentLiveSum/float64(silentCount), nil
 }
 
-func silentFaceCrop(img image.Image, faceRect image.Rectangle, scale float64) (*image.RGBA, error) {
-	bounds := img.Bounds()
+func silentFaceCropRect(bounds, faceRect image.Rectangle, scale float64) (image.Rectangle, error) {
 	srcW, srcH := bounds.Dx(), bounds.Dy()
 	boxW, boxH := faceRect.Dx(), faceRect.Dy()
-	if boxW<=0 || boxH<=0 || srcW<=1 || srcH<=1 { return nil, ErrInvalidFace }
+	if boxW <= 0 || boxH <= 0 || srcW <= 1 || srcH <= 1 || scale <= 0 {
+		return image.Rectangle{}, ErrInvalidFace
+	}
+
+	// Match upstream Silent-Face CropImage: clamp each edge independently.
+	// Do not shift the opposite edge to preserve the crop size at frame borders.
 	s := math.Min(float64(srcH-1)/float64(boxH), math.Min(float64(srcW-1)/float64(boxW), scale))
-	if s<=0 { return nil, ErrInvalidFace }
-	x := float64(faceRect.Min.X-bounds.Min.X)
-	y := float64(faceRect.Min.Y-bounds.Min.Y)
+	if s <= 0 {
+		return image.Rectangle{}, ErrInvalidFace
+	}
+	x := float64(faceRect.Min.X - bounds.Min.X)
+	y := float64(faceRect.Min.Y - bounds.Min.Y)
 	centerX, centerY := float64(boxW)/2+x, float64(boxH)/2+y
-	newW,newH := float64(boxW)*s,float64(boxH)*s
-	left,top := centerX-newW/2,centerY-newH/2
-	right,bottom := centerX+newW/2,centerY+newH/2
-	if left<0 { right-=left; left=0 }
-	if top<0 { bottom-=top; top=0 }
-	if right>float64(srcW-1) { left-=right-float64(srcW-1); right=float64(srcW-1) }
-	if bottom>float64(srcH-1) { top-=bottom-float64(srcH-1); bottom=float64(srcH-1) }
-	x1,y1,x2,y2 := int(left),int(top),int(right),int(bottom)
-	if x2<x1 || y2<y1 { return nil,ErrInvalidFace }
-	srcRect := image.Rect(x1+bounds.Min.X,y1+bounds.Min.Y,x2+bounds.Min.X+1,y2+bounds.Min.Y+1)
-	out:=image.NewRGBA(image.Rect(0,0,silentInputSize,silentInputSize))
-	xdraw.BiLinear.Scale(out,out.Bounds(),img,srcRect,xdraw.Src,nil)
-	return out,nil
+	newW, newH := float64(boxW)*s, float64(boxH)*s
+	x1 := livenessMaxInt(0, int(centerX-newW/2))
+	y1 := livenessMaxInt(0, int(centerY-newH/2))
+	x2 := livenessMinInt(srcW-1, int(centerX+newW/2))
+	y2 := livenessMinInt(srcH-1, int(centerY+newH/2))
+	if x2 < x1 || y2 < y1 {
+		return image.Rectangle{}, ErrInvalidFace
+	}
+	return image.Rect(
+		x1+bounds.Min.X,
+		y1+bounds.Min.Y,
+		x2+bounds.Min.X+1,
+		y2+bounds.Min.Y+1,
+	), nil
+}
+
+func silentFaceCrop(img image.Image, faceRect image.Rectangle, scale float64) (*image.RGBA, error) {
+	if img == nil {
+		return nil, ErrInvalidFace
+	}
+	srcRect, err := silentFaceCropRect(img.Bounds(), faceRect, scale)
+	if err != nil {
+		return nil, err
+	}
+	out := image.NewRGBA(image.Rect(0, 0, silentInputSize, silentInputSize))
+	xdraw.BiLinear.Scale(out, out.Bounds(), img, srcRect, xdraw.Src, nil)
+	return out, nil
+}
+
+func livenessMaxInt(a, b int) int {
+	if a > b { return a }
+	return b
+}
+
+func livenessMinInt(a, b int) int {
+	if a < b { return a }
+	return b
 }
 
 func fillSilentInput(dst []float32, img *image.RGBA) {
