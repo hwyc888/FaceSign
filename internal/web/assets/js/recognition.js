@@ -51,6 +51,10 @@ function renderRecognition(r) {
     const livenessSharpness = Number(f.liveness_sharpness || 0) * 100;
     const livenessBrightness = Number(f.liveness_brightness || 0) * 100;
     const livenessQualityStatus = esc(f.liveness_quality_status || '画面指标仅供诊断');
+    const frameScores = Array.isArray(f.liveness_scores)
+      ? f.liveness_scores.map(score => (Number(score || 0) * 100).toFixed(1) + '%')
+      : [];
+    const livenessFrameText = frameScores.length ? `逐帧活体 ${frameScores.join(' / ')}` : '逐帧活体等待中';
     const livenessQualityText = `活体模型 ${livenessModeText} · 人脸区域亮度 ${livenessBrightness.toFixed(0)}% · 曝光 ${livenessExposure.toFixed(0)}% · 清晰度 ${livenessSharpness.toFixed(0)}% · ${livenessQualityStatus}`;
     if (f.recognized && f.student) {
       const attendanceMeta = f.attendance
@@ -61,13 +65,13 @@ function renderRecognition(r) {
         : `活体 ${(Number(f.liveness_score || 0) * 100).toFixed(1)}%`;
       return `<div class="face-result known">
         <div class="face-title">${esc(f.student.name)} · ${f.first_checkin_today ? '签到成功' : '今日已签到'}</div>
-        <div class="face-meta">${esc(f.student.student_no)} | ${esc(f.student.class_name || '-')} | 身份 ${(f.similarity * 100).toFixed(1)}% | ${livenessText} | ${qualityText} | ${livenessQualityText}${attendanceMeta}</div>
+        <div class="face-meta">${esc(f.student.student_no)} | ${esc(f.student.class_name || '-')} | 身份 ${(f.similarity * 100).toFixed(1)}% | ${livenessText} | ${livenessFrameText} | ${qualityText} | ${livenessQualityText}${attendanceMeta}</div>
       </div>`;
     }
     if (f.matched && f.student && f.status === '疑似照片/屏幕') {
       return `<div class="face-result danger">
         <div class="face-title">${esc(f.student.name)} · 疑似照片/屏幕，拒绝签到</div>
-        <div class="face-meta">身份 ${(f.similarity * 100).toFixed(1)}% | 活体 ${(Number(f.liveness_score || 0) * 100).toFixed(1)}% | ${qualityText} | ${livenessQualityText} | 不写入签到记录</div>
+        <div class="face-meta">身份 ${(f.similarity * 100).toFixed(1)}% | 活体 ${(Number(f.liveness_score || 0) * 100).toFixed(1)}% | ${livenessFrameText} | ${qualityText} | ${livenessQualityText} | 不写入签到记录</div>
       </div>`;
     }
     if (f.matched && f.student && quality < Number(r.face_quality_threshold || 0.45)) {
@@ -80,7 +84,7 @@ function renderRecognition(r) {
       const timeoutClass = f.liveness_timed_out ? ' warning' : '';
       return `<div class="face-result pending${timeoutClass}">
         <div class="face-title">${esc(f.student.name)} · ${esc(f.status || '活体验证中')}</div>
-        <div class="face-meta">身份 ${(f.similarity * 100).toFixed(1)}% | 活体 ${(Number(f.liveness_score || 0) * 100).toFixed(1)}% | ${qualityText} | ${livenessQualityText} | 连续帧 ${f.liveness_frames || 0}/${f.required_frames || r.liveness_fast_frames || 3}</div>
+        <div class="face-meta">身份 ${(f.similarity * 100).toFixed(1)}% | 活体 ${(Number(f.liveness_score || 0) * 100).toFixed(1)}% | ${livenessFrameText} | ${qualityText} | ${livenessQualityText} | 连续帧 ${f.liveness_frames || 0}/${f.required_frames || r.liveness_fast_frames || 3}</div>
       </div>`;
     }
     if (quality < Number(r.face_quality_threshold || 0.45)) {

@@ -55,6 +55,25 @@ func TestRecognitionTrackerNormalPassesThreeModerateLiveFrames(t *testing.T) {
 	}
 }
 
+func TestRecognitionTrackerIgnoresOneMotionBlurOutlier(t *testing.T) {
+	tracker := newRecognitionTracker()
+	now := time.Now()
+	student := store.Student{ID: 203, StudentNo: "S203", Name: "运动真人"}
+	scores := []float64{0.90, 0.18, 0.82}
+	var decision trackDecision
+	for i, score := range scores {
+		decision = tracker.Observe("camera-motion", []recognitionObservation{{
+			Student: student, Similarity: 0.93, LiveScore: score, Exposure: 1, Sharpness: 1,
+		}}, now.Add(time.Duration(i)*120*time.Millisecond))[0]
+	}
+	if !decision.Verified || decision.Rejected || decision.Frames != 3 {
+		t.Fatalf("one motion-blurred outlier should not block a real face: %#v", decision)
+	}
+	if len(decision.Scores) != 3 || decision.Scores[1] != 0.18 {
+		t.Fatalf("raw frame scores were not preserved: %#v", decision.Scores)
+	}
+}
+
 func TestRecognitionTrackerKeepsMultipleStudentsLivenessIndependent(t *testing.T) {
 	tracker := newRecognitionTracker()
 	now := time.Now()
@@ -158,7 +177,7 @@ func TestRecognitionTrackerRechecksPhotoWhenRealFaceAppearsWithoutLeaving(t *tes
 	}
 }
 
-func TestRecognitionTrackerPhotoRejectionRequiresConsecutiveGoodRecoveryFrames(t *testing.T) {
+func TestRecognitionTrackerPhotoRejectionToleratesOneRecoveryOutlier(t *testing.T) {
 	tracker := newRecognitionTracker()
 	now := time.Now()
 	student := store.Student{ID: 402}
@@ -173,19 +192,15 @@ func TestRecognitionTrackerPhotoRejectionRequiresConsecutiveGoodRecoveryFrames(t
 	if !first.Rejected {
 		t.Fatalf("first recovery candidate must remain blocked: %#v", first)
 	}
-	observation.LiveScore = 0.08 // A low model score breaks the recovery streak.
-	spoof := tracker.Observe("camera-recovery-quality", []recognitionObservation{observation}, now.Add(400*time.Millisecond))[0]
-	if !spoof.Rejected {
-		t.Fatalf("another low model score must keep the attack blocked: %#v", spoof)
+	observation.LiveScore = 0.08 // One motion/blurred frame is tolerated during recovery.
+	stillBlocked := tracker.Observe("camera-recovery-quality", []recognitionObservation{observation}, now.Add(400*time.Millisecond))[0]
+	if !stillBlocked.Rejected {
+		t.Fatalf("one low model score must keep the attack blocked: %#v", stillBlocked)
 	}
 	observation.LiveScore = 0.80
-	firstAgain := tracker.Observe("camera-recovery-quality", []recognitionObservation{observation}, now.Add(500*time.Millisecond))[0]
-	if !firstAgain.Rejected {
-		t.Fatalf("one fresh live-model score must still be blocked: %#v", firstAgain)
-	}
-	restart := tracker.Observe("camera-recovery-quality", []recognitionObservation{observation}, now.Add(600*time.Millisecond))[0]
-	if restart.Rejected || restart.Verified || restart.Frames != 1 || restart.TrackID == firstAgain.TrackID {
-		t.Fatalf("two good recovery frames should reopen verification, not auto-approve: %#v", restart)
+	restart := tracker.Observe("camera-recovery-quality", []recognitionObservation{observation}, now.Add(500*time.Millisecond))[0]
+	if restart.Rejected || restart.Verified || restart.Frames != 1 || restart.TrackID == first.TrackID {
+		t.Fatalf("two good recovery frames in a three-frame window should reopen verification, not auto-approve: %#v", restart)
 	}
 }
 

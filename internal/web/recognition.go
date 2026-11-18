@@ -41,6 +41,7 @@ type recognitionFace struct {
 	LivenessMode               string            `json:"liveness_mode"`
 	LivenessQualityStatus      string            `json:"liveness_quality_status"`
 	LivenessScore     float64           `json:"liveness_score,omitempty"`
+	LivenessScores    []float64         `json:"liveness_scores,omitempty"`
 	LivenessStatus    string            `json:"liveness_status,omitempty"`
 	LivenessFrames    int               `json:"liveness_frames,omitempty"`
 	RequiredFrames    int               `json:"required_frames,omitempty"`
@@ -409,6 +410,7 @@ func (s *Server) recognizePreparedImage(
 		// Keep the current model score visible before the first frame is accumulated.
 		if decision.Frames > 0 {
 			result.LivenessScore = decision.LiveScore
+			result.LivenessScores = decision.Scores
 		}
 		result.LivenessStatus = decision.LivenessStatus
 		result.LivenessFrames = decision.Frames
@@ -515,6 +517,7 @@ func (s *Server) recognizePreparedImage(
 		response["quality_status"] = results[0].QualityStatus
 		response["best_quality"] = results[0].BestQuality
 		response["liveness_score"] = results[0].LivenessScore
+		response["liveness_scores"] = results[0].LivenessScores
 		response["liveness_status"] = results[0].LivenessStatus
 		response["liveness_frames"] = results[0].LivenessFrames
 		response["required_frames"] = results[0].RequiredFrames

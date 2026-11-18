@@ -267,10 +267,10 @@ func fillMiniFASInput(dst []float32, img *image.RGBA) {
 
 func resizeFaceCrop(img image.Image, crop image.Rectangle) *image.RGBA {
 	resized := image.NewRGBA(image.Rect(0, 0, inputSize, inputSize))
-	// Match the upstream anti-spoof demo's cv.resize default (INTER_LINEAR).
-	// Cubic interpolation can add ringing/high-frequency texture that changes
-	// the classifier score, especially for small faces from multi-person frames.
-	xdraw.BiLinear.Scale(resized, resized.Bounds(), img, crop, xdraw.Src, nil)
+	// Keep the FaceSign MN3-compatible crop/resize path that was validated on
+	// the built-in webcam: preserve extra face context and use Catmull-Rom
+	// before the model-specific RGB normalization.
+	xdraw.CatmullRom.Scale(resized, resized.Bounds(), img, crop, xdraw.Src, nil)
 	return resized
 }
 
@@ -280,8 +280,8 @@ func expandedFaceRect(rect, bounds image.Rectangle) image.Rectangle {
 	}
 	cx := float64(rect.Min.X+rect.Max.X) / 2
 	cy := float64(rect.Min.Y+rect.Max.Y) / 2
-	w := float64(rect.Dx()) * 1.10
-	h := float64(rect.Dy()) * 1.05
+	w := float64(rect.Dx()) * 1.35
+	h := float64(rect.Dy()) * 1.35
 	out := image.Rect(
 		int(math.Round(cx-w/2)),
 		int(math.Round(cy-h/2)),
