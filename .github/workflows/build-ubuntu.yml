@@ -40,16 +40,22 @@ jobs:
           find internal/web/assets/js -type f -name '*.js' -print0 | xargs -0 -r -n1 node --check
           for script in scripts/ubuntu/*.sh; do bash -n "$script"; done
 
-      - name: Download ONNX Runtime CPU
+      - name: Download official ONNX Runtime CPU package from NuGet
         run: |
-          mkdir -p "$RUNNER_TEMP/onnxruntime" dist
-          curl -fL --retry 3 --retry-all-errors \
-            "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-${ORT_VERSION}.tgz" \
-            -o "$RUNNER_TEMP/onnxruntime/onnxruntime.tgz"
-          tar -xzf "$RUNNER_TEMP/onnxruntime/onnxruntime.tgz" -C "$RUNNER_TEMP/onnxruntime"
-          ORT_ROOT="$RUNNER_TEMP/onnxruntime/onnxruntime-linux-x64-${ORT_VERSION}"
-          test -f "$ORT_ROOT/lib/libonnxruntime.so.${ORT_VERSION}"
-          find "$ORT_ROOT/lib" -maxdepth 1 -type f -name 'libonnxruntime*.so*' -exec cp {} dist/ \;
+          mkdir -p "$RUNNER_TEMP/onnxruntime/nuget" dist
+          NUGET_BASE="https://api.nuget.org/v3-flatcontainer/microsoft.ml.onnxruntime/${ORT_VERSION}"
+          NUGET_PACKAGE="microsoft.ml.onnxruntime.${ORT_VERSION}.nupkg"
+          curl -fL --retry 3 --retry-all-errors "$NUGET_BASE/$NUGET_PACKAGE" \
+            -o "$RUNNER_TEMP/onnxruntime/$NUGET_PACKAGE"
+          curl -fL --retry 3 --retry-all-errors "$NUGET_BASE/$NUGET_PACKAGE.sha512" \
+            -o "$RUNNER_TEMP/onnxruntime/$NUGET_PACKAGE.sha512"
+          EXPECTED_SHA512="$(base64 --decode "$RUNNER_TEMP/onnxruntime/$NUGET_PACKAGE.sha512" | od -An -tx1 | tr -d ' \\n')"
+          printf '%s  %s\\n' "$EXPECTED_SHA512" "$RUNNER_TEMP/onnxruntime/$NUGET_PACKAGE" | sha512sum --check -
+          unzip -q "$RUNNER_TEMP/onnxruntime/$NUGET_PACKAGE" 'runtimes/linux-x64/native/*' -d "$RUNNER_TEMP/onnxruntime/nuget"
+          ORT_NATIVE="$RUNNER_TEMP/onnxruntime/nuget/runtimes/linux-x64/native"
+          test -f "$ORT_NATIVE/libonnxruntime.so"
+          find "$ORT_NATIVE" -maxdepth 1 -type f -name '*.so*' -exec cp {} dist/ \\;
+          cp "$ORT_NATIVE/libonnxruntime.so" "dist/libonnxruntime.so.${ORT_VERSION}"
           test -f "dist/libonnxruntime.so.${ORT_VERSION}"
           ldd "dist/libonnxruntime.so.${ORT_VERSION}" | tee "$RUNNER_TEMP/onnxruntime/ldd.txt"
           if grep -q 'not found' "$RUNNER_TEMP/onnxruntime/ldd.txt"; then

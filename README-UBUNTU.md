@@ -68,6 +68,6 @@ If you override data/state paths when starting, pass the same overrides to the s
 
 ## 6. Model and security notes
 
-The package includes the default Silent-Face MiniFASNetV2 + MiniFASNetV1SE anti-spoof models, the YOLOX-Nano person detector, and the legacy MN3 / MiniFASNetV2-SE fallback models with their source checksums and licence files. SCRFD/ArcFace weights are supplied separately by the operator and are checked against the local SHA256 manifest before startup.
+The package includes the Microsoft ONNX Runtime CPU native library (obtained from the official Microsoft NuGet package and verified against its NuGet SHA-512 sidecar), the default Silent-Face MiniFASNetV2 + MiniFASNetV1SE anti-spoof models, the YOLOX-Nano person detector, and the legacy MN3 / MiniFASNetV2-SE fallback models with their source checksums and licence files. SCRFD/ArcFace weights are supplied separately by the operator and are checked against the local SHA256 manifest before startup.
 
 The liveness model remains enabled by default. Avoid setting `FACESIGN_LIVENESS_BACKEND` to a legacy backend unless the matching model file is present and you intend to run that comparison.
