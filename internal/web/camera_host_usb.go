@@ -345,7 +345,7 @@ func (s *Server) consumeHostCameraStream(ctx context.Context, stream *networkCam
 }
 
 func (s *Server) hostCameraDevices(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
+	if !requirePermission(w, r, authUser(r).CanEditSettings, "没有修改摄像头设置的权限") {
 		return
 	}
 	if r.Method != http.MethodGet {

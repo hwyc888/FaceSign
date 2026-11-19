@@ -32,6 +32,7 @@ func (s *Server) users(w http.ResponseWriter, r *http.Request) {
 			CanAddStudents   bool   `json:"can_add_students"`
 			CanResampleFaces bool   `json:"can_resample_faces"`
 			CanArrangeSeats  bool   `json:"can_arrange_seats"`
+			CanEditSettings  bool   `json:"can_edit_settings"`
 		}
 		if err := decodeJSON(r, &in); err != nil {
 			writeError(w, http.StatusBadRequest, err)
@@ -56,6 +57,7 @@ func (s *Server) users(w http.ResponseWriter, r *http.Request) {
 			CanAddStudents: in.CanAddStudents,
 			CanResampleFaces: in.CanResampleFaces,
 			CanArrangeSeats: in.CanArrangeSeats,
+			CanEditSettings: in.CanEditSettings,
 		})
 		if err != nil {
 			writeError(w, http.StatusBadRequest, err)
@@ -147,6 +149,7 @@ func (s *Server) userAction(w http.ResponseWriter, r *http.Request) {
 			CanAddStudents   *bool  `json:"can_add_students"`
 			CanResampleFaces *bool  `json:"can_resample_faces"`
 			CanArrangeSeats  *bool  `json:"can_arrange_seats"`
+			CanEditSettings  *bool  `json:"can_edit_settings"`
 			Password         string `json:"password"`
 		}
 		if err := decodeJSON(r, &in); err != nil {
@@ -179,6 +182,7 @@ func (s *Server) userAction(w http.ResponseWriter, r *http.Request) {
 		if in.CanAddStudents != nil { user.CanAddStudents = *in.CanAddStudents }
 		if in.CanResampleFaces != nil { user.CanResampleFaces = *in.CanResampleFaces }
 		if in.CanArrangeSeats != nil { user.CanArrangeSeats = *in.CanArrangeSeats }
+		if in.CanEditSettings != nil { user.CanEditSettings = *in.CanEditSettings }
 		passwordHash := ""
 		if strings.TrimSpace(in.Password) != "" {
 			if err := validatePassword(in.Password); err != nil {
