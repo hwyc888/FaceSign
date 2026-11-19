@@ -107,6 +107,9 @@ func (s *Store) init(ctx context.Context) error {
 			return fmt.Errorf("initialize database: %w", err)
 		}
 	}
+	if err := s.ensureColumn(ctx, "users", "can_edit_settings", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
 	if err := s.ensureColumn(ctx, "students", "seat_no", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
