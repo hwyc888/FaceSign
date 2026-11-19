@@ -3,6 +3,7 @@ const sidebarStorageKey = 'facesign.sidebar.collapsed';
 
 function setSidebarCollapsed(collapsed) {
   const shell = $('#appShell');
+  if (!shell) return;
   shell.classList.toggle('sidebar-collapsed', Boolean(collapsed));
   if (!sidebarToggle) return;
   sidebarToggle.textContent = collapsed ? '›' : '‹';

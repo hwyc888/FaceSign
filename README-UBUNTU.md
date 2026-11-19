@@ -1,6 +1,6 @@
 # FaceSign Ubuntu AMD64 deployment
 
-This package targets Ubuntu 22.04 / 24.04 on x86-64. It contains the Linux FaceSign server, ONNX Runtime CPU shared libraries, the redistributable support models, and three process-management scripts.
+This package targets Ubuntu 24.04 on x86-64. It contains the Linux FaceSign server, ONNX Runtime CPU shared libraries, the redistributable support models, and three process-management scripts.
 
 ## 1. Install system dependencies
 
