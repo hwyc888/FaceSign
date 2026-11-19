@@ -6,7 +6,7 @@ This package targets Ubuntu 22.04 / 24.04 on x86-64. It contains the Linux FaceS
 
 ```bash
 sudo apt-get update
-sudo apt-get install -y ca-certificates curl ffmpeg libstdc++6
+sudo apt-get install -y ca-certificates curl ffmpeg libstdc++6 libgomp1
 ```
 
 FFmpeg is used for RTSP/network camera decoding. The Linux server currently supports browser cameras and network cameras; direct USB-camera enumeration through the FaceSign host is Windows-only.
