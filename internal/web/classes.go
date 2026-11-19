@@ -18,7 +18,7 @@ func (s *Server) classes(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, items)
 	case http.MethodPost:
-		if !requireAdmin(w, r) {
+		if !requirePermission(w, r, authUser(r).CanEditSettings, "没有修改设置的权限") {
 			return
 		}
 		var in struct {
@@ -59,7 +59,7 @@ func (s *Server) classAction(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(parts) == 1 {
-		if !requireAdmin(w, r) {
+		if !requirePermission(w, r, authUser(r).CanEditSettings, "没有修改设置的权限") {
 			return
 		}
 		switch r.Method {
@@ -99,7 +99,7 @@ func (s *Server) classAction(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(parts) == 2 && parts[1] == "move" && r.Method == http.MethodPost {
-		if !requireAdmin(w, r) {
+		if !requirePermission(w, r, authUser(r).CanEditSettings, "没有修改设置的权限") {
 			return
 		}
 		var in struct {
@@ -118,7 +118,7 @@ func (s *Server) classAction(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(parts) == 2 && parts[1] == "layout" && r.Method == http.MethodPut {
-		if !requireAdmin(w, r) {
+		if !requirePermission(w, r, authUser(r).CanEditSettings, "没有修改设置的权限") {
 			return
 		}
 		var in struct {
@@ -139,7 +139,7 @@ func (s *Server) classAction(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(parts) == 2 && parts[1] == "settings" && r.Method == http.MethodPut {
-		if !requireAdmin(w, r) {
+		if !requirePermission(w, r, authUser(r).CanEditSettings, "没有修改设置的权限") {
 			return
 		}
 		var in struct {

@@ -1,3 +1,33 @@
+const sidebarToggle = $('#sidebarToggle');
+const sidebarStorageKey = 'facesign.sidebar.collapsed';
+
+function setSidebarCollapsed(collapsed) {
+  const shell = $('#appShell');
+  if (!shell) return;
+  shell.classList.toggle('sidebar-collapsed', Boolean(collapsed));
+  if (!sidebarToggle) return;
+  sidebarToggle.textContent = collapsed ? '›' : '‹';
+  sidebarToggle.setAttribute('aria-expanded', String(!collapsed));
+  sidebarToggle.setAttribute('aria-label', collapsed ? '展开导航栏' : '收缩导航栏');
+  sidebarToggle.title = collapsed ? '展开导航栏' : '收缩导航栏';
+}
+
+try {
+  setSidebarCollapsed(localStorage.getItem(sidebarStorageKey) === 'true');
+} catch {
+  setSidebarCollapsed(false);
+}
+
+sidebarToggle?.addEventListener('click', () => {
+  const collapsed = !$('#appShell').classList.contains('sidebar-collapsed');
+  setSidebarCollapsed(collapsed);
+  try {
+    localStorage.setItem(sidebarStorageKey, String(collapsed));
+  } catch {
+    // Sidebar remains usable when browser storage is unavailable.
+  }
+});
+
 async function showPage(name, options = {}) {
   if (name !== 'checkin' && typeof stopAutoRecognition === 'function') {
     stopAutoRecognition();

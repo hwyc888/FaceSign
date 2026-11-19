@@ -27,12 +27,15 @@ func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
 		}
 		writeJSON(w, http.StatusOK, settings)
 	case http.MethodPut:
-		if !requireAdmin(w, r) {
+		if !requirePermission(w, r, authUser(r).CanEditSettings, "没有修改设置的权限") {
 			return
 		}
 		var in appSettingsRequest
 		if err := decodeJSON(r, &in); err != nil {
 			writeError(w, http.StatusBadRequest, err)
+			return
+		}
+		if in.DisableLivenessDetection != nil && !requireAdmin(w, r) {
 			return
 		}
 		if in.AutoStartCheckin == nil &&

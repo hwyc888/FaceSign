@@ -61,6 +61,7 @@ type User struct {
 	CanAddStudents   bool   `json:"can_add_students"`
 	CanResampleFaces bool   `json:"can_resample_faces"`
 	CanArrangeSeats  bool   `json:"can_arrange_seats"`
+	CanEditSettings  bool   `json:"can_edit_settings"`
 	PasswordHash     string `json:"-"`
 }
 

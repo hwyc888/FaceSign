@@ -58,3 +58,8 @@ If startup fails, check `facesign-error.log` beside the executable. If the direc
 ## Development and CI
 
 Windows CI runs Go tests, vet, builds the Windows x64 executables, and creates package artifacts. End-to-end camera/model smoke tests require the authorized SCRFD and ArcFace weights to be supplied to the runner; they are not silently replaced by an older model.
+
+
+## Ubuntu deployment
+
+Ubuntu 22.04/24.04 AMD64 build and process scripts: see [README-UBUNTU.md](README-UBUNTU.md). The GitHub Actions workflow publishes the `facesign-ubuntu-amd64-full` artifact.

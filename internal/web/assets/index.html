@@ -63,16 +63,17 @@
   </div>
   <div class="shell hidden" id="appShell">
     <aside class="sidebar">
+      <button id="sidebarToggle" class="sidebar-toggle" type="button" aria-label="收缩导航栏" title="收缩导航栏" aria-expanded="true">‹</button>
       <div class="brand">FaceSign</div>
       <div class="brand-sub">校园人脸考勤</div>
       <nav>
-        <button class="nav active" data-page="checkin">人脸签到</button>
-        <button class="nav" data-page="students">学生管理</button>
-        <button class="nav" data-page="seating" data-permission="can_arrange_seats">座位编排</button>
-        <button class="nav" data-page="attendance">考勤记录</button>
-        <button class="nav" data-page="settings" data-admin-only>设置</button>
-        <button class="nav" data-page="users" data-admin-only>人员管理</button>
-        <button class="nav" data-page="status">系统状态</button>
+        <button class="nav active" data-page="checkin" data-icon="◉" title="人脸签到" aria-label="人脸签到">人脸签到</button>
+        <button class="nav" data-page="students" data-icon="♙" title="学生管理" aria-label="学生管理">学生管理</button>
+        <button class="nav" data-page="seating" data-icon="▦" data-permission="can_arrange_seats" title="座位编排" aria-label="座位编排">座位编排</button>
+        <button class="nav" data-page="attendance" data-icon="▤" title="考勤记录" aria-label="考勤记录">考勤记录</button>
+        <button class="nav" data-page="settings" data-icon="⚙" data-permission="can_edit_settings" title="设置" aria-label="设置">设置</button>
+        <button class="nav" data-page="users" data-icon="♟" data-admin-only title="人员管理" aria-label="人员管理">人员管理</button>
+        <button class="nav" data-page="status" data-icon="⌁" title="系统状态" aria-label="系统状态">系统状态</button>
       </nav>
     </aside>
 
@@ -416,7 +417,7 @@
           </div>
       </section>
 
-      <section class="page" id="page-settings" data-admin-only>
+      <section class="page" id="page-settings" data-permission="can_edit_settings">
         <div class="card">
           <div class="card-head">
             <div>
@@ -432,7 +433,7 @@
           <p class="muted camera-settings-help">关闭时仍可在签到页面手动打开摄像头和“自动识别”；离开签到页面后自动识别会停止，避免后台误签到。</p>
         </div>
 
-        <div class="card settings-secondary-card">
+        <div class="card settings-secondary-card" data-admin-only>
           <div class="card-head">
             <div>
               <h2>活体检测</h2>
@@ -477,7 +478,7 @@
               <h2>识别累计统计</h2>
               <p class="muted compact">从上次清零开始持续累计；已验证按学生去重，未录入按人体 Track 去重，刷新页面和重启程序后仍保留。</p>
             </div>
-            <button id="clearRecognitionStats" class="danger" type="button">清零统计</button>
+            <button id="clearRecognitionStats" class="danger" type="button" data-admin-only>清零统计</button>
           </div>
           <div class="recognition-counts recognition-counts-settings">
             <div class="recognition-count verified">
@@ -692,6 +693,7 @@
               <label><input id="newUserCanAdd" type="checkbox"> 新增学生</label>
               <label><input id="newUserCanResample" type="checkbox"> 补充 / 重新采样人脸</label>
               <label><input id="newUserCanArrange" type="checkbox"> 编排座位</label>
+              <label><input id="newUserCanEditSettings" type="checkbox"> 修改设置</label>
             </div>
             <button class="primary" type="submit">创建普通用户</button>
           </form>
@@ -706,7 +708,7 @@
           </div>
           <div class="table-wrap">
             <table class="user-table">
-              <thead><tr><th>账号</th><th>修改资料</th><th>新增学生</th><th>人脸采样</th><th>座位编排</th><th>操作</th></tr></thead>
+              <thead><tr><th>账号</th><th>修改资料</th><th>新增学生</th><th>人脸采样</th><th>座位编排</th><th>修改设置</th><th>操作</th></tr></thead>
               <tbody id="usersBody"></tbody>
             </table>
           </div>
@@ -717,7 +719,7 @@
         <div class="card">
           <h2>系统状态</h2>
           <pre id="statusJson">loading...</pre>
-          <p class="muted">Windows 发布包使用 Go + ONNX Runtime CPU，不需要 Python、Docker 或 GPU。</p>
+          <p class="muted">Windows 与 Ubuntu AMD64 版本均使用 Go + ONNX Runtime CPU；Linux 部署包附带启动、状态查询和停止脚本。</p>
         </div>
       </section>
     </main>

@@ -7,7 +7,7 @@ async function loadUsers() {
     $('#usersBody').innerHTML = usersCache.map(user => {
       if (user.is_admin) {
         return '<tr><td><strong>' + esc(user.username) + '</strong><br><span class="user-account-admin">系统管理员 · 不可删除</span></td>' +
-          '<td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>固定管理员</td></tr>';
+          '<td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>固定管理员</td></tr>';
       }
       const permissionCell = (key, checked) =>
         '<td><label><input type="checkbox" data-user-permission="' + key +
@@ -18,10 +18,11 @@ async function loadUsers() {
         permissionCell('can_add_students', user.can_add_students) +
         permissionCell('can_resample_faces', user.can_resample_faces) +
         permissionCell('can_arrange_seats', user.can_arrange_seats) +
+        permissionCell('can_edit_settings', user.can_edit_settings) +
         '<td><div class="user-row-actions"><button data-user-clone="' + user.id + '">复制账号</button>' +
         '<button class="primary-soft" data-user-save="' + user.id + '">保存权限</button>' +
         '<button class="danger" data-user-delete="' + user.id + '">删除账号</button></div></td></tr>';
-    }).join('') || '<tr><td colspan="6">暂无用户</td></tr>';
+    }).join('') || '<tr><td colspan="7">暂无用户</td></tr>';
 
     $$('[data-user-clone]').forEach(button => {
       button.onclick = () => openUserCloneModal(Number(button.dataset.userClone), 'single');
@@ -88,7 +89,8 @@ $('#userCreateForm').addEventListener('submit', async event => {
         can_edit_students: $('#newUserCanEdit').checked,
         can_add_students: $('#newUserCanAdd').checked,
         can_resample_faces: $('#newUserCanResample').checked,
-        can_arrange_seats: $('#newUserCanArrange').checked
+        can_arrange_seats: $('#newUserCanArrange').checked,
+        can_edit_settings: $('#newUserCanEditSettings').checked
       })
     });
     $('#userCreateForm').reset();
@@ -204,7 +206,8 @@ function renderUserClonePermissionPreview() {
     ['修改学生资料', source.can_edit_students],
     ['新增学生', source.can_add_students],
     ['补充 / 重新采样人脸', source.can_resample_faces],
-    ['座位编排', source.can_arrange_seats]
+    ['座位编排', source.can_arrange_seats],
+    ['修改设置', source.can_edit_settings]
   ];
   preview.innerHTML = permissions.map(([label, allowed]) =>
     '<span class="user-clone-permission ' + (allowed ? 'allowed' : 'denied') + '">' +

@@ -275,7 +275,7 @@ func cameraFromNormalizedInput(in store.CameraInput) store.Camera {
 }
 
 func (s *Server) cameraTest(w http.ResponseWriter, r *http.Request) {
-	if !requireAdmin(w, r) {
+	if !requirePermission(w, r, authUser(r).CanEditSettings, "没有修改摄像头设置的权限") {
 		return
 	}
 	if r.Method != http.MethodPost {
@@ -455,7 +455,7 @@ func (s *Server) cameras(w http.ResponseWriter, r *http.Request) {
 		for i := range items { s.decorateCameraAgentState(&items[i]) }
 		writeJSON(w, http.StatusOK, items)
 	case http.MethodPost:
-		if !requireAdmin(w, r) {
+		if !requirePermission(w, r, authUser(r).CanEditSettings, "没有修改摄像头设置的权限") {
 			return
 		}
 		var in cameraRequest
@@ -497,7 +497,7 @@ func (s *Server) cameraAction(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(parts) == 1 {
-		if !requireAdmin(w, r) {
+		if !requirePermission(w, r, authUser(r).CanEditSettings, "没有修改摄像头设置的权限") {
 			return
 		}
 		switch r.Method {
@@ -544,7 +544,7 @@ func (s *Server) cameraAction(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(parts) == 2 && parts[1] == "default" && r.Method == http.MethodPost {
-		if !requireAdmin(w, r) {
+		if !requirePermission(w, r, authUser(r).CanEditSettings, "没有修改摄像头设置的权限") {
 			return
 		}
 		item, err := s.store.SetDefaultCamera(r.Context(), id)
