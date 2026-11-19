@@ -666,3 +666,115 @@ pre{background:#0b1220;color:#d8e2f3;border-radius:12px;padding:16px;overflow:au
 }
 
 
+
+
+/* Desktop sidebar collapse */
+.main {
+  transition: margin-left .22s ease, width .22s ease;
+}
+.sidebar-toggle {
+  position: absolute;
+  top: 24px;
+  right: 16px;
+  z-index: 5;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 1px solid rgba(255,255,255,.16);
+  border-radius: 10px;
+  background: rgba(255,255,255,.06);
+  color: #e8eefb;
+  font-size: 23px;
+  line-height: 1;
+  cursor: pointer;
+  transition: background .18s ease, border-color .18s ease, transform .18s ease;
+}
+.sidebar-toggle:hover {
+  background: rgba(255,255,255,.14);
+  border-color: rgba(255,255,255,.32);
+}
+.sidebar-toggle:focus-visible {
+  outline: 2px solid #8db8ff;
+  outline-offset: 3px;
+}
+@media (min-width: 901px) {
+  .shell.sidebar-collapsed .sidebar {
+    width: 76px;
+    padding-left: 10px;
+    padding-right: 10px;
+    transition: width .22s ease, padding .22s ease;
+  }
+  .shell.sidebar-collapsed .main {
+    margin-left: max(76px, calc(76px + (100vw - 76px - 1920px) / 2));
+    width: min(1920px, calc(100% - 76px));
+  }
+  .shell.sidebar-collapsed .sidebar-toggle {
+    left: 50%;
+    right: auto;
+    transform: translateX(-50%);
+  }
+  .shell.sidebar-collapsed .brand {
+    margin-top: 62px;
+    font-size: 0;
+    line-height: 1;
+    text-align: center;
+  }
+  .shell.sidebar-collapsed .brand::before {
+    content: "F";
+    font-size: 28px;
+    font-weight: 800;
+    letter-spacing: -.04em;
+  }
+  .shell.sidebar-collapsed .brand-sub {
+    display: none;
+  }
+  .shell.sidebar-collapsed .sidebar nav {
+    margin-top: 30px;
+  }
+  .shell.sidebar-collapsed .sidebar .nav {
+    overflow: hidden;
+    padding: 14px 4px;
+    font-size: 0;
+    line-height: 1;
+    text-align: center;
+    white-space: nowrap;
+  }
+  .shell.sidebar-collapsed .sidebar .nav::before {
+    content: attr(data-icon);
+    display: inline-block;
+    font-size: 21px;
+    line-height: 1.2;
+  }
+}
+@media (max-width: 900px) {
+  .sidebar-toggle {
+    display: none;
+  }
+  .shell.sidebar-collapsed .sidebar {
+    width: 100%;
+    padding-left: 14px;
+    padding-right: 14px;
+  }
+  .shell.sidebar-collapsed .main {
+    margin-left: 0;
+    width: 100%;
+  }
+  .shell.sidebar-collapsed .brand {
+    margin-top: 0;
+    font-size: inherit;
+    text-align: left;
+  }
+  .shell.sidebar-collapsed .brand::before {
+    content: none;
+  }
+  .shell.sidebar-collapsed .brand-sub {
+    display: initial;
+  }
+  .shell.sidebar-collapsed .sidebar .nav {
+    font-size: inherit;
+    text-align: inherit;
+    white-space: normal;
+  }
+}
