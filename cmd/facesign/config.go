@@ -37,7 +37,7 @@ func loadConfig() (config, error) {
 	flag.StringVar(&cfg.DataPath, "data", filepath.Join(base, "data", "facesign.db"), "SQLite database path")
 	flag.StringVar(&cfg.AssetsPath, "assets", base, "directory containing ONNX Runtime and models")
 	flag.Float64Var(&cfg.MatchThreshold, "match-threshold", 0.68, "face match threshold from 0 to 1")
-	flag.Float64Var(&cfg.DetectionThreshold, "detection-threshold", 0.80, "face detection threshold from 0 to 1")
+	flag.Float64Var(&cfg.DetectionThreshold, "detection-threshold", 0.50, "SCRFD face detection threshold from 0 to 1")
 	flag.BoolVar(&cfg.OpenBrowser, "open-browser", true, "open the local FaceSign page after startup")
 	flag.BoolVar(&cfg.Background, "background", false, "hide the Windows console when running as a registered background task")
 	flag.Parse()

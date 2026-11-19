@@ -1,11 +1,104 @@
 package liveness
 
 import (
+	"os"
 	"image"
 	"image/color"
 	"math"
 	"testing"
+
+	ort "github.com/yalue/onnxruntime_go"
 )
+
+func TestSilentFaceModelSelectionAndInput(t *testing.T) {
+	if modelKindForPath("models/MiniFASNetV2.onnx") != modelSilentV2 || modelKindForPath("models/MiniFASNetV1SE.onnx") != modelSilentV1SE {
+		t.Fatal("incorrect Silent-Face model selection")
+	}
+	img := image.NewRGBA(image.Rect(0, 0, silentInputSize, silentInputSize))
+	img.SetRGBA(0, 0, color.RGBA{R: 255, G: 128, B: 64, A: 255})
+	data := make([]float32, 3*silentInputSize*silentInputSize)
+	fillSilentInput(data, img)
+	const plane = silentInputSize * silentInputSize
+	if data[0] != 64 || data[plane] != 128 || data[2*plane] != 255 {
+		t.Fatalf("unexpected BGR raw input: %v,%v,%v", data[0], data[plane], data[2*plane])
+	}
+	probs := softmax3([]float32{-4.0072, 4.8543, -0.8501})
+	if probs[1] < 0.99 || probs[0] > 0.001 || probs[2] > 0.01 {
+		t.Fatalf("unexpected Silent-Face softmax: %#v", probs)
+	}
+}
+
+
+func TestMiniFASModelSelectionAndRGBInput(t *testing.T) {
+	if modelKindForPath("C:/models/minifasnet-v2se.onnx") != modelMiniFASV2SE || modelKindForPath("anti-spoof-mn3.onnx") != modelMN3 {
+		t.Fatal("incorrect liveness model selection")
+	}
+	if got := (&Engine{kind: modelMiniFASV2SE, pools: []*modelPool{{}}}).ModelName(); got != "MiniFASNetV2-SE" {
+		t.Fatalf("name: %q", got)
+	}
+	img := image.NewRGBA(image.Rect(0,0,inputSize,inputSize))
+	img.SetRGBA(0,0,color.RGBA{R:255,G:128,B:64,A:255})
+	data := make([]float32,3*inputSize*inputSize)
+	fillMiniFASInput(data,img)
+	const plane=inputSize*inputSize
+	if data[0]!=1 || math.Abs(float64(data[plane]-float32(128.0/255)))>1e-6 || math.Abs(float64(data[2*plane]-float32(64.0/255)))>1e-6 {
+		t.Fatalf("unexpected RGB/255 input: %v,%v,%v",data[0],data[plane],data[2*plane])
+	}
+	for _, a := range []struct{p,w int}{{-1,1},{-2,2},{12,10},{13,9}} {
+		if got := reflect101(a.p,12); got != a.w {t.Fatalf("reflect101(%d)=%d",a.p,got)}
+	}
+	if got:=resizeMiniFASFaceCrop(img,image.Rect(0,0,12,12));got.Bounds()!=image.Rect(0,0,inputSize,inputSize) {
+		t.Fatalf("crop size: %v",got.Bounds())
+	}
+}
+
+func TestSilentFaceCropClipsFrameEdgesLikeUpstream(t *testing.T) {
+	bounds := image.Rect(0, 0, 100, 100)
+	faceRect := image.Rect(5, 30, 25, 50)
+	got, err := silentFaceCropRect(bounds, faceRect, 2.7)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := image.Rect(0, 13, 43, 68)
+	if got != want {
+		t.Fatalf("crop=%v, want upstream independently-clamped crop %v", got, want)
+	}
+}
+
+func TestSilentFaceModelRuntime(t *testing.T) {
+	model, dll := os.Getenv("FACESIGN_TEST_SILENT_V2_MODEL"), os.Getenv("FACESIGN_TEST_ONNX_DLL")
+	if model == "" || dll == "" { t.Skip("requires actual Silent-Face ONNX and runtime") }
+	ort.SetSharedLibraryPath(dll)
+	if err := ort.InitializeEnvironment(); err != nil { t.Fatal(err) }
+	defer ort.DestroyEnvironment()
+	e, err := New(model)
+	if err != nil { t.Fatalf("load Silent-Face ensemble: %v", err) }
+	defer e.Close()
+	img := image.NewRGBA(image.Rect(0, 0, 640, 480))
+	for y := 0; y < 480; y++ {
+		for x := 0; x < 640; x++ { img.SetRGBA(x, y, color.RGBA{R: uint8(x%256), G: uint8(y%256), B: 127, A: 255}) }
+	}
+	score, err := e.Score(img, image.Rect(230, 120, 410, 380))
+	if err != nil { t.Fatalf("execute Silent-Face ensemble: %v", err) }
+	if math.IsNaN(score) || score < 0 || score > 1 { t.Fatalf("invalid Silent-Face score: %v", score) }
+}
+
+// Exercised against the real downloaded ONNX and DLL by Windows CI.
+func TestMiniFASModelRuntime(t *testing.T) {
+	model, dll := os.Getenv("FACESIGN_TEST_MINIFAS_MODEL"), os.Getenv("FACESIGN_TEST_ONNX_DLL")
+	if model == "" || dll == "" { t.Skip("requires actual packaged ONNX and runtime") }
+	ort.SetSharedLibraryPath(dll)
+	if err:=ort.InitializeEnvironment();err!=nil {t.Fatal(err)}
+	defer ort.DestroyEnvironment()
+	e,err:=New(model)
+	if err!=nil {t.Fatalf("load MiniFAS ONNX: %v",err)}
+	defer e.Close()
+	img:=image.NewRGBA(image.Rect(0,0,256,256))
+	for y:=0;y<256;y++ {for x:=0;x<256;x++ {img.SetRGBA(x,y,color.RGBA{R:uint8(x),G:uint8(y),B:127,A:255})}}
+	score,err:=e.Score(img,image.Rect(80,80,155,169))
+	if err!=nil {t.Fatalf("execute MiniFAS ONNX: %v",err)}
+	if math.IsNaN(score)||score<0||score>1 {t.Fatalf("invalid score: %v",score)}
+}
 
 func TestExpandedFaceRectMatchesUpstreamCropRatio(t *testing.T) {
 	bounds := image.Rect(0, 0, 640, 480)

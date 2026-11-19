@@ -40,54 +40,62 @@ function renderRecognition(r) {
     return;
   }
 
-  const summary = `人体跟踪 ${r.tracked_person_count || persons.length} 人，检测人脸 ${r.detected_count || faces.length} 张，等待靠近/露脸/清晰 ${r.waiting_face_count || 0} 人，签到通过 ${r.verified_count || 0} 人，验证中 ${r.pending_count || 0} 人，需重新对准 ${r.timeout_count || 0} 人，疑似照片/屏幕 ${r.spoof_count || 0} 人，未录入 ${r.unregistered_count || 0} 人`;
+  const summary = `活体模型 ${esc(r.liveness_model || '未知')} · 人体跟踪 ${r.tracked_person_count || persons.length} 人，检测人脸 ${r.detected_count || faces.length} 张，等待靠近/露脸/清晰 ${r.waiting_face_count || 0} 人，签到通过 ${r.verified_count || 0} 人，验证中 ${r.pending_count || 0} 人，需重新对准 ${r.timeout_count || 0} 人，疑似照片/屏幕 ${r.spoof_count || 0} 人，未录入 ${r.unregistered_count || 0} 人`;
 
   const faceHTML = faces.map((f, i) => {
     const quality = Number(f.quality_score || 0);
     const qualityHint = f.quality_hint ? ` · ${esc(f.quality_hint)}` : '';
     const qualityText = `人脸质量 ${(quality * 100).toFixed(0)}% · ${esc(f.quality_status || '等待清晰')}${qualityHint}`;
+    const livenessModeText = esc(f.liveness_mode || '待评估');
+    const livenessExposure = Number(f.liveness_exposure || 0) * 100;
+    const livenessSharpness = Number(f.liveness_sharpness || 0) * 100;
+    const livenessBrightness = Number(f.liveness_brightness || 0) * 100;
+    const livenessQualityStatus = esc(f.liveness_quality_status || '画面指标仅供诊断');
+    const frameScores = Array.isArray(f.liveness_scores)
+      ? f.liveness_scores.map(score => (Number(score || 0) * 100).toFixed(1) + '%')
+      : [];
+    const livenessFrameText = frameScores.length ? `逐帧活体 ${frameScores.join(' / ')}` : '逐帧活体等待中';
+    const livenessQualityText = `活体模型 ${livenessModeText} · 人脸区域亮度 ${livenessBrightness.toFixed(0)}% · 曝光 ${livenessExposure.toFixed(0)}% · 清晰度 ${livenessSharpness.toFixed(0)}% · ${livenessQualityStatus}`;
     if (f.recognized && f.student) {
       const attendanceMeta = f.attendance
         ? ` | 首次 ${esc(String(f.attendance.checked_at || '').slice(-8))} | 最近 ${esc(String(f.attendance.last_seen_at || f.attendance.checked_at || '').slice(-8))} | 今日 ${Number(f.attendance.recognition_count || 1)}次`
         : '';
       const livenessText = f.liveness_status === '活体检测已关闭'
         ? '活体检测已关闭'
-        : (f.liveness_status === '低光自动识别通过'
-          ? '低光自动识别'
-          : `活体 ${(Number(f.liveness_score || 0) * 100).toFixed(1)}%`);
+        : `活体 ${(Number(f.liveness_score || 0) * 100).toFixed(1)}%`;
       return `<div class="face-result known">
         <div class="face-title">${esc(f.student.name)} · ${f.first_checkin_today ? '签到成功' : '今日已签到'}</div>
-        <div class="face-meta">${esc(f.student.student_no)} | ${esc(f.student.class_name || '-')} | 身份 ${(f.similarity * 100).toFixed(1)}% | ${livenessText} | ${qualityText}${attendanceMeta}</div>
+        <div class="face-meta">${esc(f.student.student_no)} | ${esc(f.student.class_name || '-')} | 身份 ${(f.similarity * 100).toFixed(1)}% | ${livenessText} | ${livenessFrameText} | ${qualityText} | ${livenessQualityText}${attendanceMeta}</div>
       </div>`;
     }
     if (f.matched && f.student && f.status === '疑似照片/屏幕') {
       return `<div class="face-result danger">
         <div class="face-title">${esc(f.student.name)} · 疑似照片/屏幕，拒绝签到</div>
-        <div class="face-meta">身份 ${(f.similarity * 100).toFixed(1)}% | 活体 ${(Number(f.liveness_score || 0) * 100).toFixed(1)}% | ${qualityText} | 不写入签到记录</div>
+        <div class="face-meta">身份 ${(f.similarity * 100).toFixed(1)}% | 活体 ${(Number(f.liveness_score || 0) * 100).toFixed(1)}% | ${livenessFrameText} | ${qualityText} | ${livenessQualityText} | 不写入签到记录</div>
       </div>`;
     }
     if (f.matched && f.student && quality < Number(r.face_quality_threshold || 0.45)) {
       return `<div class="face-result pending warning">
         <div class="face-title">${esc(f.student.name)} · 等待更清晰人脸</div>
-        <div class="face-meta">已由人体 Track 保持身份 | ${qualityText} | 最佳 ${(Number(f.best_quality || 0) * 100).toFixed(0)}%</div>
+        <div class="face-meta">已由人体 Track 保持身份 | ${qualityText} | ${livenessQualityText} | 最佳 ${(Number(f.best_quality || 0) * 100).toFixed(0)}%</div>
       </div>`;
     }
     if (f.matched && f.student) {
       const timeoutClass = f.liveness_timed_out ? ' warning' : '';
       return `<div class="face-result pending${timeoutClass}">
         <div class="face-title">${esc(f.student.name)} · ${esc(f.status || '活体验证中')}</div>
-        <div class="face-meta">身份 ${(f.similarity * 100).toFixed(1)}% | 活体 ${(Number(f.liveness_score || 0) * 100).toFixed(1)}% | ${qualityText} | 连续帧 ${f.liveness_frames || 0}/${f.required_frames || r.liveness_fast_frames || 3}</div>
+        <div class="face-meta">身份 ${(f.similarity * 100).toFixed(1)}% | 活体 ${(Number(f.liveness_score || 0) * 100).toFixed(1)}% | ${livenessFrameText} | ${qualityText} | ${livenessQualityText} | 连续帧 ${f.liveness_frames || 0}/${f.required_frames || r.liveness_fast_frames || 3}</div>
       </div>`;
     }
     if (quality < Number(r.face_quality_threshold || 0.45)) {
       return `<div class="face-result pending warning">
         <div class="face-title">等待清晰人脸</div>
-        <div class="face-meta">Track ${esc(f.track_id || '-')} | ${qualityText} | 系统会继续跟踪并选择后续最佳帧</div>
+        <div class="face-meta">Track ${esc(f.track_id || '-')} | ${qualityText} | ${livenessQualityText} | 系统会继续跟踪并选择后续最佳帧</div>
       </div>`;
     }
     return `<div class="face-result unknown">
       <div class="face-title">未录入</div>
-      <div class="face-meta">人脸 ${i + 1} 未匹配到已录入学生 | ${qualityText}</div>
+      <div class="face-meta">人脸 ${i + 1} 未匹配到已录入学生 | ${qualityText} | ${livenessQualityText}</div>
     </div>`;
   }).join('');
 
@@ -236,6 +244,27 @@ async function recognizeFrame(options = {}) {
 }
 
 function recognitionFrameIntervalMS() {
+  const selection = $('#recognitionInterval')?.value || 'auto';
+  const manualIntervalMS = ['100', '200', '300', '500', '1000'].includes(selection)
+    ? Number(selection) : 0;
+  if (manualIntervalMS) {
+    const loadProfile = typeof cameraRecognitionLoadProfile === 'function'
+      ? cameraRecognitionLoadProfile()
+      : {level: 'normal', maxFPS: 5, minGapMS: 100};
+    // Do not count repeated cached camera frames as independent PAD evidence.
+    const captureFPS = activeCamera && activeCamera.kind !== 'browser'
+      ? Math.max(1, Number(activeCamera.fps || 5)) : 0;
+    const maxCaptureFPS = activeCamera?.kind === 'network' ? 12 : 30;
+    const captureIntervalMS = captureFPS > 0
+      ? Math.ceil(1000 / Math.min(captureFPS, maxCaptureFPS)) : 0;
+    const protectionIntervalMS = loadProfile.level === 'normal'
+      ? 0 : Math.ceil(1000 / Math.max(1, Number(loadProfile.maxFPS || 1)));
+    const targetIntervalMS = Math.max(manualIntervalMS, captureIntervalMS, protectionIntervalMS);
+    const minGapMS = loadProfile.level === 'normal'
+      ? (activeCamera?.kind !== 'browser' ? 120 : 0)
+      : Number(loadProfile.minGapMS || 100);
+    return Math.max(minGapMS, targetIntervalMS - recognitionLastDurationMS);
+  }
   if (activeCamera && activeCamera.kind !== 'browser') {
     const loadProfile = typeof cameraRecognitionLoadProfile === 'function'
       ? cameraRecognitionLoadProfile()
@@ -302,9 +331,16 @@ async function runAutoRecognitionLoop() {
     autoTimer = null;
     return;
   }
-  await recognizeFrame({silent: true});
+  const result = await recognizeFrame({silent: true});
   if ($('#autoScan')?.checked && cameraOpen && $('#page-checkin')?.classList.contains('active')) {
-    autoTimer = setTimeout(runAutoRecognitionLoop, recognitionFrameIntervalMS());
+    if (result && !result.skipped) {
+      autoTimer = setTimeout(runAutoRecognitionLoop, recognitionFrameIntervalMS());
+    } else {
+      // The camera has a server-side idle gate; skipped/busy replies need
+      // backoff instead of a zero-delay loop that keeps returning the same UI.
+      const retryMS = result?.busy ? 150 : 500;
+      autoTimer = setTimeout(runAutoRecognitionLoop, Math.max(retryMS, recognitionFrameIntervalMS()));
+    }
   } else {
     autoTimer = null;
   }
@@ -333,6 +369,21 @@ async function setAutoRecognitionEnabled(enabled) {
     checkbox.checked = false;
     throw e;
   }
+}
+
+const recognitionIntervalSelect = $('#recognitionInterval');
+if (recognitionIntervalSelect) {
+  const allowedIntervals = ['auto', '100', '200', '300', '500', '1000'];
+  try {
+    const saved = localStorage.getItem('facesign.recognitionIntervalMS');
+    if (allowedIntervals.includes(saved)) recognitionIntervalSelect.value = saved;
+  } catch {}
+  recognitionIntervalSelect.addEventListener('change', () => {
+    if (!allowedIntervals.includes(recognitionIntervalSelect.value)) recognitionIntervalSelect.value = 'auto';
+    try {
+      localStorage.setItem('facesign.recognitionIntervalMS', recognitionIntervalSelect.value);
+    } catch {}
+  });
 }
 
 $('#startCamera').addEventListener('click', toggleCamera);

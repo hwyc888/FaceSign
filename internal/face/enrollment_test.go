@@ -4,15 +4,12 @@ import (
 	"errors"
 	"image"
 	"testing"
-
-	onnxface "github.com/leandroveronezi/go-onnxface"
 )
 
 func TestSelectEnrollmentFaceIgnoresSmallBackgroundFace(t *testing.T) {
-	primary := onnxface.Face{Rectangle: image.Rect(100, 80, 420, 400), Score: 0.95}
-	background := onnxface.Face{Rectangle: image.Rect(10, 10, 100, 100), Score: 0.91}
-
-	got, err := selectEnrollmentFace([]onnxface.Face{background, primary})
+	primary := Detection{Rectangle: image.Rect(100, 80, 420, 400), Score: 0.95}
+	background := Detection{Rectangle: image.Rect(10, 10, 100, 100), Score: 0.91}
+	got, err := selectEnrollmentFaceDetection([]Detection{background, primary}, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -22,10 +19,9 @@ func TestSelectEnrollmentFaceIgnoresSmallBackgroundFace(t *testing.T) {
 }
 
 func TestSelectEnrollmentFaceRejectsTwoSignificantFaces(t *testing.T) {
-	first := onnxface.Face{Rectangle: image.Rect(100, 80, 420, 400), Score: 0.95}
-	second := onnxface.Face{Rectangle: image.Rect(450, 100, 700, 350), Score: 0.92}
-
-	_, err := selectEnrollmentFace([]onnxface.Face{first, second})
+	first := Detection{Rectangle: image.Rect(100, 80, 420, 400), Score: 0.95}
+	second := Detection{Rectangle: image.Rect(450, 100, 700, 350), Score: 0.92}
+	_, err := selectEnrollmentFaceDetection([]Detection{first, second}, true)
 	if !errors.Is(err, ErrMultipleFaces) {
 		t.Fatalf("got %v, want ErrMultipleFaces", err)
 	}

@@ -467,8 +467,8 @@ func (s *Server) photoImportCommit(w http.ResponseWriter, r *http.Request, sessi
 				})
 				continue
 			}
-			student, _, err := s.store.CreateStudentWithFace(
-				r.Context(), studentNo, name, className, "照片导入-正面", face.Encode(item.Feature),
+			student, _, err := s.store.CreateStudentWithFaceVersion(
+				r.Context(), studentNo, name, className, "照片导入-正面", s.engine.ModelVersion(), face.Encode(item.Feature),
 			)
 			if err != nil {
 				failed++
@@ -532,7 +532,7 @@ func (s *Server) photoImportCommit(w http.ResponseWriter, r *http.Request, sessi
 				results = append(results, map[string]any{"id": item.ID, "status": "failed", "message": err.Error()})
 				continue
 			}
-			if _, err := s.store.AddFaceSample(r.Context(), targetID, "照片导入-正面", face.Encode(item.Feature)); err != nil {
+			if _, err := s.store.AddFaceSampleWithVersion(r.Context(), targetID, "照片导入-正面", s.engine.ModelVersion(), face.Encode(item.Feature)); err != nil {
 				failed++
 				results = append(results, map[string]any{"id": item.ID, "status": "failed", "message": err.Error()})
 				continue

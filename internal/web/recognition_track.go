@@ -10,6 +10,11 @@ import (
 
 const (
 	livenessTrackTTL          = 3 * time.Second
+	// Multi-person CPU inference can take seconds between valid snapshots.
+	// Keep pending evidence briefly, but never indefinitely or across long absences.
+	livenessPendingTrackTTL   = 6 * time.Second
+	livenessCollectionTimeout = 12 * time.Second
+	livenessMaxMissedFrames    = 3
 	livenessFastFrames        = 3
 	livenessMinFrames         = 3
 	livenessMaxFrames         = 3
@@ -18,24 +23,17 @@ const (
 	livenessPassThreshold     = 0.60
 	livenessSpoofThreshold    = 0.40
 	livenessDecisionTimeout   = 1200 * time.Millisecond
-	livenessMinExposureScore  = 0.35
-	livenessMinSharpnessScore = 0.08
-
-	livenessLowLightMaxFrames        = 3
-	livenessLowLightDecisionTimeout = 1200 * time.Millisecond
-	livenessLowLightMinExposureScore = 0.20
-	livenessLowLightMinSharpnessScore = 0.05
-	// Blurry low-light frames cannot reliably prove a photo/screen attack.
-	livenessLowLightSpoofMinSharpnessScore = 0.12
 )
 
 type recognitionObservation struct {
-	Student    store.Student
-	Similarity float64
-	LiveScore  float64
-	Exposure   float64
-	Sharpness    float64
-	LowLightMode bool
+	Student         store.Student
+	Similarity      float64
+	LiveScore       float64
+	FaceQuality     float64 // diagnostic only; never gates liveness model scores
+	Exposure        float64
+	Sharpness       float64
+	FaceBrightness  float64
+	InferenceFailed bool
 }
 
 type recognitionTrack struct {
@@ -43,14 +41,16 @@ type recognitionTrack struct {
 	FirstSeen        time.Time
 	LastSeen         time.Time
 	Frames           int
+	MissedFrames     int
 	Scores           []float64
 	SimilaritySum    float64
 	Verified         bool
 	Rejected         bool
 	Committed        bool
-	LowLightMode     bool
 	LivenessDisabled bool
-	SpoofVotes        int
+	SpoofVotes       int
+	RecoveryScores   []float64
+	InferenceFailures int
 }
 
 type trackDecision struct {
@@ -64,6 +64,7 @@ type trackDecision struct {
 	TimedOut        bool
 	NeedsAttendance bool
 	LivenessStatus  string
+	Scores          []float64
 }
 
 type recognitionTrackSession struct {
@@ -116,69 +117,134 @@ func (t *recognitionTracker) Observe(sessionID string, observations []recognitio
 	}
 
 	for studentID, track := range session.Tracks {
-		if now.Sub(track.LastSeen) > livenessTrackTTL {
+		ttl := livenessTrackTTL
+		if !track.Verified && !track.Rejected && !track.Committed && len(track.Scores) > 0 {
+			ttl = livenessPendingTrackTTL
+		}
+		if now.Sub(track.LastSeen) > ttl {
 			delete(session.Tracks, studentID)
+			continue
+		}
+		// Do not combine old and new face evidence across several scans where
+		// the student was no longer matched, even if each scan was slow.
+		if !track.Committed {
+			track.MissedFrames++
+			if track.MissedFrames > livenessMaxMissedFrames {
+				delete(session.Tracks, studentID)
+			}
 		}
 	}
 
 	out := make([]trackDecision, len(observations))
 	for i, observation := range observations {
 		track := session.Tracks[observation.Student.ID]
+		if track != nil {
+			track.MissedFrames = 0
+		}
 		if track != nil && track.Committed {
 			out[i] = trackDecision{
 				TrackID:        track.ID,
+				Frames:         len(track.Scores),
+				RequiredFrames: livenessMinFrames,
+				LiveScore:      medianScore(track.Scores),
 				Verified:       track.Verified,
 				LivenessStatus: livenessVerifiedStatus(track),
+				Scores:         copyScores(track.Scores),
 			}
 			continue
 		}
-		if !livenessObservationQualityUsable(observation) {
-			status := "光线不足或画面模糊，请调整摄像头"
-			if track == nil {
-				out[i] = trackDecision{
-					RequiredFrames: livenessFastFrames,
-					LivenessStatus: status,
-				}
-				continue
-			}
-			track.LastSeen = now
-			if !track.Verified && !track.Rejected {
-				track.FirstSeen = now
-			}
-			if track.Verified {
-				status = livenessVerifiedStatus(track)
-			} else if track.Rejected {
-				status = "疑似照片/屏幕"
-			}
-			out[i] = trackDecision{
-				TrackID:         track.ID,
-				Frames:          len(track.Scores),
-				RequiredFrames:  requiredLivenessFrames(track),
-				LiveScore:       averageScores(track.Scores),
-				Similarity:      track.SimilaritySum / maxLivenessFloat(1, float64(track.Frames)),
-				Verified:        track.Verified,
-				Rejected:        track.Rejected,
-				NeedsAttendance: track.Verified && !track.Committed,
-				LivenessStatus:  status,
-			}
-			continue
-		}
+
 		if track == nil {
 			session.NextID++
 			track = &recognitionTrack{
 				ID:        fmt.Sprintf("%s-%d", sessionID, session.NextID),
 				FirstSeen: now,
-				Scores:    make([]float64, 0, livenessMaxFramesForMode(observation.LowLightMode)),
+				Scores:    make([]float64, 0, livenessMaxFrames),
 			}
 			session.Tracks[observation.Student.ID] = track
 		}
-		track.LowLightMode = observation.LowLightMode
-		maxFrames := livenessMaxFramesForMode(track.LowLightMode)
-		decisionTimeout := livenessDecisionTimeoutForMode(track.LowLightMode)
+		track.LastSeen = now
+		if track.Rejected {
+			// A rejected track must not be cleared by one lucky frame. At the same
+			// time, one motion-blurred frame should not keep a real person blocked
+			// forever. Accept two model-positive recovery frames within a short
+			// three-frame window, then start a completely fresh PAD vote.
+			if !observation.InferenceFailed {
+				track.RecoveryScores = append(track.RecoveryScores, observation.LiveScore)
+				if len(track.RecoveryScores) > 3 {
+					track.RecoveryScores = append([]float64(nil), track.RecoveryScores[len(track.RecoveryScores)-3:]...)
+				}
+			} else {
+				track.RecoveryScores = nil
+			}
+			goodRecoveryFrames := 0
+			for _, score := range track.RecoveryScores {
+				if score >= livenessPassThreshold {
+					goodRecoveryFrames++
+				}
+			}
+			if goodRecoveryFrames < 2 || observation.InferenceFailed || observation.LiveScore < livenessPassThreshold {
+				out[i] = trackDecision{
+					TrackID:        track.ID,
+					Frames:         len(track.RecoveryScores),
+					RequiredFrames: 2,
+					LiveScore:      medianScore(track.RecoveryScores),
+					Rejected:       true,
+					LivenessStatus: "疑似照片/屏幕，等待真人重新验证",
+					Scores:         copyScores(track.RecoveryScores),
+				}
+				continue
+			}
+			// The scene may change from a photo to the real student without the
+			// student ID or person box changing. Start independent PAD voting and
+			// keep the current good frame as frame 1 instead of throwing it away.
+			session.NextID++
+			track = &recognitionTrack{
+				ID:            fmt.Sprintf("%s-%d", sessionID, session.NextID),
+				FirstSeen:     now,
+				Scores:        make([]float64, 0, livenessMaxFrames),
+				RecoveryScores: nil,
+			}
+			session.Tracks[observation.Student.ID] = track
+		}
+		track.LastSeen = now
+		decisionTimeout := livenessDecisionTimeout
+		if len(track.Scores) > 0 {
+			// The short deadline is for a track with no model score yet. Once
+			// positive/negative PAD scores are being collected, allow a bounded
+			// multi-person interval before resetting the three-frame vote.
+			decisionTimeout = livenessCollectionTimeout
+		}
+
+		if observation.InferenceFailed {
+			track.InferenceFailures++
+			timedOut := track.InferenceFailures >= 3 || now.Sub(track.FirstSeen) >= decisionTimeout
+			status := "活体模型推理失败，正在重试"
+			if timedOut {
+				status = "活体检测失败，请检查模型和运行日志"
+			}
+			out[i] = trackDecision{
+				TrackID:        track.ID,
+				Frames:         len(track.Scores),
+				RequiredFrames: livenessFastFrames,
+				LiveScore:      medianScore(track.Scores),
+				Scores:         copyScores(track.Scores),
+				Similarity:     track.SimilaritySum / maxLivenessFloat(1, float64(track.Frames)),
+				TimedOut:       timedOut,
+				LivenessStatus: status,
+			}
+			if timedOut {
+				delete(session.Tracks, observation.Student.ID)
+			}
+			continue
+		}
+
+		track.InferenceFailures = 0
+		maxFrames := livenessMaxFrames
 		track.LastSeen = now
 		track.Frames++
 		track.SimilaritySum += observation.Similarity
-		if observation.LiveScore < livenessSpoofThreshold && livenessObservationSpoofQualityUsable(observation) {
+		if observation.LiveScore < livenessSpoofThreshold {
 			track.SpoofVotes++
 		}
 		track.Scores = append(track.Scores, observation.LiveScore)
@@ -186,7 +252,7 @@ func (t *recognitionTracker) Observe(sessionID string, observations []recognitio
 			track.Scores = append([]float64(nil), track.Scores[len(track.Scores)-maxFrames:]...)
 		}
 
-		average := averageScores(track.Scores)
+		median := medianScore(track.Scores)
 		liveVotes := 0
 		for _, score := range track.Scores {
 			if score >= livenessFrameThreshold {
@@ -198,10 +264,10 @@ func (t *recognitionTracker) Observe(sessionID string, observations []recognitio
 		if !track.Verified && !track.Rejected {
 			switch {
 			case len(track.Scores) >= livenessFastFrames &&
-				average < livenessSpoofThreshold && track.SpoofVotes >= 2:
+				median < livenessSpoofThreshold && track.SpoofVotes >= 2:
 				track.Rejected = true
 			case len(track.Scores) >= livenessMinFrames &&
-				average >= livenessPassThreshold &&
+				median >= livenessPassThreshold &&
 				liveVotes >= 2:
 				track.Verified = true
 			case now.Sub(track.FirstSeen) >= decisionTimeout || len(track.Scores) >= maxFrames:
@@ -229,8 +295,9 @@ func (t *recognitionTracker) Observe(sessionID string, observations []recognitio
 			TrackID:         track.ID,
 			Frames:          len(track.Scores),
 			RequiredFrames:  requiredFrames,
-			LiveScore:       average,
-			Similarity:      track.SimilaritySum / float64(track.Frames),
+			LiveScore:       median,
+			Similarity:      track.SimilaritySum / maxLivenessFloat(1, float64(track.Frames)),
+			Scores:          copyScores(track.Scores),
 			Verified:        track.Verified,
 			Rejected:        track.Rejected,
 			TimedOut:        timedOut,
@@ -307,44 +374,11 @@ func (t *recognitionTracker) Commit(sessionID, trackID string) {
 	}
 }
 
-func livenessObservationQualityUsable(observation recognitionObservation) bool {
-	exposureThreshold := livenessMinExposureScore
-	sharpnessThreshold := livenessMinSharpnessScore
-	if observation.LowLightMode {
-		exposureThreshold = livenessLowLightMinExposureScore
-		sharpnessThreshold = livenessLowLightMinSharpnessScore
-	}
-	return observation.Exposure >= exposureThreshold &&
-		observation.Sharpness >= sharpnessThreshold
-}
-
-func livenessObservationSpoofQualityUsable(observation recognitionObservation) bool {
-	if !observation.LowLightMode {
-		return true
-	}
-	return observation.Exposure >= livenessLowLightMinExposureScore &&
-		observation.Sharpness >= livenessLowLightSpoofMinSharpnessScore
-}
-
 func livenessVerifiedStatus(track *recognitionTrack) string {
 	if track.LivenessDisabled {
 		return "活体检测已关闭"
 	}
 	return "活体通过"
-}
-
-func livenessMaxFramesForMode(lowLightMode bool) int {
-	if lowLightMode {
-		return livenessLowLightMaxFrames
-	}
-	return livenessMaxFrames
-}
-
-func livenessDecisionTimeoutForMode(lowLightMode bool) time.Duration {
-	if lowLightMode {
-		return livenessLowLightDecisionTimeout
-	}
-	return livenessDecisionTimeout
 }
 
 func requiredLivenessFrames(track *recognitionTrack) int {
@@ -367,4 +401,31 @@ func averageScores(scores []float64) float64 {
 		sum += score
 	}
 	return sum / float64(len(scores))
+}
+
+func medianScore(scores []float64) float64 {
+	if len(scores) == 0 {
+		return 0
+	}
+	ordered := append([]float64(nil), scores...)
+	for i := 1; i < len(ordered); i++ {
+		value := ordered[i]
+		j := i - 1
+		for ; j >= 0 && ordered[j] > value; j-- {
+			ordered[j+1] = ordered[j]
+		}
+		ordered[j+1] = value
+	}
+	middle := len(ordered) / 2
+	if len(ordered)%2 == 1 {
+		return ordered[middle]
+	}
+	return (ordered[middle-1] + ordered[middle]) / 2
+}
+
+func copyScores(scores []float64) []float64 {
+	if len(scores) == 0 {
+		return nil
+	}
+	return append([]float64(nil), scores...)
 }

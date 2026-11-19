@@ -32,14 +32,6 @@ $ModelCommit = 'de5287c66e9e37e9f804686bf63f5a0974f68f72'
 $ModelBaseUrl = "https://raw.githubusercontent.com/hwyc888/FaceSign/$ModelCommit/models"
 $Models = @(
   @{
-    Name = 'face_detection_yunet_2023mar.onnx'
-    SHA256 = '8F2383E4DD3CFBB4553EA8718107FC0423210DC964F9F4280604804ED2552FA4'
-  },
-  @{
-    Name = 'face_recognition_sface_2021dec.onnx'
-    SHA256 = '0BA9FBFA01B5270C96627C4EF784DA859931E02F04419C829E83484087C34E79'
-  },
-  @{
     Name = 'anti-spoof-mn3.onnx'
     SHA256 = 'C4C99AF04603B62D7E44F6F4DAEB33E0DAECCC696008C0B1D62F6F5CEBBB3262'
   },
@@ -91,6 +83,48 @@ function Ensure-FaceModels {
     } finally {
       Remove-Item $temp -Force -ErrorAction SilentlyContinue
     }
+  }
+}
+
+function Ensure-ByFaceModels {
+  $sourceDir = Join-Path $source 'models\by'
+  $targetDir = Join-Path $InstallDir 'models\by'
+  New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
+
+  if (-not [string]::Equals([IO.Path]::GetFullPath($sourceDir), [IO.Path]::GetFullPath($targetDir), [StringComparison]::OrdinalIgnoreCase)) {
+    foreach ($name in @('scrfd_10g.onnx','arcface_w600k_r50.onnx','SHA256SUMS')) {
+      $sourceFile = Join-Path $sourceDir $name
+      if (Test-Path $sourceFile -PathType Leaf) {
+        Copy-Item $sourceFile (Join-Path $targetDir $name) -Force
+      }
+    }
+  }
+
+  $manifestPath = Join-Path $targetDir 'SHA256SUMS'
+  if (-not (Test-Path $manifestPath -PathType Leaf)) {
+    throw "缺少新模型校验清单：$manifestPath。请在 models\by 中放置 SCRFD、ArcFace 和 SHA256SUMS。"
+  }
+
+  $hashes = @{}
+  foreach ($line in Get-Content -LiteralPath $manifestPath) {
+    if ($line -match '^([0-9a-fA-F]{64})\s+(.+)$') {
+      $hashes[$matches[2].Trim()] = $matches[1].ToLowerInvariant()
+    }
+  }
+
+  foreach ($name in @('scrfd_10g.onnx','arcface_w600k_r50.onnx')) {
+    $modelPath = Join-Path $targetDir $name
+    if (-not (Test-Path $modelPath -PathType Leaf)) {
+      throw "缺少新模型文件：$modelPath"
+    }
+    if (-not $hashes.ContainsKey($name)) {
+      throw "SHA256SUMS 缺少 $name 的校验值"
+    }
+    $actual = (Get-FileHash $modelPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($actual -ne $hashes[$name]) {
+      throw "新模型 SHA256 校验失败：$name"
+    }
+    Write-Host "By face model ready: $name"
   }
 }
 

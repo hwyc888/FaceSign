@@ -20,6 +20,9 @@ func (s *Server) reloadFaceCache(ctx context.Context) error {
 	}
 	decoded := make([]decodedFaceSample, 0, len(samples))
 	for _, sample := range samples {
+		if sample.ModelVersion != s.engine.ModelVersion() {
+			continue
+		}
 		feature, err := face.Decode(sample.Embedding)
 		if err != nil {
 			if s.logger != nil {

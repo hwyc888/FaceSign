@@ -14,7 +14,6 @@ type appSettingsRequest struct {
 	RealtimeStatusNetwork     *bool `json:"realtime_status_network"`
 	RealtimeStatusRecognition *bool `json:"realtime_status_recognition"`
 	RealtimeStatusReason      *bool `json:"realtime_status_reason"`
-	LowLightRecognitionMode   *bool `json:"low_light_recognition_mode"`
 	DisableLivenessDetection  *bool `json:"disable_liveness_detection"`
 }
 
@@ -44,7 +43,6 @@ func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
 			in.RealtimeStatusNetwork == nil &&
 			in.RealtimeStatusRecognition == nil &&
 			in.RealtimeStatusReason == nil &&
-			in.LowLightRecognitionMode == nil &&
 			in.DisableLivenessDetection == nil {
 			writeError(w, http.StatusBadRequest, errors.New("缺少应用设置"))
 			return
@@ -77,9 +75,6 @@ func (s *Server) settings(w http.ResponseWriter, r *http.Request) {
 		}
 		if in.RealtimeStatusReason != nil {
 			settings.RealtimeStatusReason = *in.RealtimeStatusReason
-		}
-		if in.LowLightRecognitionMode != nil {
-			settings.LowLightRecognitionMode = *in.LowLightRecognitionMode
 		}
 		if in.DisableLivenessDetection != nil {
 			settings.DisableLivenessDetection = *in.DisableLivenessDetection

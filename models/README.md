@@ -1,30 +1,22 @@
-# FaceSign pinned models
+# FaceSign runtime models
 
-The ONNX model binaries are stored once in Git history and are intentionally excluded from normal Windows program artifacts.
+FaceSign By uses SCRFD-10GF + ArcFace ResNet50 for identity recognition. Place independently authorized weights under `models/by/` following [the installation guide](by/README.md).
 
-Pinned model commit:
+## Silent-Face MiniFASNet ensemble (new default)
 
-`de5287c66e9e37e9f804686bf63f5a0974f68f72`
+The default passive PAD backend is the upstream-style **MiniFASNetV2 + MiniFASNetV1SE ensemble**.
 
-Files:
+- `MiniFASNetV2.onnx`: SHA-256 `b32929adc2d9c34b9486f8c4c7bc97c1b69bc0ea9befefc380e4faae4e463907`, crop scale 2.7.
+- `MiniFASNetV1SE.onnx`: SHA-256 `ebab7f90c7833fbccd46d3a555410e78d969db5438e169b6524be444862b3676`, crop scale 4.0.
+- Both use 80x80 BGR CHW input with raw 0..255 values, no mean/scale normalization, and 3-class logits. Class 1 is the bona-fide/live class; classes 0 and 2 are attack classes.
+- Face crop follows the original Silent-Face CropImage behavior.
+- The two model live probabilities are averaged before the existing temporal PAD logic.
 
-- `face_detection_yunet_2023mar.onnx` — YuNet face detection.
-- `face_recognition_sface_2021dec.onnx` — SFace face recognition.
-- `anti-spoof-mn3.onnx` — passive RGB anti-spoofing classifier used for liveness checks.
-- `yolox_nano.onnx` — YOLOX-Nano COCO detector used only for lightweight person tracking; the full Windows package downloads the exact upstream 0.1.1rc0 ONNX asset during CI and verifies its SHA-256.
+The ONNX exports come from yakhyo/face-anti-spoofing and are based on Minivision's Silent-Face-Anti-Spoofing project. The models are Apache-2.0 licensed.
 
-Integrity values are listed in `SHA256SUMS`.
+## Legacy backends
 
-The Windows installer reuses valid installed models. A fresh machine downloads the fixed files from the pinned FaceSign commit once and verifies SHA-256 before starting FaceSign.
+- `anti-spoof-mn3.onnx`: legacy MN3 backend. Set `FACESIGN_LIVENESS_BACKEND=mn3` before startup.
+- `minifasnet-v2se.onnx`: previous FaceSign A/B model. Set `FACESIGN_LIVENESS_BACKEND=minifas` before startup.
 
-## anti-spoof-mn3 provenance
-
-`anti-spoof-mn3` is the public Open Model Zoo MobileNetV3 anti-spoof model trained on CelebA-Spoof. The upstream model description reports 128x128 RGB input and a two-class output where class 0 is real and class 1 is spoof.
-
-Source project: `kprokofi/light-weight-face-anti-spoofing`.
-Open Model Zoo entry: `models/public/anti-spoof-mn3`.
-Upstream project license: MIT. The license text is included in `ANTI_SPOOF_LICENSE.txt`.
-
-## YOLOX-Nano provenance
-
-`yolox_nano.onnx` is the official YOLOX-Nano 416x416 ONNX release asset from Megvii-BaseDetection/YOLOX tag `0.1.1rc0`. FaceSign uses only the COCO `person` class for entrance tracking. YOLOX is licensed under Apache-2.0; the upstream license is included as `YOLOX_LICENSE.txt`.
+The legacy backends remain available for comparison; the new default is the Silent-Face ensemble.

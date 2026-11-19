@@ -31,10 +31,18 @@ func (s *Store) CreateStudent(ctx context.Context, studentNo, name, className st
 }
 
 func (s *Store) CreateStudentWithFace(ctx context.Context, studentNo, name, className, label string, embedding []byte) (Student, FaceSampleInfo, error) {
+	return s.CreateStudentWithFaceVersion(ctx, studentNo, name, className, label, "arcface-r50-w600k-v1", embedding)
+}
+
+func (s *Store) CreateStudentWithFaceVersion(ctx context.Context, studentNo, name, className, label, modelVersion string, embedding []byte) (Student, FaceSampleInfo, error) {
 	studentNo = strings.TrimSpace(studentNo)
 	name = strings.TrimSpace(name)
 	className = strings.TrimSpace(className)
 	label = normalizeFaceLabel(label)
+	modelVersion = strings.TrimSpace(modelVersion)
+	if modelVersion == "" {
+		return Student{}, FaceSampleInfo{}, errors.New("face model version is required")
+	}
 	if studentNo == "" || name == "" {
 		return Student{}, FaceSampleInfo{}, errors.New("student number and name are required")
 	}
@@ -61,8 +69,8 @@ func (s *Store) CreateStudentWithFace(ctx context.Context, studentNo, name, clas
 		return Student{}, FaceSampleInfo{}, err
 	}
 	sampleResult, err := tx.ExecContext(ctx,
-		"INSERT INTO face_samples(student_id,embedding,label,created_at) VALUES(?,?,?,?)",
-		studentID, embedding, label, now.Unix(),
+		"INSERT INTO face_samples(student_id,embedding,label,model_version,created_at) VALUES(?,?,?,?,?)",
+		studentID, embedding, label, modelVersion, now.Unix(),
 	)
 	if err != nil {
 		return Student{}, FaceSampleInfo{}, fmt.Errorf("create face sample: %w", err)
@@ -86,8 +94,9 @@ func (s *Store) CreateStudentWithFace(ctx context.Context, studentNo, name, clas
 	info := FaceSampleInfo{
 		ID:        sampleID,
 		StudentID: studentID,
-		Label:     label,
-		CreatedAt: now.Format("2006-01-02 15:04:05"),
+		Label:        label,
+		ModelVersion: modelVersion,
+		CreatedAt:    now.Format("2006-01-02 15:04:05"),
 	}
 	return student, info, nil
 }

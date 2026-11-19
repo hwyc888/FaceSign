@@ -24,18 +24,20 @@ type Class struct {
 }
 
 type FaceSample struct {
-	ID        int64
-	Student   Student
-	Embedding []byte
-	Label     string
-	CreatedAt int64
+	ID           int64
+	Student      Student
+	Embedding    []byte
+	Label        string
+	ModelVersion string
+	CreatedAt    int64
 }
 
 type FaceSampleInfo struct {
-	ID        int64  `json:"id"`
-	StudentID int64  `json:"student_id"`
-	Label     string `json:"label"`
-	CreatedAt string `json:"created_at"`
+	ID           int64  `json:"id"`
+	StudentID    int64  `json:"student_id"`
+	Label        string `json:"label"`
+	ModelVersion string `json:"model_version"`
+	CreatedAt    string `json:"created_at"`
 }
 
 type Attendance struct {

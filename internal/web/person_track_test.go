@@ -146,7 +146,7 @@ func TestFaceQualityExplainsLowLightAndBlur(t *testing.T) {
 			dark.Set(x, y, color.RGBA{R: 18, G: 18, B: 18, A: 255})
 		}
 	}
-	if got := scoreFaceQuality(dark, detected).Hint; got != "光线太暗，请增加正面补光" {
+	if got := scoreFaceQuality(dark, detected).Hint; got != "低光环境，活体模型直接判定" {
 		t.Fatalf("low-light hint=%q", got)
 	}
 

@@ -14,6 +14,10 @@ func (s *Store) SetFaceSample(ctx context.Context, studentID int64, embedding []
 }
 
 func (s *Store) AddFaceSample(ctx context.Context, studentID int64, label string, embedding []byte) (FaceSampleInfo, error) {
+	return s.AddFaceSampleWithVersion(ctx, studentID, label, "arcface-r50-w600k-v1", embedding)
+}
+
+func (s *Store) AddFaceSampleWithVersion(ctx context.Context, studentID int64, label, modelVersion string, embedding []byte) (FaceSampleInfo, error) {
 	if studentID <= 0 {
 		return FaceSampleInfo{}, errors.New("invalid student id")
 	}
@@ -21,10 +25,14 @@ func (s *Store) AddFaceSample(ctx context.Context, studentID int64, label string
 		return FaceSampleInfo{}, errors.New("empty face embedding")
 	}
 	label = normalizeFaceLabel(label)
+	modelVersion = strings.TrimSpace(modelVersion)
+	if modelVersion == "" {
+		return FaceSampleInfo{}, errors.New("face model version is required")
+	}
 	now := time.Now()
 	result, err := s.db.ExecContext(ctx,
-		"INSERT INTO face_samples(student_id,embedding,label,created_at) VALUES(?,?,?,?)",
-		studentID, embedding, label, now.Unix(),
+		"INSERT INTO face_samples(student_id,embedding,label,model_version,created_at) VALUES(?,?,?,?,?)",
+		studentID, embedding, label, modelVersion, now.Unix(),
 	)
 	if err != nil {
 		return FaceSampleInfo{}, err
@@ -36,8 +44,9 @@ func (s *Store) AddFaceSample(ctx context.Context, studentID int64, label string
 	return FaceSampleInfo{
 		ID:        id,
 		StudentID: studentID,
-		Label:     label,
-		CreatedAt: now.Format("2006-01-02 15:04:05"),
+		Label:        label,
+		ModelVersion: modelVersion,
+		CreatedAt:    now.Format("2006-01-02 15:04:05"),
 	}, nil
 }
 
@@ -54,7 +63,7 @@ func normalizeFaceLabel(label string) string {
 
 func (s *Store) ListFaceSamples(ctx context.Context) ([]FaceSample, error) {
 	rows, err := s.db.QueryContext(ctx, `
-        SELECT f.id,s.id,s.student_no,s.name,s.class_name,f.embedding,f.label,f.created_at
+        SELECT f.id,s.id,s.student_no,s.name,s.class_name,f.embedding,f.label,f.model_version,f.created_at
         FROM face_samples f
         JOIN students s ON s.id=f.student_id
         ORDER BY s.id,f.created_at,f.id`)
@@ -73,6 +82,7 @@ func (s *Store) ListFaceSamples(ctx context.Context) ([]FaceSample, error) {
 			&sample.Student.ClassName,
 			&sample.Embedding,
 			&sample.Label,
+			&sample.ModelVersion,
 			&sample.CreatedAt,
 		); err != nil {
 			return nil, err

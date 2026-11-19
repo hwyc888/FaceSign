@@ -1,6 +1,7 @@
 package inference
 
 import (
+	"context"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -36,5 +37,27 @@ func TestAcquireBoundsTenConcurrentClientsToTwoInferenceTasks(t *testing.T) {
 	wait.Wait()
 	if got := maximum.Load(); got != MaxConcurrent {
 		t.Fatalf("maximum concurrent inference=%d, want %d", got, MaxConcurrent)
+	}
+}
+
+func TestAcquireContextReturnsWhenQueueDeadlineExpires(t *testing.T) {
+	releases := make([]func(), MaxConcurrent)
+	for i := range releases {
+		releases[i] = Acquire()
+	}
+	defer func() {
+		for _, release := range releases {
+			release()
+		}
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Millisecond)
+	defer cancel()
+	started := time.Now()
+	if _, err := AcquireContext(ctx); err == nil {
+		t.Fatal("expected context deadline while all inference slots are occupied")
+	}
+	if time.Since(started) > time.Second {
+		t.Fatal("AcquireContext did not respect its deadline")
 	}
 }

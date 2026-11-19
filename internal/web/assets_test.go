@@ -1503,39 +1503,35 @@ func TestRecognitionUIRetriesBusySharedCameraFrames(t *testing.T) {
 }
 
 
-func TestLowLightRecognitionSettingExplainsAutomaticCheckinAndSpoofProtection(t *testing.T) {
+func TestLowLightRecognitionFeatureRemovedFromSettingsUI(t *testing.T) {
 	index, err := assets.ReadFile("assets/index.html")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{
-		`id="lowLightRecognitionMode"`,
-		`id="lowLightRecognitionModeState"`,
-		"夜间低光识别模式",
-		"连续匹配的人脸",
-		"无需管理员核验",
-		"照片 / 屏幕攻击仍拒绝签到",
-	} {
-		if !strings.Contains(string(index), want) {
-			t.Fatalf("low-light recognition settings UI missing %q", want)
+	for _, removed := range []string{"lowLightRecognitionMode", "lowLightRecognitionModeState", "夜间低光识别模式", "启用夜间低光识别模式"} {
+		if strings.Contains(string(index), removed) {
+			t.Fatalf("removed low-light UI remains: %q", removed)
 		}
 	}
-	scriptData, err := assets.ReadFile("assets/js/settings.js")
+	script, err := assets.ReadFile("assets/js/settings.js")
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, want := range []string{
-		"low_light_recognition_mode",
-		"lowLightRecognitionMode",
-		"连续匹配且无可信照片/屏幕攻击证据时自动签到",
-	} {
-		if !strings.Contains(string(scriptData), want) {
-			t.Fatalf("low-light recognition setting frontend missing %q", want)
+	for _, removed := range []string{"lowLightRecognitionMode", "low_light_recognition_mode"} {
+		if strings.Contains(string(script), removed) {
+			t.Fatalf("removed low-light setting handler remains: %q", removed)
 		}
+	}
+	recognition, err := assets.ReadFile("assets/js/recognition.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(recognition), "仅供诊断") || strings.Contains(string(recognition), "低光自动识别通过") {
+		t.Fatal("recognition UI must show diagnostic-only image metrics, not low-light auto-pass")
 	}
 }
 
-func TestRecognitionUIUsesServerLivenessTimeoutForLowLightMode(t *testing.T) {
+func TestRecognitionUIUsesServerLivenessTimeout(t *testing.T) {
 	data, err := assets.ReadFile("assets/js/recognition.js")
 	if err != nil {
 		t.Fatal(err)
@@ -1553,7 +1549,7 @@ func TestRecognitionUIUsesServerLivenessTimeoutForLowLightMode(t *testing.T) {
 	}
 }
 
-func TestLowLightRecognitionUIHasNoManualAttendanceAction(t *testing.T) {
+func TestRecognitionUIHasNoManualAttendanceAction(t *testing.T) {
 	data, err := assets.ReadFile("assets/js/recognition.js")
 	if err != nil {
 		t.Fatal(err)
@@ -1571,7 +1567,6 @@ func TestLowLightRecognitionUIHasNoManualAttendanceAction(t *testing.T) {
 		}
 	}
 	for _, want := range []string{
-		"f.liveness_status === '低光自动识别通过'",
 		"疑似照片/屏幕，拒绝签到",
 		"Number(r.face_quality_threshold || 0.45)",
 	} {
@@ -1598,8 +1593,8 @@ func TestDisableLivenessDetectionSettingUI(t *testing.T) {
 		`id="disableLivenessDetectionState"`,
 		"关闭活体检测",
 		"照片 / 屏幕视频回放防伪",
-		"画面质量门槛",
-		"夜间低光模式也不会因身份匹配稳定而绕过活体验证",
+		"基本画面质量要求",
+		"明亮和暗光环境均由活体模型独立判定",
 	} {
 		if !strings.Contains(string(index), want) {
 			t.Fatalf("disable-liveness setting UI missing %q", want)

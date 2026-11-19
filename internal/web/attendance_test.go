@@ -13,15 +13,15 @@ import (
 	"github.com/hwyc888/FaceSign/internal/store"
 )
 
-func TestAutomaticLowLightUncertainFramesDoNotWriteAttendance(t *testing.T) {
+func TestDarkLowModelScoresDoNotWriteAttendance(t *testing.T) {
 	ctx := context.Background()
-	st, err := store.Open(filepath.Join(t.TempDir(), "auto-low-light-attendance.db"))
+	st, err := store.Open(filepath.Join(t.TempDir(), "dark-low-score-attendance.db"))
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer st.Close()
 
-	student, err := st.CreateStudent(ctx, "S-AUTO", "夜间测试学生", "测试班")
+	student, err := st.CreateStudent(ctx, "S-AUTO", "暗光低分测试学生", "测试班")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,14 +29,14 @@ func TestAutomaticLowLightUncertainFramesDoNotWriteAttendance(t *testing.T) {
 	tracker := newRecognitionTracker()
 	now := time.Now()
 	var decision trackDecision
-	for i := 0; i < livenessLowLightMaxFrames; i++ {
+	for i := 0; i < livenessMaxFrames; i++ {
 		decision = tracker.Observe("auto-session", []recognitionObservation{{
 			Student: student, Similarity: 0.86, LiveScore: 0.007,
-			Exposure: 0.25, Sharpness: 0.055, LowLightMode: true,
+			Exposure: 0.25, Sharpness: 0.055,
 		}}, now.Add(time.Duration(i)*200*time.Millisecond))[0]
 	}
-	if decision.Verified || decision.Rejected || decision.NeedsAttendance || !decision.TimedOut {
-		t.Fatalf("uncertain low-light frames must not trigger automatic attendance: %#v", decision)
+	if !decision.Rejected || decision.Verified || decision.NeedsAttendance || decision.Frames != livenessMinFrames {
+		t.Fatalf("three low live-model scores must be rejected without attendance: %#v", decision)
 	}
 
 	s := &Server{store: st}
@@ -51,7 +51,7 @@ func TestAutomaticLowLightUncertainFramesDoNotWriteAttendance(t *testing.T) {
 		t.Fatal(err)
 	}
 	if len(records) != 0 {
-		t.Fatalf("uncertain low-light frames must not create attendance records: %#v", records)
+		t.Fatalf("low-score frames must not create attendance records: %#v", records)
 	}
 }
 

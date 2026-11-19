@@ -85,6 +85,8 @@ var (
 
 	queryTaskStateFn = queryTaskState
 	faceSignPIDsFn    = faceSignPIDs
+	faceSignExePathsFn = faceSignExePaths
+	ensureTaskTargetsCurrentInstallFn = ensureTaskTargetsCurrentInstall
 	execHiddenFn      = execHidden
 	sleepFn           = time.Sleep
 
@@ -364,7 +366,7 @@ func windowProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 func createControls(hwnd syscall.Handle) {
 	font, _, _ := procGetStockObject.Call(defaultGUIFont)
 	createStatic(hwnd, "FaceSign 服务管理", 24, 20, 650, 28)
-	createStatic(hwnd, "便携模式直接运行本目录 FaceSign.exe；需要开机启动时点“安装/注册本目录”，程序和数据不会复制到 C 盘。", 24, 52, 650, 38)
+	createStatic(hwnd, "启动前自动检查并停止其他目录中的旧版 FaceSign，确保计划任务指向当前目录；数据和证书路径保持不变。", 24, 52, 650, 38)
 
 	statusBox = createControl("EDIT", "", uintptr(wsChild|wsVisible|wsBorder|wsVScroll|esMultiline|esReadonly|esAutoVScroll), 24, 96, 650, 190, hwnd, 0)
 	procSendMessageW.Call(uintptr(statusBox), wmSetFont, font, 1)
@@ -588,10 +590,29 @@ func queryTaskState() (string, error) {
 }
 
 func startFaceSign() error {
-	// Repeated Start is intentionally a fast no-op. Re-running an already active
-	// scheduled task can block or return an error even though FaceSign is healthy.
-	if len(faceSignPIDsFn()) > 0 {
-		return errAlreadyRunning
+	expectedExe := filepath.Clean(filepath.Join(installDirFlag, "FaceSign.exe"))
+	runningPIDs := faceSignPIDsFn()
+	if len(runningPIDs) > 0 {
+		runningPaths := faceSignExePathsFn()
+		allCurrent := len(runningPaths) == len(runningPIDs)
+		for _, path := range runningPaths {
+			if !strings.EqualFold(filepath.Clean(path), expectedExe) {
+				allCurrent = false
+				break
+			}
+		}
+		if allCurrent {
+			if err := ensureTaskTargetsCurrentInstallFn(); err != nil {
+				return fmt.Errorf("修正 FaceSign 开机任务路径失败: %w", err)
+			}
+			return errAlreadyRunning
+		}
+
+		// A process from another release directory owns the service name/ports.
+		// Stop it completely before the current release is allowed to start.
+		if err := stopFaceSign(); err != nil && !errors.Is(err, errAlreadyStopped) {
+			return fmt.Errorf("旧版 FaceSign 尚未完全退出，取消新版启动: %w", err)
+		}
 	}
 
 	state, err := queryTaskStateFn()
@@ -600,6 +621,9 @@ func startFaceSign() error {
 	}
 	if strings.EqualFold(state, "missing") {
 		return errors.New("FaceSign 计划任务尚未安装。便携模式请直接运行本目录 FaceSign.exe；需要开机启动请点击“安装/注册本目录”")
+	}
+	if err := ensureTaskTargetsCurrentInstallFn(); err != nil {
+		return fmt.Errorf("修正 FaceSign 开机任务路径失败: %w", err)
 	}
 	wasDisabled := strings.EqualFold(state, "disabled")
 	if wasDisabled {
@@ -1131,6 +1155,66 @@ func commandErrorMessage(name string, out []byte, err error) string {
 		return fmt.Sprintf("%s 执行失败: %v", filepath.Base(name), err)
 	}
 	return message
+}
+
+func faceSignExePaths() []string {
+	script := "$items=Get-CimInstance Win32_Process -Filter \"Name='FaceSign.exe'\" -ErrorAction SilentlyContinue; foreach($item in $items){ if($item.ExecutablePath){ [Console]::WriteLine($item.ExecutablePath) } }"
+	out, err := execHiddenFn("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script)
+	if err != nil {
+		return nil
+	}
+	var paths []string
+	for _, line := range strings.Split(strings.ReplaceAll(string(out), "\r\n", "\n"), "\n") {
+		path := strings.TrimSpace(line)
+		if path != "" {
+			paths = append(paths, path)
+		}
+	}
+	return paths
+}
+
+// ensureTaskTargetsCurrentInstall updates only Execute, WorkingDirectory and
+// --assets. Existing --data, --tls-dir, ports and other service arguments are
+// preserved so changing releases does not move the user's database or TLS CA.
+func ensureTaskTargetsCurrentInstall() error {
+	exe := filepath.Clean(filepath.Join(installDirFlag, "FaceSign.exe"))
+	dir := filepath.Clean(installDirFlag)
+	if info, err := os.Stat(exe); err != nil || info.IsDir() {
+		return fmt.Errorf("当前管理器目录缺少 FaceSign.exe: %s", exe)
+	}
+	script := fmt.Sprintf(`$ErrorActionPreference='Stop'
+$task = Get-ScheduledTask -TaskName 'FaceSign' -ErrorAction Stop
+$oldAction = @($task.Actions)[0]
+$exe = %s
+$dir = %s
+$taskArgs = [string]$oldAction.Arguments
+$pattern = '(?i)(^|\s)--assets\s+(?:"([^"]*)"|(\S+))'
+$match = [regex]::Match($taskArgs, $pattern)
+if ($match.Success) {
+  $currentAssets = if ($match.Groups[2].Success) { $match.Groups[2].Value } else { $match.Groups[3].Value }
+  if (-not [string]::Equals($currentAssets, $dir, [StringComparison]::OrdinalIgnoreCase)) {
+    $taskArgs = [regex]::Replace($taskArgs, $pattern, [System.Text.RegularExpressions.MatchEvaluator]{
+      param($m)
+      return $m.Groups[1].Value + '--assets "' + $dir + '"'
+    }, 1)
+  }
+} else {
+  $taskArgs = ($taskArgs + ' --assets "' + $dir + '"').Trim()
+}
+$changed = (-not [string]::Equals([string]$oldAction.Execute, $exe, [StringComparison]::OrdinalIgnoreCase)) -or
+           (-not [string]::Equals([string]$oldAction.WorkingDirectory, $dir, [StringComparison]::OrdinalIgnoreCase)) -or
+           (-not [string]::Equals([string]$oldAction.Arguments, $taskArgs, [StringComparison]::Ordinal))
+if ($changed) {
+  $newAction = New-ScheduledTaskAction -Execute $exe -Argument $taskArgs -WorkingDirectory $dir
+  Set-ScheduledTask -TaskName 'FaceSign' -Action $newAction | Out-Null
+}
+[Console]::WriteLine('FaceSign task target verified')
+`, powerShellLiteral(exe), powerShellLiteral(dir))
+	_, err := execHiddenFn("powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script)
+	if err != nil {
+		return fmt.Errorf("更新计划任务启动路径失败: %w", err)
+	}
+	return nil
 }
 
 func faceSignPIDs() []int {
