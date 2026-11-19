@@ -54,7 +54,7 @@ jobs:
           unzip -q "$RUNNER_TEMP/onnxruntime/$NUGET_PACKAGE" 'runtimes/linux-x64/native/*' -d "$RUNNER_TEMP/onnxruntime/nuget"
           ORT_NATIVE="$RUNNER_TEMP/onnxruntime/nuget/runtimes/linux-x64/native"
           test -f "$ORT_NATIVE/libonnxruntime.so"
-          find "$ORT_NATIVE" -maxdepth 1 -type f -name '*.so*' -exec cp {} dist/ \\;
+          find "$ORT_NATIVE" -maxdepth 1 -type f -name '*.so*' -exec cp {} dist/ \;
           cp "$ORT_NATIVE/libonnxruntime.so" "dist/libonnxruntime.so.${ORT_VERSION}"
           test -f "dist/libonnxruntime.so.${ORT_VERSION}"
           LD_LIBRARY_PATH="$GITHUB_WORKSPACE/dist:${LD_LIBRARY_PATH:-}" ldd "dist/libonnxruntime.so.${ORT_VERSION}" | tee "$RUNNER_TEMP/onnxruntime/ldd.txt"
