@@ -1,0 +1,27 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+FACESIGN_SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+FACESIGN_APP_DIR="$(cd -- "$FACESIGN_SCRIPT_DIR/../.." && pwd)"
+FACESIGN_BIN="${FACESIGN_BIN:-$FACESIGN_APP_DIR/FaceSign}"
+FACESIGN_DATA_DIR="${FACESIGN_DATA_DIR:-${XDG_DATA_HOME:-$HOME/.local/share}/facesign}"
+FACESIGN_STATE_DIR="${FACESIGN_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/facesign}"
+FACESIGN_BY_MODEL_DIR="${FACESIGN_BY_MODEL_DIR:-$FACESIGN_APP_DIR/models/by}"
+FACESIGN_PID_FILE="${FACESIGN_PID_FILE:-$FACESIGN_STATE_DIR/facesign.pid}"
+FACESIGN_LOG_FILE="${FACESIGN_LOG_FILE:-$FACESIGN_STATE_DIR/facesign.log}"
+FACESIGN_HTTP_PORT="${FACESIGN_HTTP_PORT:-8080}"
+FACESIGN_HTTP_ADDR="${FACESIGN_HTTP_ADDR:-0.0.0.0:$FACESIGN_HTTP_PORT}"
+FACESIGN_HTTPS_PORT="${FACESIGN_HTTPS_PORT:-8443}"
+FACESIGN_HTTPS_ADDR="${FACESIGN_HTTPS_ADDR:-0.0.0.0:$FACESIGN_HTTPS_PORT}"
+FACESIGN_TLS_DIR="${FACESIGN_TLS_DIR:-$FACESIGN_DATA_DIR/tls}"
+FACESIGN_DB_PATH="${FACESIGN_DB_PATH:-$FACESIGN_DATA_DIR/facesign.db}"
+FACESIGN_HEALTH_URL="${FACESIGN_HEALTH_URL:-http://127.0.0.1:$FACESIGN_HTTP_PORT/api/health}"
+
+facesign_pid_matches() {
+  local pid="${1:-}"
+  [[ -n "$pid" ]] || return 1
+  kill -0 "$pid" 2>/dev/null || return 1
+  local args
+  args="$(ps -p "$pid" -o args= 2>/dev/null || true)"
+  [[ "$args" == *"$FACESIGN_BIN"* ]]
+}
