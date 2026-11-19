@@ -57,7 +57,7 @@ jobs:
           find "$ORT_NATIVE" -maxdepth 1 -type f -name '*.so*' -exec cp {} dist/ \;
           cp "$ORT_NATIVE/libonnxruntime.so" "dist/libonnxruntime.so.${ORT_VERSION}"
           test -f "dist/libonnxruntime.so.${ORT_VERSION}"
-          ldd "dist/libonnxruntime.so.${ORT_VERSION}" | tee "$RUNNER_TEMP/onnxruntime/ldd.txt"
+          LD_LIBRARY_PATH="$GITHUB_WORKSPACE/dist:${LD_LIBRARY_PATH:-}" ldd "dist/libonnxruntime.so.${ORT_VERSION}" | tee "$RUNNER_TEMP/onnxruntime/ldd.txt"
           if grep -q 'not found' "$RUNNER_TEMP/onnxruntime/ldd.txt"; then
             echo "ONNX Runtime has unresolved shared-library dependencies"
             exit 1
@@ -111,6 +111,7 @@ jobs:
 
       - name: Smoke test packaged ONNX models
         env:
+          LD_LIBRARY_PATH: ${{ github.workspace }}/dist
           FACESIGN_TEST_ONNX_DLL: ${{ github.workspace }}/dist/libonnxruntime.so.1.26.0
           FACESIGN_TEST_SILENT_V2_MODEL: ${{ github.workspace }}/dist/models/MiniFASNetV2.onnx
           FACESIGN_TEST_MINIFAS_MODEL: ${{ github.workspace }}/dist/models/minifasnet-v2se.onnx
