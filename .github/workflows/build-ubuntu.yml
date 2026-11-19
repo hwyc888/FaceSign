@@ -26,10 +26,13 @@ jobs:
           go-version: '1.26.6'
           cache: true
 
-      - name: Install native build and runtime tools
+      - name: Verify native build prerequisites
         run: |
-          sudo apt-get update
-          sudo apt-get install -y build-essential ca-certificates curl ffmpeg libstdc++6 libgomp1
+          command -v gcc
+          command -v curl
+          command -v unzip
+          ldconfig -p | grep -q 'libstdc++.so.6'
+          ldconfig -p | grep -q 'libgomp.so.1'
 
       - name: Test, vet and validate frontend scripts
         run: |
