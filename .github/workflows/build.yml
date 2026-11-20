@@ -240,6 +240,37 @@ jobs:
           Copy-Item 'dist' 'dist-full' -Recurse
           Copy-Item 'dist' 'dist-lite' -Recurse
 
+          function Invoke-VerifiedModelDownload {
+            param(
+              [string]$Uri,
+              [string]$Destination,
+              [string]$ExpectedSHA,
+              [string]$ModelName
+            )
+            $lastError = $null
+            for ($attempt = 1; $attempt -le 4; $attempt++) {
+              try {
+                Remove-Item -LiteralPath $Destination -Force -ErrorAction SilentlyContinue
+                Invoke-WebRequest -Uri $Uri -OutFile $Destination -UseBasicParsing -TimeoutSec 120 -ErrorAction Stop
+                $actual = (Get-FileHash -LiteralPath $Destination -Algorithm SHA256).Hash.ToLowerInvariant()
+                if ($actual -ne $ExpectedSHA.ToLowerInvariant()) {
+                  throw ('SHA-256 mismatch for ' + $ModelName + ': ' + $actual)
+                }
+                Write-Host ('Verified model download: ' + $ModelName)
+                return
+              } catch {
+                $lastError = $_
+                Remove-Item -LiteralPath $Destination -Force -ErrorAction SilentlyContinue
+                if ($attempt -lt 4) {
+                  $delay = [Math]::Min(15, 2 * $attempt)
+                  Write-Warning ('Model download attempt {0}/4 failed for {1}: {2}. Retrying in {3}s.' -f $attempt, $ModelName, $_.Exception.Message, $delay)
+                  Start-Sleep -Seconds $delay
+                }
+              }
+            }
+            throw ('Unable to download and verify ' + $ModelName + ' after 4 attempts: ' + $lastError.Exception.Message)
+          }
+
           New-Item -ItemType Directory -Force -Path 'dist-full\models\by' | Out-Null
           Copy-Item 'models\by\README.md' 'dist-full\models\by\README.md' -Force
           New-Item -ItemType Directory -Force -Path 'dist-full\models' | Out-Null
@@ -269,19 +300,11 @@ jobs:
           )
           foreach ($silent in $silentModels) {
             $silentPath = Join-Path 'dist-full\models' $silent.Name
-            Invoke-WebRequest -Uri $silent.Url -OutFile $silentPath -UseBasicParsing
-            $actualSilent = (Get-FileHash $silentPath -Algorithm SHA256).Hash.ToLowerInvariant()
-            if ($actualSilent -ne $silent.Sha) {
-              throw "Silent-Face checksum mismatch for $($silent.Name): $actualSilent"
-            }
+            Invoke-VerifiedModelDownload -Uri $silent.Url -Destination $silentPath -ExpectedSHA $silent.Sha -ModelName $silent.Name
           }
 
           $personModel = 'dist-full\models\yolox_nano.onnx'
-          Invoke-WebRequest -Uri 'https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/yolox_nano.onnx' -OutFile $personModel -UseBasicParsing
-          $personHash = (Get-FileHash $personModel -Algorithm SHA256).Hash.ToLowerInvariant()
-          if ($personHash -ne 'c789161ed43c8269fcd4e67c67eeeb4e80c622da2eb296a20bc6007bd18a0b7d') {
-            throw "YOLOX-Nano checksum mismatch: $personHash"
-          }
+          Invoke-VerifiedModelDownload -Uri 'https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/yolox_nano.onnx' -Destination $personModel -ExpectedSHA 'c789161ed43c8269fcd4e67c67eeeb4e80c622da2eb296a20bc6007bd18a0b7d' -ModelName 'YOLOX-Nano'
 
           # Face identity weights are not stored in this repository because
           # upstream checkpoint terms restrict redistribution. If the authorized
