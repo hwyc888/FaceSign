@@ -1642,3 +1642,36 @@ func TestAdminControlsUseQuerySelectorAll(t *testing.T) {
 		}
 	}
 }
+func TestSystemMetricsAndAttendanceSnapshotUI(t *testing.T) {
+	data, err := assets.ReadFile("assets/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	html := string(data)
+	for _, want := range []string{
+		`id="systemCpuValue"`,
+		`id="systemMemoryValue"`,
+		`id="recognitionRateValue"`,
+		`id="recognitionRateChart"`,
+		`id="attendanceSnapshotCacheCount"`,
+		`id="clearAttendanceSnapshotCache"`,
+		`id="attendanceSnapshotModal"`,
+		`<th>识别截图</th>`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("system metrics / attendance snapshot UI missing %s", want)
+		}
+	}
+}
+
+func TestAttendanceSnapshotUIOnlyOffersViewingToAdmins(t *testing.T) {
+	data, err := assets.ReadFile("assets/js/attendance.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(data)
+	if !strings.Contains(script, "currentUser.is_admin") ||
+		!strings.Contains(script, "data-view-attendance-snapshot") {
+		t.Fatal("attendance snapshot action must be restricted to administrator accounts")
+	}
+}

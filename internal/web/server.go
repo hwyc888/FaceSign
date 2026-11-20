@@ -37,6 +37,8 @@ type Server struct {
 	debugMu            sync.RWMutex
 	debugDefaults      store.RecognitionThresholds
 	debugCurrent       store.RecognitionThresholds
+	metricsMu          sync.Mutex
+	recognitionMetrics *recognitionMetrics
 	version            string
 	home               []byte
 	static             http.Handler
@@ -69,6 +71,7 @@ func New(logger *slog.Logger, st *store.Store, engine *face.Engine, live *livene
 		personEngine:        personEngine,
 		tracker:            newRecognitionTracker(),
 		personTracker:      newPersonTracker(),
+		recognitionMetrics: newRecognitionMetrics(),
 		personDetectionCache:  make(map[string]personDetectionCacheEntry),
 		cameraRecognitionBusy:   make(map[int64]bool),
 		cameraRecognitionNextAt: make(map[int64]time.Time),
@@ -125,6 +128,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/recognition-stats", s.recognitionStats)
 	mux.HandleFunc("/api/attendance/seats", s.attendanceSeats)
 	mux.HandleFunc("/api/attendance", s.attendance)
+	mux.HandleFunc("/api/attendance/", s.attendanceSnapshot)
+	mux.HandleFunc("/api/cache/attendance-snapshots", s.attendanceSnapshotCache)
 	mux.HandleFunc("/api/cameras", s.cameras)
 	mux.HandleFunc("/api/cameras/test", s.cameraTest)
 	mux.HandleFunc("/api/host-camera-devices", s.hostCameraDevices)
