@@ -78,7 +78,6 @@ func (s *Server) faceCompare(w http.ResponseWriter, r *http.Request) {
 		"face_count": 1,
 		"library_students": len(byStudent),
 		"best": best,
-		"candidates": ranked,
 		"matched": best != nil && best.AboveThreshold,
 	})
 }

@@ -27,7 +27,7 @@ function setFaceComparePhoto(blob) {
 function resetFaceComparePage() {
   stopFaceCompareCamera();
   $('#faceCompareCapture').disabled = true;
-  $('#faceCompareCloseCamera').disabled = true;
+  $('#faceCompareCloseCamera').disabled = false;
   $('#faceCompareOpenCamera').disabled = false;
 }
 
@@ -35,7 +35,7 @@ $('#faceCompareFile').addEventListener('change', event => {
   const file = event.target.files && event.target.files[0];
   if (!file) return;
   if (!['image/jpeg', 'image/png'].includes(file.type)) {
-    toast('请选择 JPG、PNG 或 WEBP 图片');
+    toast('请选择 JPG 或 PNG 图片');
     event.target.value = '';
     return;
   }
@@ -55,6 +55,7 @@ async function openFaceCompareCamera() {
     return;
   }
   try {
+    $('#faceCompareCameraModal').classList.remove('hidden');
     faceCompareStream = await navigator.mediaDevices.getUserMedia({
       video: {facingMode: 'user', width: {ideal: 1280}, height: {ideal: 720}},
       audio: false
@@ -80,6 +81,7 @@ function stopFaceCompareCamera() {
   const video = $('#faceCompareCamera');
   if (video) video.srcObject = null;
   $('#faceCompareCameraWrap').classList.add('hidden');
+  $('#faceCompareCameraModal').classList.add('hidden');
 }
 
 async function captureFaceComparePhoto() {
@@ -98,6 +100,9 @@ async function captureFaceComparePhoto() {
     toast('拍照失败，请重试');
     return;
   }
+  stopFaceCompareCamera();
+  $('#faceCompareCapture').disabled = true;
+  $('#faceCompareOpenCamera').disabled = false;
   setFaceComparePhoto(blob);
   toast('照片已拍摄，可以开始比对');
 }
@@ -124,17 +129,6 @@ function renderFaceCompareResult(result) {
       '<span>该学生样本数：' + Number(best.sample_count || 0) + '</span>';
   }
 
-  const candidates = Array.isArray(result.candidates) ? result.candidates : [];
-  $('#faceCompareCandidates').innerHTML = candidates.map((item, index) => {
-    const score = Math.max(0, Math.min(1, Number(item.similarity) || 0));
-    return '<div class="face-compare-candidate">' +
-      '<span class="face-compare-rank">' + (index + 1) + '</span>' +
-      '<div class="face-compare-candidate-main"><strong>' + esc(item.student.name) + '</strong>' +
-      '<small>' + esc(item.student.student_no) + ' · ' + esc(item.student.class_name || '-') + '</small>' +
-      '<div class="face-compare-score-track"><i style="width:' + (score * 100).toFixed(1) + '%"></i></div></div>' +
-      '<strong class="face-compare-candidate-score">' + (score * 100).toFixed(1) + '%</strong>' +
-      '</div>';
-  }).join('') || '<p class="muted">暂无可比较的人脸样本。</p>';
   $('#faceCompareModelInfo').textContent = '模型：' + (result.engine || 'ArcFace ResNet50') +
     ' · 版本：' + (result.model_version || '--') +
     ' · 人脸库学生：' + Number(result.library_students || 0) + ' 人';
@@ -145,7 +139,6 @@ $('#faceCompareCapture').addEventListener('click', captureFaceComparePhoto);
 $('#faceCompareCloseCamera').addEventListener('click', () => {
   stopFaceCompareCamera();
   $('#faceCompareCapture').disabled = true;
-  $('#faceCompareCloseCamera').disabled = true;
   $('#faceCompareOpenCamera').disabled = false;
 });
 
@@ -170,4 +163,19 @@ $('#faceCompareRun').addEventListener('click', async () => {
 window.addEventListener('beforeunload', () => {
   stopFaceCompareCamera();
   if (faceComparePreviewURL) URL.revokeObjectURL(faceComparePreviewURL);
+});
+
+$('#faceCompareCameraModal').addEventListener('click', event => {
+  if (event.target === $('#faceCompareCameraModal')) {
+    stopFaceCompareCamera();
+    $('#faceCompareCapture').disabled = true;
+    $('#faceCompareOpenCamera').disabled = false;
+  }
+});
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && !$('#faceCompareCameraModal').classList.contains('hidden')) {
+    stopFaceCompareCamera();
+    $('#faceCompareCapture').disabled = true;
+    $('#faceCompareOpenCamera').disabled = false;
+  }
 });

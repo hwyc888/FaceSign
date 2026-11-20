@@ -1709,3 +1709,36 @@ func TestDailySnapshotTimelineAndFaceCompareUI(t *testing.T) {
 	}
 }
 
+
+func TestFaceCompareShowsOnlyBestMatchAndUsesFloatingCameraModal(t *testing.T) {
+	htmlData, err := assets.ReadFile("assets/index.html")
+	if err != nil { t.Fatal(err) }
+	html := string(htmlData)
+	for _, want := range []string{
+		`id="faceCompareCameraModal"`,
+		`class="face-compare-camera-modal hidden"`,
+		`id="faceCompareCamera"`,
+		`id="faceCompareCapture"`,
+	} {
+		if !strings.Contains(html, want) { t.Fatalf("floating camera modal missing %s", want) }
+	}
+	if strings.Contains(html, `id="faceCompareCandidates"`) {
+		t.Fatal("face comparison page should not render a multi-person ranking list")
+	}
+	jsData, err := assets.ReadFile("assets/js/face_compare.js")
+	if err != nil { t.Fatal(err) }
+	script := string(jsData)
+	if strings.Contains(script, "faceCompareCandidates") {
+		t.Fatal("face comparison script should display only the highest-scoring person")
+	}
+	if !strings.Contains(script, "faceCompareCameraModal').classList.remove('hidden')") ||
+		!strings.Contains(script, "faceCompareCameraModal').classList.add('hidden')") {
+		t.Fatal("camera capture must open and close in a floating overlay")
+	}
+	cssData, err := assets.ReadFile("assets/style.css")
+	if err != nil { t.Fatal(err) }
+	css := string(cssData)
+	for _, want := range []string{".face-compare-camera-modal{position:fixed", "z-index:1200"} {
+		if !strings.Contains(css, want) { t.Fatalf("floating camera overlay style missing %q", want) }
+	}
+}
