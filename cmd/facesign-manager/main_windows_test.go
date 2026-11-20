@@ -138,7 +138,12 @@ func TestInstallPowerShellCommandKeepsInstallInCurrentDirectory(t *testing.T) {
 	for _, want := range []string{
 		powerShellLiteral(filepath.Join(dir, "scripts", "install.ps1")),
 		"-InstallDir " + powerShellLiteral(dir),
+		"-LogPath " + powerShellLiteral(filepath.Join(dir, "data", "facesign-install.log")),
 		"-OpenBrowser:$false",
+		"[Console]::OutputEncoding",
+		"System.Text.UTF8Encoding",
+		"catch",
+		"ScriptStackTrace",
 	} {
 		if !strings.Contains(command, want) {
 			t.Fatalf("install command missing %q: %s", want, command)
@@ -708,5 +713,16 @@ func TestStartFaceSignStopsOldDirectoryBeforeStartingCurrentRelease(t *testing.T
 		!strings.Contains(commands[2], "/ENABLE") ||
 		!strings.Contains(commands[3], "/Run") {
 		t.Fatalf("old release was not stopped before current release started: %v", commands)
+	}
+}
+
+
+func TestDecodeCommandOutputHandlesPowerShellUTF16(t *testing.T) {
+	encoded := []byte{0xff, 0xfe, 'P', 0, 'o', 0, 'w', 0, 'e', 0, 'r', 0, 'S', 0, 'h', 0, 'e', 0, 'l', 0, 'l', 0}
+	if got := decodeCommandOutput(encoded); got != "PowerShell" {
+		t.Fatalf("decodeCommandOutput()=%q want PowerShell", got)
+	}
+	if got := decodeCommandOutput([]byte("PowerShell UTF-8 error")); got != "PowerShell UTF-8 error" {
+		t.Fatalf("UTF-8 output changed: %q", got)
 	}
 }
