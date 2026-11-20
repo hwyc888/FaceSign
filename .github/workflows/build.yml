@@ -66,13 +66,23 @@ jobs:
           $legacyParser = Join-Path $env:RUNNER_TEMP 'parse-windows-ps51.ps1'
           @'
           param([string]$Path)
-          $content = [IO.File]::ReadAllText($Path)
-          $null = [scriptblock]::Create($content)
+          $tokens = $null
+          $parseErrors = $null
+          [System.Management.Automation.Language.Parser]::ParseFile($Path, [ref]$tokens, [ref]$parseErrors) | Out-Null
+          if ($parseErrors.Count -gt 0) {
+            $parseErrors | ForEach-Object { Write-Error (($_ | Format-List * -Force | Out-String)) }
+            exit 1
+          }
           '@ | Set-Content -Path $legacyParser -Encoding UTF8
           foreach ($script in @('scripts\install.ps1','scripts\upgrade.ps1','scripts\uninstall.ps1')) {
-            & $windowsPowerShell -NoLogo -NoProfile -NonInteractive -File $legacyParser -Path (Resolve-Path $script).Path
+            $scriptPath = (Resolve-Path $script).Path
+            $scriptBytes = [IO.File]::ReadAllBytes($scriptPath)
+            if ($scriptBytes.Length -lt 3 -or $scriptBytes[0] -ne 239 -or $scriptBytes[1] -ne 187 -or $scriptBytes[2] -ne 191) {
+              throw "$script must be UTF-8 with BOM for Windows PowerShell 5.1"
+            }
+            & $windowsPowerShell -NoLogo -NoProfile -NonInteractive -File $legacyParser -Path $scriptPath
             if ($LASTEXITCODE -ne 0) {
-              throw "$script failed to parse in Windows PowerShell 5.1"
+              throw "$script failed actual-file parsing in Windows PowerShell 5.1"
             }
           }
           $taskSettingsSmoke = New-ScheduledTaskSettingsSet -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew
