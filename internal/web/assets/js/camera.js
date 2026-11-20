@@ -1035,10 +1035,12 @@ function localVideoConstraints(camera) {
   if (camera.kind === 'browser' && (device === 'user' || device === 'environment')) {
     video.facingMode = {ideal: device};
   } else if (device) {
+    // MediaDeviceInfo.deviceId is an opaque browser-issued ID. Request the
+    // selected USB/camera exactly instead of treating it as a facingMode.
     video.deviceId = {exact: device};
-  } else {
-    video.facingMode = {ideal: 'user'};
   }
+  // An empty browser device selection means automatic browser choice. Do not
+  // silently turn it into a front-camera preference.
   return {video, audio: false};
 }
 
