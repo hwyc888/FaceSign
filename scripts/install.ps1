@@ -51,7 +51,7 @@ if ($currentIdentity -and $currentIdentity.User -and [string]::Equals($currentId
 }
 
 $ModelCommit = 'de5287c66e9e37e9f804686bf63f5a0974f68f72'
-$ModelBaseUrl = "https://raw.githubusercontent.com/hwyc888/FaceSign/$ModelCommit/models"
+$ModelBaseUrl = 'https://raw.githubusercontent.com/hwyc888/FaceSign/' + $ModelCommit + '/models'
 $activeBackend = ([string]$env:FACESIGN_LIVENESS_BACKEND).Trim().ToLowerInvariant()
 if ($activeBackend -notin @('mn3','minifas')) { $activeBackend = 'silent' }
 $Models = @(
