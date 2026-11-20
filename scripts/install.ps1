@@ -3,6 +3,7 @@ param(
   [string]$Listen = "0.0.0.0:8080",
   [string]$HTTPSListen = "0.0.0.0:8443",
   [string]$TLSHosts = "",
+  [string]$LogPath = "",
   [bool]$OpenBrowser = $true
 )
 $ErrorActionPreference = 'Stop'
@@ -13,12 +14,24 @@ if ([string]::IsNullOrWhiteSpace($InstallDir)) {
 $source = [IO.Path]::GetFullPath($source)
 $InstallDir = [IO.Path]::GetFullPath($InstallDir)
 $installInPlace = [string]::Equals($source, $InstallDir, [StringComparison]::OrdinalIgnoreCase)
+if ([string]::IsNullOrWhiteSpace($LogPath)) {
+  $LogPath = Join-Path $InstallDir 'data\facesign-install.log'
+}
+$LogPath = [IO.Path]::GetFullPath($LogPath)
+New-Item -ItemType Directory -Force -Path (Split-Path -Parent $LogPath) | Out-Null
+try { Start-Transcript -Path $LogPath -Append -Force | Out-Null } catch { }
+trap {
+  try { Stop-Transcript | Out-Null } catch { }
+  throw
+}
 
 function Get-FaceSignInteractiveUser {
-  $userName = [string](Get-CimInstance Win32_ComputerSystem -ErrorAction SilentlyContinue).UserName
-  if ([string]::IsNullOrWhiteSpace($userName)) {
-    $userName = [Security.Principal.WindowsIdentity]::GetCurrent().Name
+  $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+  if ($identity -and $identity.User -and $identity.Name -notmatch '(?i)\\SYSTEM$') {
+    return $identity.Name
   }
+
+  $userName = [string](Get-CimInstance Win32_ComputerSystem -ErrorAction SilentlyContinue).UserName
   if ([string]::IsNullOrWhiteSpace($userName) -or $userName -match '(?i)\\SYSTEM$') {
     throw 'FaceSign USB camera startup registration requires a signed-in Windows desktop user. Sign in to Windows and run FaceSignManager.exe -> 安装/注册本目录 again.'
   }
@@ -26,21 +39,57 @@ function Get-FaceSignInteractiveUser {
 }
 
 $interactiveUser = Get-FaceSignInteractiveUser
-$interactiveUserSid = [Security.Principal.NTAccount]::new($interactiveUser).Translate([Security.Principal.SecurityIdentifier]).Value
+$currentIdentity = [Security.Principal.WindowsIdentity]::GetCurrent()
+if ($currentIdentity -and $currentIdentity.User -and [string]::Equals($currentIdentity.Name, $interactiveUser, [StringComparison]::OrdinalIgnoreCase)) {
+  $interactiveUserSid = $currentIdentity.User.Value
+} else {
+  try {
+    $interactiveUserSid = [Security.Principal.NTAccount]::new($interactiveUser).Translate([Security.Principal.SecurityIdentifier]).Value
+  } catch {
+    throw "无法解析当前 Windows 登录用户的 SID：$interactiveUser。请使用该用户登录后重新运行安装。"
+  }
+}
 
 $ModelCommit = 'de5287c66e9e37e9f804686bf63f5a0974f68f72'
 $ModelBaseUrl = "https://raw.githubusercontent.com/hwyc888/FaceSign/$ModelCommit/models"
+$activeBackend = ([string]$env:FACESIGN_LIVENESS_BACKEND).Trim().ToLowerInvariant()
+if ($activeBackend -notin @('mn3','minifas')) { $activeBackend = 'silent' }
 $Models = @(
-  @{
-    Name = 'anti-spoof-mn3.onnx'
-    SHA256 = 'C4C99AF04603B62D7E44F6F4DAEB33E0DAECCC696008C0B1D62F6F5CEBBB3262'
-  },
   @{
     Name = 'yolox_nano.onnx'
     SHA256 = 'C789161ED43C8269FCD4E67C67EEEB4E80C622DA2EB296A20BC6007BD18A0B7D'
     URL = 'https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/yolox_nano.onnx'
   }
 )
+switch ($activeBackend) {
+  'mn3' {
+    $Models += @{
+      Name = 'anti-spoof-mn3.onnx'
+      SHA256 = 'C4C99AF04603B62D7E44F6F4DAEB33E0DAECCC696008C0B1D62F6F5CEBBB3262'
+    }
+  }
+  'minifas' {
+    $Models += @{
+      Name = 'minifasnet-v2se.onnx'
+      SHA256 = 'AF2381B88F38769222ED93379E12444E2A50814575DE1C46170DE570C55A42B6'
+      URL = 'https://github.com/facenox/face-antispoof-onnx/releases/download/v1.0.0/best_model.onnx'
+    }
+  }
+  default {
+    $Models += @(
+      @{
+        Name = 'MiniFASNetV2.onnx'
+        SHA256 = 'B32929ADC2D9C34B9486F8C4C7BC97C1B69BC0EA9BEFEFC380E4FAAE4E463907'
+        URL = 'https://github.com/yakhyo/face-anti-spoofing/releases/download/weights/MiniFASNetV2.onnx'
+      },
+      @{
+        Name = 'MiniFASNetV1SE.onnx'
+        SHA256 = 'EBAB7F90C7833FBCCD46D3A555410E78D969DB5438E169B6524BE444862B3676'
+        URL = 'https://github.com/yakhyo/face-anti-spoofing/releases/download/weights/MiniFASNetV1SE.onnx'
+      }
+    )
+  }
+}
 
 function Test-ModelFile {
   param(
@@ -128,6 +177,22 @@ function Ensure-ByFaceModels {
   }
 }
 
+function Remove-ObsoleteLivenessModels {
+  $modelDir = Join-Path $InstallDir 'models'
+  $keep = @('yolox_nano.onnx')
+  switch ($activeBackend) {
+    'mn3' { $keep += 'anti-spoof-mn3.onnx' }
+    'minifas' { $keep += 'minifasnet-v2se.onnx' }
+    default { $keep += @('MiniFASNetV2.onnx','MiniFASNetV1SE.onnx') }
+  }
+
+  foreach ($name in @('anti-spoof-mn3.onnx','minifasnet-v2se.onnx','MiniFASNetV2.onnx','MiniFASNetV1SE.onnx')) {
+    if ($name -notin $keep) {
+      Remove-Item (Join-Path $modelDir $name) -Force -ErrorAction SilentlyContinue
+    }
+  }
+}
+
 function Get-TaskArgumentValue {
   param(
     [string]$Arguments,
@@ -141,9 +206,15 @@ function Get-TaskArgumentValue {
   return $match.Groups[2].Value
 }
 
-# Stop the current instance before replacing files. During an upgrade the
-# scheduled task is deliberately kept in place so custom ports/TLS hosts and
-# the user's startup-enabled state survive the update.
+# Validate every required model before stopping the old service. A failed
+# download, missing face weight or bad checksum must never leave the current
+# working installation stopped.
+Ensure-FaceModels -TargetDir (Join-Path $InstallDir 'models')
+Ensure-ByFaceModels
+
+# Stop the current instance before replacing program files. During an upgrade
+# the scheduled task is deliberately kept in place so custom ports/TLS hosts
+# and the user's startup-enabled state survive the update.
 $oldTask = Get-ScheduledTask -TaskName 'FaceSign' -ErrorAction SilentlyContinue
 $isUpgrade = $null -ne $oldTask -and (Test-Path (Join-Path $InstallDir 'FaceSign.exe') -PathType Leaf)
 $taskWasDisabled = $false
@@ -216,11 +287,7 @@ if ($installInPlace) {
   }
 }
 
-# The installer supports both release variants. Existing valid installed models
-# are reused first. The full package can supply local models; the lightweight
-# package downloads only models that are actually missing or invalid.
-Ensure-FaceModels -TargetDir (Join-Path $InstallDir 'models')
-
+# Model files were preflighted before stopping the previous service.
 New-Item -ItemType Directory -Force -Path (Join-Path $InstallDir 'data') | Out-Null
 Remove-Item (Join-Path $InstallDir 'facesign-error.log') -Force -ErrorAction SilentlyContinue
 
@@ -309,6 +376,7 @@ if (-not $versionInfo.version) {
 }
 
 $url = "https://127.0.0.1:$httpsPort/?v=$($versionInfo.version)"
+Remove-ObsoleteLivenessModels
 $operation = if ($isUpgrade) { 'upgraded in place' } elseif ($installInPlace) { 'registered in the current directory' } else { 'installed' }
 Write-Host "FaceSign $operation and started for interactive user: $interactiveUser"
 Write-Host "Version:       $($versionInfo.version)"
@@ -346,3 +414,4 @@ Write-Host "Start Menu:    FaceSign\FaceSign 管理工具"
 if ($OpenBrowser) {
   Start-Process $url
 }
+try { Stop-Transcript | Out-Null } catch { }
