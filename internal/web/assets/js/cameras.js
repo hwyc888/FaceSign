@@ -188,6 +188,7 @@ async function refreshBrowserCameraDevices(showToast = false) {
     stream?.getVideoTracks?.().some(track => track.readyState === 'live');
   let temporaryStream = null;
   if (!activeBrowserStream) {
+    stopCameraAudio(true);
     try {
       temporaryStream = await navigator.mediaDevices.getUserMedia({video: true, audio: false});
     } catch (error) {
@@ -213,6 +214,7 @@ async function refreshBrowserCameraDevices(showToast = false) {
 }
 
 async function openBrowserCameraTestStream(camera) {
+  stopCameraAudio(true);
   const attempts = [localVideoConstraints(camera)];
   const requested = String(camera.device_id || '').trim();
   if (requested && requested !== 'user' && requested !== 'environment') {
@@ -376,7 +378,7 @@ async function testCurrentCameraConfig() {
         browserCameraDevices = devices
           .filter(device => device.kind === 'videoinput' && device.deviceId)
           .map(device => ({deviceId: device.deviceId, label: device.label || ''}));
-        renderBrowserCameraDeviceOptions(requestedDevice || 'user');
+        renderBrowserCameraDeviceOptions(requestedDevice);
         const selectedSpecificDevice = requestedDevice && requestedDevice !== 'user' && requestedDevice !== 'environment';
         const selectionFailed = Boolean(selectedSpecificDevice && fallback);
         const resolution = (settings.width || camera.width) + '×' + (settings.height || camera.height);
