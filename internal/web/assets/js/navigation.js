@@ -63,6 +63,10 @@ async function showPage(name, options = {}) {
   if (name === 'users') await loadUsers();
   if (name === 'settings') {
     await Promise.all([loadClasses(), loadCameras(), loadAppSettings(), loadRecognitionStats()]);
+    if (typeof currentUser !== 'undefined' && currentUser && currentUser.is_admin &&
+        typeof loadRecognitionDebugThresholds === 'function') {
+      await loadRecognitionDebugThresholds();
+    }
     refreshLocalCameraDevices(false).catch(() => {});
   }
   if (name === 'status') loadHealth();

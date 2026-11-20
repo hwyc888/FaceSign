@@ -67,6 +67,12 @@ func newPersonTracker() *personTracker {
 	return &personTracker{sessions: make(map[string]*personTrackSession)}
 }
 
+func (t *personTracker) ResetSessions() {
+	t.mu.Lock()
+	t.sessions = make(map[string]*personTrackSession)
+	t.mu.Unlock()
+}
+
 func (t *personTracker) Observe(sessionID string, detections []person.Detection, now time.Time) []personTrackObservation {
 	t.mu.Lock()
 	defer t.mu.Unlock()

@@ -36,11 +36,11 @@ func (s *Server) enrollmentCheck(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	duplicate := comparison.Other.ID != 0 && comparison.OtherScore >= s.matchThreshold
+	duplicate := comparison.Other.ID != 0 && comparison.OtherScore >= s.currentRecognitionThresholds().MatchThreshold
 	response := map[string]any{
 		"duplicate":  duplicate,
 		"similarity": comparison.OtherScore,
-		"threshold":  s.matchThreshold,
+		"threshold":  s.currentRecognitionThresholds().MatchThreshold,
 	}
 	if duplicate {
 		response["student"] = comparison.Other
@@ -66,7 +66,7 @@ func (s *Server) createEnrollment(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, err)
 		return
 	}
-	if comparison.Other.ID != 0 && comparison.OtherScore >= s.matchThreshold {
+	if comparison.Other.ID != 0 && comparison.OtherScore >= s.currentRecognitionThresholds().MatchThreshold {
 		writeDuplicate(w, comparison.Other, comparison.OtherScore)
 		return
 	}
@@ -119,12 +119,12 @@ func (s *Server) addFaceSample(w http.ResponseWriter, r *http.Request, studentID
 	}
 
 	if comparison.Other.ID != 0 &&
-		comparison.OtherScore >= s.matchThreshold &&
+		comparison.OtherScore >= s.currentRecognitionThresholds().MatchThreshold &&
 		(!comparison.SameFound || comparison.OtherScore > comparison.SameScore) {
 		writeDuplicate(w, comparison.Other, comparison.OtherScore)
 		return
 	}
-	if comparison.SameFound && comparison.SameScore < s.matchThreshold {
+	if comparison.SameFound && comparison.SameScore < s.currentRecognitionThresholds().MatchThreshold {
 		writeError(w, http.StatusUnprocessableEntity, errors.New("该人脸与该学生已有样本不一致，请确认人员后再补充"))
 		return
 	}
@@ -151,7 +151,7 @@ func (s *Server) readEnrollmentFeature(w http.ResponseWriter, r *http.Request) (
 	if err != nil {
 		return nil, err
 	}
-	return s.engine.ExtractEnrollment(img, s.detectionThreshold)
+	return s.engine.ExtractEnrollment(img, s.currentRecognitionThresholds().DetectionThreshold)
 }
 
 func (s *Server) compareFeature(ctx context.Context, feature []float32, targetStudentID int64) (faceComparison, error) {

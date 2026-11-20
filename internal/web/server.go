@@ -34,6 +34,9 @@ type Server struct {
 	cameraRecognitionNextAt map[int64]time.Time
 	matchThreshold     float64
 	detectionThreshold float64
+	debugMu            sync.RWMutex
+	debugDefaults      store.RecognitionThresholds
+	debugCurrent       store.RecognitionThresholds
 	version            string
 	home               []byte
 	static             http.Handler
@@ -81,6 +84,17 @@ func New(logger *slog.Logger, st *store.Store, engine *face.Engine, live *livene
 		networkCameraPreviewStreams: make(map[int64]*networkCameraStream),
 		networkCameraPreviewClients: make(map[int64]int),
 	}
+	defaults := baselineRecognitionThresholds(matchThreshold, detectionThreshold)
+	current, err := st.LoadRecognitionThresholds(context.Background(), defaults)
+	if err != nil {
+		return nil, fmt.Errorf("读取识别调试阈值失败: %w", err)
+	}
+	if err := validateRecognitionThresholds(current); err != nil {
+		return nil, fmt.Errorf("已保存的识别调试参数无效: %w", err)
+	}
+	server.debugDefaults = defaults
+	server.debugCurrent = current
+	server.tracker.SetThresholds(current.LivenessFrameThreshold, current.LivenessPassThreshold, current.LivenessSpoofThreshold)
 	if err := server.reloadFaceCache(context.Background()); err != nil {
 		return nil, fmt.Errorf("预加载人脸特征缓存失败: %w", err)
 	}
@@ -99,6 +113,8 @@ func (s *Server) Handler() http.Handler {
 	mux.HandleFunc("/api/health", s.health)
 	mux.HandleFunc("/api/version", s.versionInfo)
 	mux.HandleFunc("/api/settings", s.settings)
+	mux.HandleFunc("/api/debug/thresholds", s.recognitionDebugThresholds)
+	mux.HandleFunc("/api/debug/thresholds/reset", s.resetRecognitionDebugThresholds)
 	mux.HandleFunc("/api/students", s.students)
 	mux.HandleFunc("/api/students/", s.studentAction)
 	mux.HandleFunc("/api/classes", s.classes)

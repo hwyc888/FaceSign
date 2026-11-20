@@ -778,3 +778,22 @@ pre{background:#0b1220;color:#d8e2f3;border-radius:12px;padding:16px;overflow:au
     white-space: normal;
   }
 }
+
+/* Administrator recognition threshold debug panel. */
+.recognition-debug-card{border-color:#d5e3f8}
+.recognition-debug-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;margin-top:17px}
+.recognition-debug-field{display:flex;flex-direction:column;gap:8px;min-width:0;padding:15px;border:1px solid #e2e8f0;border-radius:12px;background:#f9fbff}
+.recognition-debug-title{font-size:14px;font-weight:750;color:#192f4f}
+.recognition-debug-field input{width:100%;max-width:220px;padding:11px 13px;border:1px solid #c5d3e6;border-radius:10px;background:#fff;color:#172033;font:inherit;font-variant-numeric:tabular-nums}
+.recognition-debug-field input:focus-visible{outline:2px solid #86b7ff;outline-offset:2px}
+.recognition-debug-field small{font-size:12px;line-height:1.65;color:#667085}
+.recognition-debug-default{font-size:12px;color:#526881}
+.recognition-debug-default strong{font-variant-numeric:tabular-nums;color:#25466f}
+.recognition-debug-locked strong{font-size:16px;color:#375b86}
+.recognition-debug-actions{display:flex;flex-wrap:wrap;gap:10px;margin-top:17px}
+.recognition-debug-actions button{min-height:42px}
+.recognition-debug-message{font-size:12px;min-height:18px;margin:10px 0 0}
+@media(max-width:640px){
+  .recognition-debug-grid{grid-template-columns:1fr}
+  .recognition-debug-actions button{width:100%}
+}
