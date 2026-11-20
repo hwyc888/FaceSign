@@ -174,7 +174,7 @@ function setEnrollmentStatus(title, detail, tone = 'neutral') {
 
 function setEnrollmentAngle(angle) {
   const label = $('#enrollAngleState');
-  if (label) label.textContent = `当前角度：${angle || '正面'}`;
+  if (label) label.textContent = `本次采集角度：${angle || '正面'}`;
 }
 
 async function captureEnrollment() {
