@@ -418,6 +418,61 @@
       </section>
 
       <section class="page" id="page-settings" data-permission="can_edit_settings">
+        <div class="card settings-secondary-card recognition-debug-card" data-admin-only>
+          <div class="card-head">
+            <div>
+              <h2>识别调试控制台</h2>
+              <p class="muted compact">调整当前运行中的识别阈值，保存后立即应用，并在重启后继续保留。</p>
+            </div>
+            <span class="mode-pill" id="debugThresholdState">正在读取...</span>
+          </div>
+          <p class="liveness-security-note">仅管理员可以修改。调低阈值可能提高通过率，也可能增加误识别或照片攻击风险；活体仍必须累计 3 帧。“恢复默认配置”只恢复本版本启动时的识别阈值，不清除人脸样本、学生、考勤或摄像头配置。</p>
+          <form id="recognitionDebugForm">
+            <div class="recognition-debug-grid">
+              <label class="recognition-debug-field">
+                <span class="recognition-debug-title">人脸身份匹配阈值</span>
+                <input id="debugMatchThreshold" name="match_threshold" type="number" min="0.30" max="0.95" step="0.01" inputmode="decimal" required>
+                <small>ArcFace 相似度需达到该值才会匹配学生，调高更严格。</small>
+                <span class="recognition-debug-default">默认 <strong id="debugMatchThresholdDefault">--</strong></span>
+              </label>
+              <label class="recognition-debug-field">
+                <span class="recognition-debug-title">人脸检测置信阈值</span>
+                <input id="debugDetectionThreshold" name="detection_threshold" type="number" min="0.10" max="0.95" step="0.01" inputmode="decimal" required>
+                <small>SCRFD 检测得分门槛，调低更容易检测弱光或小脸，也可能增加误检。</small>
+                <span class="recognition-debug-default">默认 <strong id="debugDetectionThresholdDefault">--</strong></span>
+              </label>
+              <label class="recognition-debug-field">
+                <span class="recognition-debug-title">活体通过阈值</span>
+                <input id="debugLivenessPassThreshold" name="liveness_pass_threshold" type="number" min="0.40" max="0.95" step="0.01" inputmode="decimal" required>
+                <small>三帧活体得分的中位数需要达到该值。</small>
+                <span class="recognition-debug-default">默认 <strong id="debugLivenessPassThresholdDefault">--</strong></span>
+              </label>
+              <label class="recognition-debug-field">
+                <span class="recognition-debug-title">单帧活体有效阈值</span>
+                <input id="debugLivenessFrameThreshold" name="liveness_frame_threshold" type="number" min="0.30" max="0.90" step="0.01" inputmode="decimal" required>
+                <small>三帧中至少两帧需达到该值，必须不高于活体通过阈值。</small>
+                <span class="recognition-debug-default">默认 <strong id="debugLivenessFrameThresholdDefault">--</strong></span>
+              </label>
+              <label class="recognition-debug-field">
+                <span class="recognition-debug-title">照片／屏幕攻击阈值</span>
+                <input id="debugLivenessSpoofThreshold" name="liveness_spoof_threshold" type="number" min="0.05" max="0.50" step="0.01" inputmode="decimal" required>
+                <small>三帧中至少两帧低于该值且中位数也低于该值时判为疑似攻击。</small>
+                <span class="recognition-debug-default">默认 <strong id="debugLivenessSpoofThresholdDefault">--</strong></span>
+              </label>
+              <div class="recognition-debug-field recognition-debug-locked">
+                <span class="recognition-debug-title">活体累计帧数</span>
+                <strong id="debugRequiredFrames">3 帧（固定）</strong>
+                <small>保留当前三帧防伪验证机制，不能通过调试关闭。</small>
+              </div>
+            </div>
+            <div class="recognition-debug-actions">
+              <button id="saveRecognitionDebug" class="primary" type="submit">保存并立即生效</button>
+              <button id="resetRecognitionDebug" type="button">恢复默认配置</button>
+            </div>
+            <p id="recognitionDebugMessage" class="muted recognition-debug-message" role="status" aria-live="polite">恢复默认后，系统将使用本次启动的原始识别阈值。</p>
+          </form>
+        </div>
+
         <div class="card">
           <div class="card-head">
             <div>
@@ -927,6 +982,7 @@
   <script src="/js/seating.js"></script>
   <script src="/js/recognition.js"></script>
   <script src="/js/settings.js"></script>
+  <script src="/js/debug.js"></script>
   <script src="/js/enrollment.js"></script>
   <script src="/js/classes.js"></script>
   <script src="/js/seat_editor.js"></script>

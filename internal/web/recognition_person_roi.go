@@ -119,7 +119,7 @@ func (s *Server) detectFacesInPersonROIs(img image.Image, people []person.Detect
 		if cropped == nil {
 			continue
 		}
-		detected, err := s.engine.DetectAll(cropped, personROIFaceThreshold(s.detectionThreshold))
+		detected, err := s.engine.DetectAll(cropped, personROIFaceThreshold(s.currentRecognitionThresholds().DetectionThreshold))
 		if err != nil {
 			if errors.Is(err, face.ErrNoFace) {
 				continue

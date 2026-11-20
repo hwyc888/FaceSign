@@ -75,12 +75,38 @@ type recognitionTrackSession struct {
 }
 
 type recognitionTracker struct {
-	mu       sync.Mutex
-	sessions map[string]*recognitionTrackSession
+	mu             sync.Mutex
+	sessions       map[string]*recognitionTrackSession
+	frameThreshold float64
+	passThreshold  float64
+	spoofThreshold float64
 }
 
 func newRecognitionTracker() *recognitionTracker {
-	return &recognitionTracker{sessions: make(map[string]*recognitionTrackSession)}
+	return &recognitionTracker{
+		sessions: make(map[string]*recognitionTrackSession),
+		frameThreshold: livenessFrameThreshold,
+		passThreshold: livenessPassThreshold,
+		spoofThreshold: livenessSpoofThreshold,
+	}
+}
+
+// SetThresholds updates the active PAD vote and discards evidence scored with
+// an earlier configuration. This never changes the required three-frame check.
+func (t *recognitionTracker) SetThresholds(frame, pass, spoof float64) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	if t.frameThreshold == frame && t.passThreshold == pass && t.spoofThreshold == spoof {
+		return
+	}
+	t.frameThreshold, t.passThreshold, t.spoofThreshold = frame, pass, spoof
+	t.sessions = make(map[string]*recognitionTrackSession)
+}
+
+func (t *recognitionTracker) ResetSessions() {
+	t.mu.Lock()
+	t.sessions = make(map[string]*recognitionTrackSession)
+	t.mu.Unlock()
 }
 
 // SetLivenessMode starts a fresh verification cycle whenever the session setting changes.
@@ -179,11 +205,11 @@ func (t *recognitionTracker) Observe(sessionID string, observations []recognitio
 			}
 			goodRecoveryFrames := 0
 			for _, score := range track.RecoveryScores {
-				if score >= livenessPassThreshold {
+				if score >= t.passThreshold {
 					goodRecoveryFrames++
 				}
 			}
-			if goodRecoveryFrames < 2 || observation.InferenceFailed || observation.LiveScore < livenessPassThreshold {
+			if goodRecoveryFrames < 2 || observation.InferenceFailed || observation.LiveScore < t.passThreshold {
 				out[i] = trackDecision{
 					TrackID:        track.ID,
 					Frames:         len(track.RecoveryScores),
@@ -244,7 +270,7 @@ func (t *recognitionTracker) Observe(sessionID string, observations []recognitio
 		track.LastSeen = now
 		track.Frames++
 		track.SimilaritySum += observation.Similarity
-		if observation.LiveScore < livenessSpoofThreshold {
+		if observation.LiveScore < t.spoofThreshold {
 			track.SpoofVotes++
 		}
 		track.Scores = append(track.Scores, observation.LiveScore)
@@ -255,7 +281,7 @@ func (t *recognitionTracker) Observe(sessionID string, observations []recognitio
 		median := medianScore(track.Scores)
 		liveVotes := 0
 		for _, score := range track.Scores {
-			if score >= livenessFrameThreshold {
+			if score >= t.frameThreshold {
 				liveVotes++
 			}
 		}
@@ -264,10 +290,10 @@ func (t *recognitionTracker) Observe(sessionID string, observations []recognitio
 		if !track.Verified && !track.Rejected {
 			switch {
 			case len(track.Scores) >= livenessFastFrames &&
-				median < livenessSpoofThreshold && track.SpoofVotes >= 2:
+				median < t.spoofThreshold && track.SpoofVotes >= 2:
 				track.Rejected = true
 			case len(track.Scores) >= livenessMinFrames &&
-				median >= livenessPassThreshold &&
+				median >= t.passThreshold &&
 				liveVotes >= 2:
 				track.Verified = true
 			case now.Sub(track.FirstSeen) >= decisionTimeout || len(track.Scores) >= maxFrames:

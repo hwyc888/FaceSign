@@ -91,7 +91,7 @@ func (s *Server) recognizeImage(w http.ResponseWriter, r *http.Request, img imag
 	now := time.Now()
 	sessionID := recognitionSessionID(r)
 
-	detections, err := s.engine.DetectAll(img, s.detectionThreshold)
+	detections, err := s.engine.DetectAll(img, s.currentRecognitionThresholds().DetectionThreshold)
 	if err != nil {
 		if errors.Is(err, face.ErrNoFace) {
 			detections = nil
@@ -123,7 +123,7 @@ func (s *Server) recognizeNetworkCameraImage(w http.ResponseWriter, r *http.Requ
 	}
 
 	if len(personDetections) == 0 {
-		detections, detectErr := s.engine.DetectAll(personImg, s.detectionThreshold)
+		detections, detectErr := s.engine.DetectAll(personImg, s.currentRecognitionThresholds().DetectionThreshold)
 		if detectErr != nil && !errors.Is(detectErr, face.ErrNoFace) {
 			writeFaceError(w, detectErr)
 			return
@@ -274,7 +274,7 @@ func (s *Server) recognizePreparedImage(
 			featureEvaluated[i] = true
 			for _, sample := range decoded {
 				score := face.Similarity(feature, sample.Feature)
-				if score >= s.matchThreshold {
+				if score >= s.currentRecognitionThresholds().MatchThreshold {
 					candidates = append(candidates, matchCandidate{
 						DetectionIndex: i,
 						Student:        sample.Student,
@@ -492,11 +492,13 @@ func (s *Server) recognizePreparedImage(
 		"timeout_count":           timeoutCount,
 		"spoof_count":             spoofCount,
 		"unregistered_count":      unregisteredCount,
-		"threshold":               s.matchThreshold,
+		"threshold":               s.currentRecognitionThresholds().MatchThreshold,
 		"face_quality_threshold":  qualityThreshold,
 		"liveness_detection_disabled": disableLivenessDetection,
 		"liveness_model":          s.liveness.ModelName(),
-		"liveness_threshold":      livenessPassThreshold,
+		"liveness_threshold":      s.currentRecognitionThresholds().LivenessPassThreshold,
+		"liveness_frame_threshold": s.currentRecognitionThresholds().LivenessFrameThreshold,
+		"liveness_spoof_threshold": s.currentRecognitionThresholds().LivenessSpoofThreshold,
 		"liveness_fast_threshold": livenessFastPassThreshold,
 		"liveness_fast_frames":    livenessFastFrames,
 		"liveness_min_frames":     livenessMinFrames,

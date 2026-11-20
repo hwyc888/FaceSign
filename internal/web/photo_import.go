@@ -228,7 +228,7 @@ func (s *Server) photoImportAnalyze(w http.ResponseWriter, r *http.Request) {
 			processed++
 			continue
 		}
-		detected, err := s.engine.ExtractPhotoSample(img, s.detectionThreshold)
+		detected, err := s.engine.ExtractPhotoSample(img, s.currentRecognitionThresholds().DetectionThreshold)
 		if err != nil {
 			item := rejectedPhotoItem(len(session.Items)+1, displayName, photoImportFaceError(err))
 			item.Format = strings.ToUpper(format)
@@ -259,8 +259,8 @@ func (s *Server) photoImportAnalyze(w http.ResponseWriter, r *http.Request) {
 
 		bestStudent, bestScore := bestPhotoKnownMatch(item.Feature, known)
 		item.Similarity = bestScore
-		reviewThreshold := math.Max(0.55, s.matchThreshold-0.04)
-		if bestStudent.ID != 0 && bestScore >= s.matchThreshold {
+		reviewThreshold := math.Max(0.55, s.currentRecognitionThresholds().MatchThreshold-0.04)
+		if bestStudent.ID != 0 && bestScore >= s.currentRecognitionThresholds().MatchThreshold {
 			copyStudent := bestStudent
 			item.Existing = &copyStudent
 			item.Status = "existing"
@@ -277,7 +277,7 @@ func (s *Server) photoImportAnalyze(w http.ResponseWriter, r *http.Request) {
 			item.Status = "ready"
 			for _, previous := range packageFeatures {
 				score := face.Similarity(item.Feature, previous.Feature)
-				if score >= s.matchThreshold {
+				if score >= s.currentRecognitionThresholds().MatchThreshold {
 					item.Status = "package_duplicate"
 					item.Similarity = score
 					item.DuplicateFile = previous.FileName
@@ -459,7 +459,7 @@ func (s *Server) photoImportCommit(w http.ResponseWriter, r *http.Request, sessi
 				results = append(results, map[string]any{"id": item.ID, "status": "failed", "message": err.Error()})
 				continue
 			}
-			if comparison.Other.ID != 0 && comparison.OtherScore >= s.matchThreshold {
+			if comparison.Other.ID != 0 && comparison.OtherScore >= s.currentRecognitionThresholds().MatchThreshold {
 				failed++
 				results = append(results, map[string]any{
 					"id": item.ID, "status": "failed",
@@ -498,13 +498,13 @@ func (s *Server) photoImportCommit(w http.ResponseWriter, r *http.Request, sessi
 				continue
 			}
 			if comparison.Other.ID != 0 &&
-				comparison.OtherScore >= s.matchThreshold &&
+				comparison.OtherScore >= s.currentRecognitionThresholds().MatchThreshold &&
 				(!comparison.SameFound || comparison.OtherScore > comparison.SameScore) {
 				failed++
 				results = append(results, map[string]any{"id": item.ID, "status": "failed", "message": "照片更接近其他学生，已阻止错误补充"})
 				continue
 			}
-			if !comparison.SameFound || comparison.SameScore < s.matchThreshold {
+			if !comparison.SameFound || comparison.SameScore < s.currentRecognitionThresholds().MatchThreshold {
 				failed++
 				results = append(results, map[string]any{"id": item.ID, "status": "failed", "message": "照片与已匹配学生复核不一致"})
 				continue

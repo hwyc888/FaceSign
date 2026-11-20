@@ -27,7 +27,9 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 		"python":          false,
 		"docker":          false,
 		"students":        count,
-		"match_threshold": s.matchThreshold,
+		"match_threshold": s.currentRecognitionThresholds().MatchThreshold,
+		"detection_threshold": s.currentRecognitionThresholds().DetectionThreshold,
+		"liveness_pass_threshold": s.currentRecognitionThresholds().LivenessPassThreshold,
 		"version":         s.version,
 	})
 }
