@@ -353,7 +353,7 @@
           </div>
           <div class="table-wrap">
             <table>
-              <thead><tr><th>首次签到</th><th>最近识别</th><th>识别次数</th><th>学号</th><th>姓名</th><th>班级</th><th>相似度</th></tr></thead>
+              <thead><tr><th>首次签到</th><th>最近识别</th><th>识别次数</th><th>学号</th><th>姓名</th><th>班级</th><th>相似度</th><th>识别截图</th></tr></thead>
               <tbody id="attendanceBody"></tbody>
             </table>
           </div>
@@ -548,6 +548,24 @@
             </div>
           </div>
           <p class="muted camera-settings-help">“清零统计”只清除这两个累计数字，不会删除考勤记录、学生资料或人脸样本。</p>
+        </div>
+
+        <div class="card settings-secondary-card attendance-snapshot-cache-card" data-admin-only>
+          <div class="card-head">
+            <div>
+              <h2>识别截图缓存</h2>
+              <p class="muted compact">每条成功签到记录最多保存一张现场截图，存放在 FaceSign 本机数据目录。</p>
+            </div>
+            <span class="mode-pill" id="attendanceSnapshotCacheState">正在读取...</span>
+          </div>
+          <div class="snapshot-cache-summary">
+            <div><span>已保存截图</span><strong id="attendanceSnapshotCacheCount">-- 张</strong></div>
+            <div><span>占用空间</span><strong id="attendanceSnapshotCacheBytes">--</strong></div>
+          </div>
+          <div class="snapshot-cache-actions">
+            <p class="muted camera-settings-help">清理只删除识别现场照片及其索引，不会删除考勤记录、学生资料、人脸特征或其他系统配置。清理后历史记录仍可查询，但无法再查看截图。</p>
+            <button id="clearAttendanceSnapshotCache" class="danger" type="button">清理截图缓存</button>
+          </div>
         </div>
 
         <div class="card camera-settings-card settings-secondary-card">
@@ -771,10 +789,74 @@
       </section>
 
       <section class="page" id="page-status">
-        <div class="card">
-          <h2>系统状态</h2>
-          <pre id="statusJson">loading...</pre>
-          <p class="muted">Windows 与 Ubuntu AMD64 版本均使用 Go + ONNX Runtime CPU；Linux 部署包附带启动、状态查询和停止脚本。</p>
+        <div class="system-metrics-grid">
+          <article class="card system-metric-card">
+            <div class="system-metric-icon cpu" aria-hidden="true">CPU</div>
+            <div class="system-metric-copy">
+              <span>CPU 使用率</span>
+              <strong id="systemCpuValue">采样中</strong>
+              <small>服务器整体处理器占用</small>
+            </div>
+            <div class="system-metric-track"><span id="systemCpuBar"></span></div>
+          </article>
+          <article class="card system-metric-card">
+            <div class="system-metric-icon memory" aria-hidden="true">RAM</div>
+            <div class="system-metric-copy">
+              <span>内存使用率</span>
+              <strong id="systemMemoryValue">--</strong>
+              <small id="systemMemoryDetail">正在读取内存信息</small>
+            </div>
+            <div class="system-metric-track"><span id="systemMemoryBar"></span></div>
+          </article>
+          <article class="card system-metric-card">
+            <div class="system-metric-icon recognition" aria-hidden="true">AI</div>
+            <div class="system-metric-copy">
+              <span>实时识别成功率</span>
+              <strong id="recognitionRateValue">--</strong>
+              <small id="recognitionRateDetail">最近 5 分钟 · 等待识别数据</small>
+            </div>
+            <div class="system-metric-footnote">按身份匹配并通过活体验证的人脸数 / 检测到的人脸数计算</div>
+          </article>
+        </div>
+        <div class="card system-chart-card">
+          <div class="card-head">
+            <div>
+              <h2>识别成功率趋势</h2>
+              <p class="muted compact">按分钟统计最近 5 分钟的人脸身份匹配结果，自动刷新。</p>
+            </div>
+            <span class="mode-pill" id="recognitionChartWindow">最近 5 分钟</span>
+          </div>
+          <div class="system-chart-wrap">
+            <svg id="recognitionRateChart" viewBox="0 0 720 230" role="img" aria-label="最近五分钟实时识别成功率趋势图">
+              <g class="system-chart-grid">
+                <line x1="54" y1="24" x2="690" y2="24"></line>
+                <line x1="54" y1="64" x2="690" y2="64"></line>
+                <line x1="54" y1="104" x2="690" y2="104"></line>
+                <line x1="54" y1="144" x2="690" y2="144"></line>
+                <line x1="54" y1="184" x2="690" y2="184"></line>
+              </g>
+              <g class="system-chart-y-labels">
+                <text x="43" y="28">100%</text>
+                <text x="43" y="68">75%</text>
+                <text x="43" y="108">50%</text>
+                <text x="43" y="148">25%</text>
+                <text x="43" y="188">0%</text>
+              </g>
+              <path id="recognitionRateLine" class="system-chart-line" d=""></path>
+              <g id="recognitionRateDots"></g>
+              <g id="recognitionRateLabels" class="system-chart-x-labels"></g>
+            </svg>
+            <div id="recognitionChartEmpty" class="system-chart-empty">等待摄像头产生有效人脸识别数据</div>
+          </div>
+          <div class="system-chart-legend">
+            <span><i></i>身份匹配成功率</span>
+            <span id="recognitionChartCounts">签到通过 0 / 检测 0 张人脸</span>
+          </div>
+        </div>
+        <div class="system-status-footnote">
+          <span>运行引擎：SCRFD-10GF + ArcFace ResNet50</span>
+          <span>活体检测：anti-spoof-mn3 · 连续 3 帧</span>
+          <span>资源指标每 5 秒刷新</span>
         </div>
       </section>
     </main>
@@ -970,6 +1052,20 @@
         <button id="duplicateKeepOriginal" type="button">不更新</button>
         <button class="primary" id="duplicateConfirmUpdate" type="button">确认更新</button>
       </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop hidden" id="attendanceSnapshotModal">
+    <div class="modal attendance-snapshot-modal" role="dialog" aria-modal="true" aria-labelledby="attendanceSnapshotTitle">
+      <div class="modal-head">
+        <div>
+          <h2 id="attendanceSnapshotTitle">识别现场截图</h2>
+          <p class="muted compact">仅管理员可查看的本地签到现场照片。</p>
+        </div>
+        <button id="attendanceSnapshotClose" class="icon-button" type="button" aria-label="关闭截图">×</button>
+      </div>
+      <img id="attendanceSnapshotImage" class="attendance-snapshot-image" alt="学生成功签到时的现场截图">
+      <p id="attendanceSnapshotError" class="muted attendance-snapshot-error hidden">截图不存在，可能已经被清理。</p>
     </div>
   </div>
 

@@ -63,8 +63,10 @@ func (s *Store) ListAttendance(ctx context.Context, day string) ([]Attendance, e
         SELECT a.id,s.id,s.student_no,s.name,s.class_name,a.day,a.checked_at,
                COALESCE(NULLIF(a.last_seen_at,0),a.checked_at),
                CASE WHEN a.recognition_count<1 THEN 1 ELSE a.recognition_count END,
-               a.similarity
+               a.similarity,
+               CASE WHEN snap.attendance_id IS NULL THEN 0 ELSE 1 END
         FROM attendance a JOIN students s ON s.id=a.student_id
+        LEFT JOIN attendance_snapshots snap ON snap.attendance_id=a.id
         WHERE a.day=? ORDER BY a.checked_at DESC`, day)
 	if err != nil {
 		return nil, err
@@ -74,12 +76,15 @@ func (s *Store) ListAttendance(ctx context.Context, day string) ([]Attendance, e
 	for rows.Next() {
 		var record Attendance
 		var checkedAt, lastSeenAt int64
+		var snapshotAvailable int
 		if err := rows.Scan(
 			&record.ID, &record.StudentID, &record.StudentNo, &record.Name, &record.ClassName,
 			&record.Day, &checkedAt, &lastSeenAt, &record.RecognitionCount, &record.Similarity,
+			&snapshotAvailable,
 		); err != nil {
 			return nil, err
 		}
+		record.SnapshotAvailable = snapshotAvailable == 1
 		record.CheckedAt = time.Unix(checkedAt, 0).Format("2006-01-02 15:04:05")
 		record.LastSeenAt = time.Unix(lastSeenAt, 0).Format("2006-01-02 15:04:05")
 		out = append(out, record)

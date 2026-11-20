@@ -197,3 +197,47 @@ if (clearRecognitionStatsButton) {
   });
 }
 
+
+function formatSnapshotCacheBytes(value) {
+  const bytes = Number(value) || 0;
+  if (bytes >= 1024 ** 3) return (bytes / (1024 ** 3)).toFixed(2) + ' GB';
+  if (bytes >= 1024 ** 2) return (bytes / (1024 ** 2)).toFixed(1) + ' MB';
+  if (bytes >= 1024) return (bytes / 1024).toFixed(1) + ' KB';
+  return bytes + ' B';
+}
+
+function renderAttendanceSnapshotCache(stats) {
+  $('#attendanceSnapshotCacheCount').textContent = Number(stats.count || 0) + ' 张';
+  $('#attendanceSnapshotCacheBytes').textContent = formatSnapshotCacheBytes(stats.bytes || 0);
+  $('#attendanceSnapshotCacheState').textContent = Number(stats.count || 0) > 0 ? '已缓存' : '暂无截图';
+}
+
+async function loadAttendanceSnapshotCache() {
+  if (typeof currentUser === 'undefined' || !currentUser || !currentUser.is_admin) return;
+  try {
+    renderAttendanceSnapshotCache(await api('/api/cache/attendance-snapshots'));
+  } catch (error) {
+    $('#attendanceSnapshotCacheState').textContent = '读取失败';
+    toast(error.message);
+  }
+}
+
+const clearAttendanceSnapshotCacheButton = $('#clearAttendanceSnapshotCache');
+if (clearAttendanceSnapshotCacheButton) {
+  clearAttendanceSnapshotCacheButton.addEventListener('click', async () => {
+    const count = Number($('#attendanceSnapshotCacheCount').textContent.match(/\d+/)?.[0] || 0);
+    if (!window.confirm('确认清理全部识别现场截图吗？\n将删除 ' + count + ' 张照片，但不会删除考勤记录、学生资料或人脸样本。')) return;
+    clearAttendanceSnapshotCacheButton.disabled = true;
+    try {
+      const result = await api('/api/cache/attendance-snapshots', {method: 'DELETE'});
+      renderAttendanceSnapshotCache({count: result.remaining_count || 0, bytes: 0});
+      toast('已清理 ' + Number(result.deleted_count || 0) + ' 张识别截图');
+    } catch (error) {
+      toast(error.message);
+      loadAttendanceSnapshotCache();
+    } finally {
+      clearAttendanceSnapshotCacheButton.disabled = false;
+    }
+  });
+}
+

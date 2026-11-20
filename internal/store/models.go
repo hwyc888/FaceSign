@@ -51,6 +51,7 @@ type Attendance struct {
 	LastSeenAt       string  `json:"last_seen_at"`
 	RecognitionCount int     `json:"recognition_count"`
 	Similarity       float64 `json:"similarity"`
+	SnapshotAvailable bool   `json:"snapshot_available"`
 }
 
 type User struct {
@@ -70,7 +71,11 @@ type UserCloneCredential struct {
 	PasswordHash string
 }
 
-type Store struct { db *sql.DB }
+type Store struct {
+	db           *sql.DB
+	snapshotDir  string
+	snapshotTemp bool
+}
 
 type SeatAttendance struct {
 	StudentID        int64   `json:"student_id"`

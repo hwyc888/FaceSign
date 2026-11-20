@@ -2,6 +2,7 @@ package web
 
 import (
 	"net/http"
+	"time"
 
 	"github.com/hwyc888/FaceSign/internal/face"
 )
@@ -28,6 +29,8 @@ func (s *Server) health(w http.ResponseWriter, r *http.Request) {
 		"docker":          false,
 		"students":        count,
 		"match_threshold": s.currentRecognitionThresholds().MatchThreshold,
+		"resources":       readSystemResources(),
+		"recognition_metrics": s.recognitionMetricsSnapshot(time.Now()),
 		"version":         s.version,
 	})
 }

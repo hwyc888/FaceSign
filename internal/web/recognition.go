@@ -2,8 +2,10 @@ package web
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"image"
+	"image/jpeg"
 	"net/http"
 	"sort"
 	"strings"
@@ -359,7 +361,7 @@ func (s *Server) recognizePreparedImage(
 			verifiedCount++
 			matchedCount++
 			verifiedStudentIDs = append(verifiedStudentIDs, student.ID)
-			record, created, err := s.markAttendanceWithoutLiveness(r, sessionID, student, match.Similarity, now)
+			record, created, err := s.markAttendanceWithoutLiveness(r, sessionID, student, match.Similarity, now, img)
 			if err != nil {
 				writeError(w, http.StatusInternalServerError, err)
 				return
@@ -435,6 +437,7 @@ func (s *Server) recognizePreparedImage(
 					writeError(w, http.StatusInternalServerError, err)
 					return
 				}
+				s.saveAttendanceSnapshot(r.Context(), &record, img)
 				result.Attendance = &record
 				result.FirstCheckinToday = created
 				s.tracker.Commit(sessionID, decision.TrackID)
@@ -470,6 +473,7 @@ func (s *Server) recognizePreparedImage(
 	if statsErr != nil {
 		s.logger.Warn("record recognition stats failed", "error", statsErr)
 	}
+	s.recordRecognitionFrame(now, len(results), matchedCount, verifiedCount)
 
 	waitingFaceCount := 0
 	for _, item := range personResults {
@@ -547,6 +551,7 @@ func (s *Server) markAttendanceWithoutLiveness(
 	student store.Student,
 	similarity float64,
 	now time.Time,
+	img image.Image,
 ) (*store.Attendance, bool, error) {
 	if s.tracker.IsCommitted(sessionID, student.ID, now) {
 		return nil, false, nil
@@ -555,8 +560,28 @@ func (s *Server) markAttendanceWithoutLiveness(
 	if err != nil {
 		return nil, false, err
 	}
+	s.saveAttendanceSnapshot(r.Context(), &record, img)
 	s.tracker.CommitDirect(sessionID, student.ID, now)
 	return &record, created, nil
+}
+
+func (s *Server) saveAttendanceSnapshot(ctx context.Context, record *store.Attendance, img image.Image) {
+	if record == nil || record.ID <= 0 || img == nil {
+		return
+	}
+	var encoded bytes.Buffer
+	if err := jpeg.Encode(&encoded, img, &jpeg.Options{Quality: 82}); err != nil {
+		s.logger.Warn("encode attendance recognition snapshot failed", "attendance_id", record.ID, "error", err)
+		return
+	}
+	available, err := s.store.SaveAttendanceSnapshot(ctx, record.ID, encoded.Bytes())
+	if err != nil {
+		if s.logger != nil {
+			s.logger.Warn("save attendance recognition snapshot failed", "attendance_id", record.ID, "error", err)
+		}
+		return
+	}
+	record.SnapshotAvailable = available
 }
 
 func boxFromRectangle(rect image.Rectangle) faceBox {
