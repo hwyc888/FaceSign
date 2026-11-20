@@ -23,6 +23,15 @@ func TestLivenessModelSpecSelectsSilentFaceByDefaultAndLegacyBackends(t *testing
 	if spec.Name != "minifasnet-v2se.onnx" || spec.SHA256 != "af2381b88f38769222ed93379e12444e2a50814575de1c46170de570c55a42b6" || spec.URL == "" {
 		t.Fatalf("MiniFAS A/B selection failed: %#v", spec)
 	}
+
+	t.Setenv("FACESIGN_LIVENESS_BACKEND", "unknown-value")
+	if backend := livenessModelBackend(); backend != "silent" {
+		t.Fatalf("unknown backend=%q want silent", backend)
+	}
+	spec = livenessModelSpec()
+	if spec.Name != "MiniFASNetV2.onnx" {
+		t.Fatalf("unknown backend must resolve to the current Silent-Face default: %#v", spec)
+	}
 }
 
 func TestReadByChecksums(t *testing.T) {

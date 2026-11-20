@@ -19,6 +19,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          lfs: true
 
       - name: Set up Go
         uses: actions/setup-go@v7
@@ -77,34 +79,38 @@ jobs:
       - name: Package runtime models and Ubuntu scripts
         run: |
           mkdir -p dist/models/by dist/scripts/ubuntu
-          cp models/anti-spoof-mn3.onnx models/README.md models/SHA256SUMS \
-            models/ANTI_SPOOF_LICENSE.txt models/MINIFAS_LICENSE.txt \
-            models/SILENT_FACE_LICENSE.txt models/YOLOX_LICENSE.txt dist/models/
+          cp models/README.md models/SHA256SUMS models/SILENT_FACE_LICENSE.txt \
+            models/YOLOX_LICENSE.txt dist/models/
           cp models/by/README.md dist/models/by/README.md
 
+          # Package only the current default Silent-Face ensemble and YOLOX-Nano.
           curl -fL --retry 3 --retry-all-errors \
             https://github.com/yakhyo/face-anti-spoofing/releases/download/weights/MiniFASNetV2.onnx \
             -o dist/models/MiniFASNetV2.onnx
           curl -fL --retry 3 --retry-all-errors \
             https://github.com/yakhyo/face-anti-spoofing/releases/download/weights/MiniFASNetV1SE.onnx \
             -o dist/models/MiniFASNetV1SE.onnx
-
-          mini_model=dist/models/minifasnet-v2se.onnx
-          curl -fL --retry 3 --retry-all-errors \
-            https://github.com/facenox/face-antispoof-onnx/releases/download/v1.0.0/best_model.onnx \
-            -o "$mini_model" || true
-          if [[ ! -f "$mini_model" ]] || ! echo "af2381b88f38769222ed93379e12444e2a50814575de1c46170de570c55a42b6  $mini_model" | sha256sum -c --status; then
-            rm -f "$mini_model"
-            curl -fL --retry 3 --retry-all-errors \
-              https://raw.githubusercontent.com/facenox/face-antispoof-onnx/2f8dd93dd0fd9d120f08e83d9020719f67ffdb68/models/best/98.20/best_model.onnx \
-              -o "$mini_model"
-          fi
-
           curl -fL --retry 3 --retry-all-errors \
             https://github.com/Megvii-BaseDetection/YOLOX/releases/download/0.1.1rc0/yolox_nano.onnx \
             -o dist/models/yolox_nano.onnx
 
           (cd dist/models && sha256sum -c SHA256SUMS)
+
+          face_names=(scrfd_10g.onnx arcface_w600k_r50.onnx SHA256SUMS)
+          face_count=0
+          for name in "${face_names[@]}"; do
+            if [[ -f "models/by/$name" ]]; then face_count=$((face_count + 1)); fi
+          done
+          if [[ "$face_count" -ne 0 && "$face_count" -ne 3 ]]; then
+            echo "models/by must contain SCRFD, ArcFace and SHA256SUMS together"
+            exit 1
+          fi
+          if [[ "$face_count" -eq 3 ]]; then
+            cp models/by/scrfd_10g.onnx models/by/arcface_w600k_r50.onnx models/by/SHA256SUMS dist/models/by/
+            (cd dist/models/by && sha256sum -c SHA256SUMS)
+          else
+            echo "SCRFD/ArcFace weights not supplied; Ubuntu artifact is not self-contained for identity recognition."
+          fi
 
           cp scripts/ubuntu/*.sh dist/scripts/ubuntu/
           cp README.md dist/README.md
@@ -117,15 +123,19 @@ jobs:
           LD_LIBRARY_PATH: ${{ github.workspace }}/dist
           FACESIGN_TEST_ONNX_DLL: ${{ github.workspace }}/dist/libonnxruntime.so.1.26.0
           FACESIGN_TEST_SILENT_V2_MODEL: ${{ github.workspace }}/dist/models/MiniFASNetV2.onnx
-          FACESIGN_TEST_MINIFAS_MODEL: ${{ github.workspace }}/dist/models/minifasnet-v2se.onnx
         run: |
-          go test -count=1 -v ./internal/liveness -run 'TestMiniFASModelRuntime|TestSilentFaceModelRuntime'
+          go test -count=1 -v ./internal/liveness -run 'TestSilentFaceModelRuntime'
 
       - name: Verify Ubuntu package
         run: |
           test -x dist/FaceSign
           test -f dist/libonnxruntime.so.${ORT_VERSION}
           test -f dist/models/by/README.md
+          if [[ -f models/by/scrfd_10g.onnx ]]; then
+            test -f dist/models/by/scrfd_10g.onnx
+            test -f dist/models/by/arcface_w600k_r50.onnx
+            test -f dist/models/by/SHA256SUMS
+          fi
           test -f dist/scripts/ubuntu/start.sh
           test -f dist/scripts/ubuntu/status.sh
           test -f dist/scripts/ubuntu/stop.sh
