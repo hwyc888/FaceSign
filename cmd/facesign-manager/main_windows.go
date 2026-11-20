@@ -330,7 +330,7 @@ func windowProc(hwnd uintptr, message uint32, wParam, lParam uintptr) uintptr {
 		case idOpenWeb:
 			beginAsyncUIAction("打开管理网页", openWeb)
 		case idOpenLog:
-			beginAsyncUIAction("查看启动日志", openLog)
+			beginAsyncUIAction("查看最新日志", openLog)
 		case idOpenDir:
 			beginAsyncUIAction("打开安装目录", func() error { return shellOpen(installDirFlag) })
 		case idRefresh:
@@ -385,7 +385,7 @@ func createControls(hwnd syscall.Handle) {
 		{idEnableStartup, "开启开机启动", 24, 356, 150},
 		{idDisableStartup, "关闭开机启动", 190, 356, 150},
 		{idOpenWeb, "打开管理网页", 356, 356, 150},
-		{idOpenLog, "查看启动日志", 522, 356, 150},
+		{idOpenLog, "查看最新日志", 522, 356, 150},
 		{idOpenDir, "打开当前目录", 24, 402, 150},
 		{idUpgrade, "升级 FaceSign", 190, 402, 150},
 		{idInstall, "安装/注册本目录", 356, 402, 150},
