@@ -595,7 +595,7 @@ func TestBrowserCameraCanBeSavedAsDefault(t *testing.T) {
 	if _, err := s.CreateCamera(ctx, CameraInput{
 		Name: "无效浏览器摄像头",
 		Kind: "browser",
-		DeviceID: "bad\\x00device",
+		DeviceID: "bad\x00device",
 		Width: 1280,
 		Height: 720,
 		FPS: 30,
