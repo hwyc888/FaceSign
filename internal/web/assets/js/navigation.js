@@ -43,6 +43,8 @@ function stopStatusRefresh() {
 }
 
 async function showPage(name, options = {}) {
+  if (name !== 'face-compare' && typeof stopFaceCompareCamera === 'function') stopFaceCompareCamera();
+  if (name === 'face-compare' && typeof stopCamera === 'function') await stopCamera().catch(() => {});
   if (name !== 'status') stopStatusRefresh();
   if (name !== 'checkin' && typeof stopAutoRecognition === 'function') {
     stopAutoRecognition();
@@ -75,6 +77,7 @@ async function showPage(name, options = {}) {
     }
   }
   if (name === 'attendance') loadAttendance();
+  if (name === 'face-compare' && typeof resetFaceComparePage === 'function') resetFaceComparePage();
   if (name === 'users') await loadUsers();
   if (name === 'settings') {
     await Promise.all([loadClasses(), loadCameras(), loadAppSettings(), loadRecognitionStats()]);
@@ -96,11 +99,13 @@ $$('.nav').forEach(b => b.addEventListener('click', () => showPage(b.dataset.pag
 async function loadHealth() {
   try {
     const h = await api('/api/health');
-    $('#healthPill').textContent = `系统在线 · ${h.students} 人`;
+    $('#healthModelName').textContent = h.engine || '人脸识别模型未上报';
+    $('#healthModelParams').textContent = String(h.device || 'CPU').toUpperCase() + ' · 匹配阈值 ' + Number(h.match_threshold || 0).toFixed(2) + ' · ' + h.students + ' 人';
     renderSystemResources(h.resources || {});
     renderRecognitionMetrics(h.recognition_metrics || {});
   } catch (e) {
-    $('#healthPill').textContent = '服务异常';
+    $('#healthModelName').textContent = 'FaceSign 服务异常';
+    $('#healthModelParams').textContent = e.message || '无法读取模型信息';
     const cpu = $('#systemCpuValue');
     if (cpu) cpu.textContent = '暂不可用';
   }

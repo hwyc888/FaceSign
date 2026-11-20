@@ -21,6 +21,7 @@ func TestFrontendModulesAreEmbedded(t *testing.T) {
 		"assets/js/students.js",
 		"assets/js/photo_import.js",
 		"assets/js/attendance.js",
+		"assets/js/face_compare.js",
 		"assets/js/users.js",
 		"assets/js/auth.js",
 		"assets/js/boot.js",
@@ -1675,3 +1676,36 @@ func TestAttendanceSnapshotUIOnlyOffersViewingToAdmins(t *testing.T) {
 		t.Fatal("attendance snapshot action must be restricted to administrator accounts")
 	}
 }
+
+func TestDailySnapshotTimelineAndFaceCompareUI(t *testing.T) {
+	htmlData, err := assets.ReadFile("assets/index.html")
+	if err != nil { t.Fatal(err) }
+	html := string(htmlData)
+	for _, want := range []string{
+		`data-page="face-compare"`,
+		`id="page-face-compare"`,
+		`id="faceCompareFile"`,
+		`id="faceCompareCamera"`,
+		`id="faceCompareRun"`,
+		`id="faceCompareThreshold"`,
+		`id="attendanceSnapshotTimeline"`,
+		`id="healthModelName"`,
+		`id="healthModelParams"`,
+		`/js/face_compare.js`,
+	} {
+		if !strings.Contains(html, want) { t.Fatalf("daily snapshot / face comparison UI missing %s", want) }
+	}
+	jsData, err := assets.ReadFile("assets/js/face_compare.js")
+	if err != nil { t.Fatal(err) }
+	script := string(jsData)
+	for _, want := range []string{
+		"getUserMedia",
+		"/api/face-compare",
+		"renderFaceCompareResult",
+		"faceCompareThreshold",
+		"URL.createObjectURL",
+	} {
+		if !strings.Contains(script, want) { t.Fatalf("face comparison interaction missing %q", want) }
+	}
+}
+

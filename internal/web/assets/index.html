@@ -71,6 +71,7 @@
         <button class="nav" data-page="students" data-icon="♙" title="学生管理" aria-label="学生管理">学生管理</button>
         <button class="nav" data-page="seating" data-icon="▦" data-permission="can_arrange_seats" title="座位编排" aria-label="座位编排">座位编排</button>
         <button class="nav" data-page="attendance" data-icon="▤" title="考勤记录" aria-label="考勤记录">考勤记录</button>
+        <button class="nav" data-page="face-compare" data-icon="◎" data-admin-only title="人脸比对" aria-label="人脸比对">人脸比对</button>
         <button class="nav" data-page="settings" data-icon="⚙" data-permission="can_edit_settings" title="设置" aria-label="设置">设置</button>
         <button class="nav" data-page="users" data-icon="♟" data-admin-only title="人员管理" aria-label="人员管理">人员管理</button>
         <button class="nav" data-page="status" data-icon="⌁" title="系统状态" aria-label="系统状态">系统状态</button>
@@ -84,7 +85,7 @@
           <p id="pageHint">摄像头可同时识别多人并完成签到</p>
         </div>
         <div class="topbar-actions">
-          <div class="pill" id="healthPill">正在检测...</div>
+          <div class="pill model-health-pill" id="healthPill"><strong id="healthModelName">正在检测模型...</strong><span id="healthModelParams">正在读取运行参数</span></div>
           <span class="current-user" id="currentUserLabel"></span>
           <button id="changePasswordOpen" type="button">修改密码</button>
           <button id="logoutButton" type="button">退出登录</button>
@@ -357,6 +358,67 @@
               <tbody id="attendanceBody"></tbody>
             </table>
           </div>
+        </div>
+      </section>
+
+      <section class="page face-compare-page" id="page-face-compare" data-admin-only>
+        <div class="grid two face-compare-layout">
+          <div class="card">
+            <div class="card-head">
+              <div>
+                <h2>上传照片进行比对</h2>
+                <p class="muted compact">选择一张包含单个人脸的照片，与当前人脸库逐一比对。</p>
+              </div>
+              <span class="mode-pill">ArcFace</span>
+            </div>
+            <label class="face-compare-upload" for="faceCompareFile">
+              <input id="faceCompareFile" type="file" accept="image/jpeg,image/png">
+              <span class="face-compare-upload-icon">＋</span>
+              <strong>选择一张照片</strong>
+              <small>支持 JPG、PNG、WEBP，最大 8 MB</small>
+            </label>
+            <div class="face-compare-preview-wrap hidden" id="faceComparePreviewWrap">
+              <img id="faceComparePreview" alt="待比对的人脸照片">
+              <button type="button" id="faceCompareRemove" class="small">移除照片</button>
+            </div>
+            <div class="face-compare-camera-actions">
+              <button id="faceCompareOpenCamera" type="button">打开摄像头拍照</button>
+              <button id="faceCompareCapture" type="button" class="primary" disabled>拍摄当前画面</button>
+              <button id="faceCompareCloseCamera" type="button" disabled>关闭摄像头</button>
+            </div>
+            <div class="face-compare-camera-wrap hidden" id="faceCompareCameraWrap">
+              <video id="faceCompareCamera" autoplay playsinline muted></video>
+            </div>
+            <button id="faceCompareRun" class="primary block face-compare-submit" type="button" disabled>开始人脸库比对</button>
+            <p class="muted face-compare-privacy">照片只在本次请求中用于提取特征和相似度计算，不会新增到人脸库，也不会保存上传照片。</p>
+          </div>
+          <div class="card face-compare-result-card">
+            <h2>比对结果</h2>
+            <div id="faceCompareEmpty" class="face-compare-empty">
+              <span>◎</span>
+              <strong>等待照片</strong>
+              <small>上传或拍摄照片后，点击开始比对。</small>
+            </div>
+            <div id="faceCompareResult" class="hidden">
+              <div class="face-compare-score">
+                <span>最高相似度</span>
+                <strong id="faceCompareBestScore">--</strong>
+                <span id="faceCompareDecision" class="mode-pill">--</span>
+              </div>
+              <div class="face-compare-threshold">
+                <span>当前系统匹配阈值</span>
+                <strong id="faceCompareThreshold">--</strong>
+              </div>
+              <div class="face-compare-match" id="faceCompareBestMatch"></div>
+              <h3>相似度排名</h3>
+              <div id="faceCompareCandidates" class="face-compare-candidates"></div>
+              <p id="faceCompareModelInfo" class="muted compact"></p>
+            </div>
+          </div>
+        </div>
+        <div class="card face-compare-disclaimer">
+          <strong>结果说明</strong>
+          <p class="muted compact">相似度是 ArcFace 特征向量的数值比较。达到当前阈值表示模型认为两张人脸可能属于同一人，不等于身份的绝对证明。本页面仅作静态照片比对，不执行活体检测，也不会触发签到。</p>
         </div>
       </section>
 
@@ -1059,13 +1121,13 @@
     <div class="modal attendance-snapshot-modal" role="dialog" aria-modal="true" aria-labelledby="attendanceSnapshotTitle">
       <div class="modal-head">
         <div>
-          <h2 id="attendanceSnapshotTitle">识别现场截图</h2>
-          <p class="muted compact">仅管理员可查看的本地签到现场照片。</p>
+          <h2 id="attendanceSnapshotTitle">当日识别照片</h2>
+          <p class="muted compact" id="attendanceSnapshotSubtitle">按识别时间倒序排列。</p>
         </div>
         <button id="attendanceSnapshotClose" class="icon-button" type="button" aria-label="关闭截图">×</button>
       </div>
-      <img id="attendanceSnapshotImage" class="attendance-snapshot-image" alt="学生成功签到时的现场截图">
-      <p id="attendanceSnapshotError" class="muted attendance-snapshot-error hidden">截图不存在，可能已经被清理。</p>
+      <div id="attendanceSnapshotTimeline" class="attendance-snapshot-timeline"></div>
+      <p id="attendanceSnapshotError" class="muted attendance-snapshot-error hidden">当天没有可查看的识别照片，或照片已被清理。</p>
     </div>
   </div>
 
@@ -1085,6 +1147,7 @@
   <script src="/js/students.js"></script>
   <script src="/js/photo_import.js"></script>
   <script src="/js/attendance.js"></script>
+  <script src="/js/face_compare.js"></script>
   <script src="/js/users.js"></script>
   <script src="/js/auth.js"></script>
   <script src="/js/boot.js"></script>

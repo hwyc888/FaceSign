@@ -51,9 +51,10 @@ func (s *Store) init(ctx context.Context) error {
             UNIQUE(student_id, day)
         )`,
 		`CREATE TABLE IF NOT EXISTS attendance_snapshots (
-            attendance_id INTEGER PRIMARY KEY,
-            file_name TEXT NOT NULL,
-            created_at INTEGER NOT NULL,
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            attendance_id INTEGER NOT NULL,
+            file_name TEXT NOT NULL UNIQUE,
+            recognized_at INTEGER NOT NULL,
             FOREIGN KEY(attendance_id) REFERENCES attendance(id) ON DELETE CASCADE
         )`,
 		`CREATE TABLE IF NOT EXISTS app_settings (
@@ -113,6 +114,9 @@ func (s *Store) init(ctx context.Context) error {
 			return fmt.Errorf("initialize database: %w", err)
 		}
 	}
+	if err := s.migrateAttendanceSnapshots(ctx); err != nil {
+		return err
+	}
 	if err := s.ensureColumn(ctx, "users", "can_edit_settings", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
@@ -162,6 +166,7 @@ func (s *Store) init(ctx context.Context) error {
 		"CREATE INDEX IF NOT EXISTS idx_face_samples_student ON face_samples(student_id, created_at DESC)",
 		"CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions(user_id, expires_at)",
 		"CREATE INDEX IF NOT EXISTS idx_attendance_day ON attendance(day, checked_at DESC)",
+		"CREATE INDEX IF NOT EXISTS idx_attendance_snapshots_recorded ON attendance_snapshots(attendance_id,recognized_at DESC,id DESC)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS idx_students_class_seat ON students(class_name,seat_no) WHERE seat_no > 0",
 		"CREATE UNIQUE INDEX IF NOT EXISTS idx_cameras_default ON cameras(is_default) WHERE is_default=1",
 		"CREATE UNIQUE INDEX IF NOT EXISTS idx_cameras_agent_id ON cameras(agent_id) WHERE agent_id <> ''",
@@ -173,6 +178,45 @@ func (s *Store) init(ctx context.Context) error {
 	return nil
 }
 
+
+
+func (s *Store) migrateAttendanceSnapshots(ctx context.Context) error {
+	rows, err := s.db.QueryContext(ctx, "PRAGMA table_info(attendance_snapshots)")
+	if err != nil { return err }
+	hasID, hasRecognizedAt := false, false
+	for rows.Next() {
+		var cid, notNull, pk int
+		var name, columnType string
+		var defaultValue any
+		if err := rows.Scan(&cid, &name, &columnType, &notNull, &defaultValue, &pk); err != nil {
+			rows.Close()
+			return err
+		}
+		switch strings.ToLower(name) {
+		case "id": hasID = true
+		case "recognized_at": hasRecognizedAt = true
+		}
+	}
+	if err := rows.Close(); err != nil { return err }
+	if hasID && hasRecognizedAt { return nil }
+
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil { return err }
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, "ALTER TABLE attendance_snapshots RENAME TO attendance_snapshots_legacy"); err != nil {
+		return fmt.Errorf("rename legacy attendance snapshots: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, "CREATE TABLE attendance_snapshots (id INTEGER PRIMARY KEY AUTOINCREMENT, attendance_id INTEGER NOT NULL, file_name TEXT NOT NULL UNIQUE, recognized_at INTEGER NOT NULL, FOREIGN KEY(attendance_id) REFERENCES attendance(id) ON DELETE CASCADE)"); err != nil {
+		return fmt.Errorf("create attendance snapshot timeline: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, "INSERT INTO attendance_snapshots(attendance_id,file_name,recognized_at) SELECT attendance_id,file_name,created_at*1000000000 FROM attendance_snapshots_legacy"); err != nil {
+		return fmt.Errorf("preserve legacy attendance snapshot: %w", err)
+	}
+	if _, err := tx.ExecContext(ctx, "DROP TABLE attendance_snapshots_legacy"); err != nil {
+		return fmt.Errorf("drop legacy attendance snapshots: %w", err)
+	}
+	return tx.Commit()
+}
 
 func (s *Store) ensureColumn(ctx context.Context, table, column, definition string) error {
 	rows, err := s.db.QueryContext(ctx, "PRAGMA table_info("+table+")")

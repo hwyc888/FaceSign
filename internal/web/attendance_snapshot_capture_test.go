@@ -40,7 +40,11 @@ func TestSuccessfulAttendanceSnapshotHelperWritesJPEG(t *testing.T) {
 	if !record.SnapshotAvailable {
 		t.Fatal("successful attendance did not receive a snapshot reference")
 	}
-	path, err := st.AttendanceSnapshotPath(ctx, record.ID)
+	snapshots, err := st.ListAttendanceSnapshots(ctx, record.ID)
+	if err != nil || len(snapshots) != 1 {
+		t.Fatalf("successful attendance snapshot timeline=%#v err=%v", snapshots, err)
+	}
+	path, err := st.AttendanceSnapshotPath(ctx, snapshots[0].ID)
 	if err != nil {
 		t.Fatal(err)
 	}

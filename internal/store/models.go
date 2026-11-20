@@ -50,8 +50,9 @@ type Attendance struct {
 	CheckedAt        string  `json:"checked_at"`
 	LastSeenAt       string  `json:"last_seen_at"`
 	RecognitionCount int     `json:"recognition_count"`
-	Similarity       float64 `json:"similarity"`
-	SnapshotAvailable bool   `json:"snapshot_available"`
+	Similarity        float64 `json:"similarity"`
+	SnapshotAvailable bool    `json:"snapshot_available"`
+	SnapshotCount     int     `json:"snapshot_count"`
 }
 
 type User struct {
@@ -136,4 +137,10 @@ type Camera struct {
 	TimeoutMS    int    `json:"timeout_ms"`
 	TLSInsecure  bool   `json:"tls_insecure"`
 	IsDefault    bool   `json:"is_default"`
+}
+
+type AttendanceSnapshot struct {
+	ID int64 `json:"id"`
+	AttendanceID int64 `json:"attendance_id"`
+	RecognizedAt string `json:"recognized_at"`
 }

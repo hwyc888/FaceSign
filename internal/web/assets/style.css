@@ -835,3 +835,61 @@ pre{background:#0b1220;color:#d8e2f3;border-radius:12px;padding:16px;overflow:au
 .attendance-snapshot-error{margin:16px 0 0;text-align:center}
 @media(max-width:900px){.system-metrics-grid{grid-template-columns:1fr 1fr}.system-metric-card:last-child{grid-column:1/-1}}
 @media(max-width:620px){.system-metrics-grid{grid-template-columns:1fr}.system-metric-card:last-child{grid-column:auto}.system-metric-card{min-height:125px}.system-chart-card{padding:16px 12px}.system-chart-wrap{min-height:170px}.snapshot-cache-actions button{width:100%}}
+
+/* Daily attendance recognition photo timeline */
+.model-health-pill{display:flex;flex-direction:column;gap:2px;white-space:normal;min-width:250px;max-width:410px}
+.model-health-pill strong{font-size:12px;line-height:1.35;color:#203653}
+.model-health-pill span{font-size:11px;color:#7b8798;line-height:1.35}
+.attendance-snapshot-timeline{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14px;max-height:72vh;overflow:auto;padding:3px}
+.attendance-snapshot-item{border:1px solid #e5eaf2;border-radius:12px;padding:10px;background:#fbfcfe;min-width:0}
+.attendance-snapshot-item-head{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:8px;font-size:12px}
+.attendance-snapshot-item-head strong{font-variant-numeric:tabular-nums;color:#263954}
+.attendance-snapshot-item-head span{font-size:11px;color:#16845a;background:#e8f7ef;border-radius:999px;padding:4px 8px;white-space:nowrap}
+.attendance-snapshot-item img{display:block;width:100%;max-height:300px;object-fit:contain;background:#0b1220;border-radius:8px}
+.attendance-snapshot-modal{width:min(100%,1120px)}
+/* Face library comparison workspace */
+.face-compare-layout{align-items:start}
+.face-compare-upload{display:flex;min-height:190px;flex-direction:column;align-items:center;justify-content:center;gap:9px;margin:18px 0;padding:22px;border:1.5px dashed #cbd5e3;border-radius:14px;background:#f8faff;cursor:pointer;text-align:center}
+.face-compare-upload:hover{border-color:#7da4e8;background:#f3f7ff}
+.face-compare-upload input{position:absolute;width:1px;height:1px;opacity:0;pointer-events:none}
+.face-compare-upload-icon{display:flex;align-items:center;justify-content:center;width:44px;height:44px;border-radius:13px;background:#eaf1ff;color:#376dc8;font-size:28px}
+.face-compare-upload strong{color:#263954;font-size:14px}
+.face-compare-upload small{color:#8994a5;font-size:11px}
+.face-compare-preview-wrap{position:relative;margin:14px 0}
+.face-compare-preview-wrap img{display:block;width:100%;max-height:360px;object-fit:contain;background:#0b1220;border-radius:12px}
+.face-compare-preview-wrap button{margin-top:8px}
+.face-compare-camera-actions{display:flex;gap:8px;flex-wrap:wrap}
+.face-compare-camera-actions button{font-size:12px;padding:8px 10px}
+.face-compare-camera-wrap{margin-top:12px;overflow:hidden;border-radius:12px;background:#0b1220}
+.face-compare-camera-wrap video{display:block;width:100%;max-height:360px;object-fit:contain}
+.face-compare-submit{width:100%;margin-top:16px}
+.face-compare-privacy{font-size:11px;line-height:1.6;margin-top:12px}
+.face-compare-empty{min-height:280px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:#8a96a8;text-align:center}
+.face-compare-empty span{font-size:42px;color:#b6c4d9}
+.face-compare-empty strong{font-size:15px;color:#66758a}
+.face-compare-empty small{font-size:12px}
+.face-compare-score{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:15px 0;border-bottom:1px solid #edf0f5}
+.face-compare-score>span:first-child{font-size:12px;color:#748197}
+.face-compare-score>strong{font-size:34px;color:#1d3556;font-variant-numeric:tabular-nums}
+.face-compare-positive{background:#e8f7ef;color:#147a4c;border-color:#b9e4cc}
+.face-compare-negative{background:#fff1ee;color:#bd483d;border-color:#f2c6bf}
+.face-compare-threshold{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:13px 0;color:#718096;font-size:12px}
+.face-compare-threshold strong{font-size:18px;color:#345f9f}
+.face-compare-match{display:flex;flex-direction:column;gap:5px;padding:14px;border-radius:12px;background:#f6f8fc;margin-bottom:16px}
+.face-compare-match strong{font-size:18px;color:#203653}
+.face-compare-match span{font-size:12px;color:#738096}
+.face-compare-result-card h3{font-size:14px;margin:12px 0}
+.face-compare-candidates{display:flex;flex-direction:column;gap:10px}
+.face-compare-candidate{display:grid;grid-template-columns:24px minmax(0,1fr) auto;gap:10px;align-items:center}
+.face-compare-rank{width:23px;height:23px;display:flex;align-items:center;justify-content:center;border-radius:7px;background:#edf2fa;color:#4f6586;font-size:11px;font-weight:700}
+.face-compare-candidate-main{min-width:0;display:flex;flex-direction:column;gap:3px}
+.face-compare-candidate-main strong{font-size:12px;color:#30445f}
+.face-compare-candidate-main small{font-size:10px;color:#8a96a8}
+.face-compare-score-track{height:5px;background:#edf1f6;border-radius:99px;overflow:hidden;margin-top:3px}
+.face-compare-score-track i{display:block;height:100%;background:#5782ce;border-radius:99px}
+.face-compare-candidate-score{font-size:12px;color:#3d5e92;font-variant-numeric:tabular-nums}
+.face-compare-model-info{margin-top:14px;font-size:11px}
+.face-compare-disclaimer{margin-top:18px}
+.face-compare-disclaimer strong{font-size:13px;color:#4e5f77}
+.face-compare-disclaimer p{margin:7px 0 0;line-height:1.7}
+@media(max-width:720px){.attendance-snapshot-timeline{grid-template-columns:1fr}.model-health-pill{min-width:0;max-width:100%}.face-compare-layout{grid-template-columns:minmax(0,1fr)}}
