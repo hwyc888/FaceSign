@@ -8,13 +8,13 @@ This branch has one supported face-recognition pipeline:
 
 - **SCRFD-10GF**: face detection and five facial landmarks.
 - **ArcFace ResNet50**: 512-dimensional identity embeddings.
-- **MiniFASNetV2-SE (trial)**: default RGB presentation-attack screening; MN3 remains selectable with `FACESIGN_LIVENESS_BACKEND=mn3` for A/B comparison (see [model terms](models/README.md)).
+- **Silent-Face MiniFASNetV2 + MiniFASNetV1SE**: default passive RGB presentation-attack screening; optional legacy MN3 and MiniFAS A/B backends are not bundled.
 - **YOLOX-Nano**: person detection used by the person-tracking workflow.
 - **ONNX Runtime CPU**: inference without a GPU requirement.
 
 YuNet and SFace have been removed from this branch. There is no legacy face-model backend or runtime fallback.
 
-Install the separately authorized SCRFD and ArcFace ONNX files under `models/by/`. See [models/by/README.md](models/by/README.md) for filenames and checksum-manifest setup. The face weights are not included in this repository or CI artifacts.
+The authorized SCRFD and ArcFace ONNX files belong under `models/by/` with a matching `SHA256SUMS` manifest. The Windows full-package workflow includes them when the three authorized input files are supplied; it never substitutes a different checkpoint. The upstream InsightFace model-zoo weights have restrictive terms, so do not redistribute them unless the intended school-attendance use and package distribution are covered by your licence or written permission.
 
 ## Features
 
@@ -32,13 +32,13 @@ Install the separately authorized SCRFD and ArcFace ONNX files under `models/by/
 
 GitHub Actions publishes:
 
-- `facesign-windows-amd64-full`: application, native runtime, FFmpeg, anti-spoof model, person model, and By model installation instructions. Add authorized SCRFD/ArcFace files before first launch.
+- `facesign-windows-amd64-full`: application, native runtime, FFmpeg, the current Silent-Face ensemble, YOLOX-Nano, and the By face models when the authorized SCRFD/ArcFace files and checksum manifest are supplied to the build.
 - `facesign-windows-amd64-lite`: lightweight application upgrade package without model files.
 - `facesign-windows-amd64-full-no-ffmpeg`: full package without the FFmpeg runtime.
 - `facesign-windows-amd64-no-models-no-ffmpeg`: minimal application package.
 - `facesign-camera-agent-windows-amd64`: remote camera agent.
 
-The full package is not self-contained for face inference until the two authorized By face weights and local SHA-256 manifest are installed. FaceSign never downloads or redistributes those weights automatically.
+The full package is self-contained for identity recognition only when `models/by/scrfd_10g.onnx`, `models/by/arcface_w600k_r50.onnx`, and `models/by/SHA256SUMS` are included and verified. FaceSign never downloads or silently replaces these restricted face weights.
 
 ## Feature-vector migration
 
@@ -51,14 +51,14 @@ Students must be re-enrolled using the new model or imported from authorized ori
 - HTTP: `0.0.0.0:8080`
 - HTTPS: `0.0.0.0:8443`
 - ONNX Runtime DLL: `onnxruntime.dll` beside `FaceSign.exe`
-- Model directory: `models/by/` or `FACESIGN_BY_MODEL_DIR`
+- Runtime support models: `models/`
+- Face-recognition models: `models/by/` or `FACESIGN_BY_MODEL_DIR`
 
-If startup fails, check `facesign-error.log` beside the executable. If the directory is not writable, the fallback log is under the user's temporary directory.
+If startup fails, check `facesign-error.log` beside the executable. If the directory is not writable, the fallback log is under the user's temporary directory. Installer output is also recorded in `data/facesign-install.log`.
 
 ## Development and CI
 
-Windows CI runs Go tests, vet, builds the Windows x64 executables, and creates package artifacts. End-to-end camera/model smoke tests require the authorized SCRFD and ArcFace weights to be supplied to the runner; they are not silently replaced by an older model.
-
+Windows CI runs Go tests, vet, builds the Windows x64 executables, validates the current runtime model manifest, and creates package artifacts. End-to-end face recognition smoke tests require the authorized SCRFD and ArcFace weights to be supplied to the runner; they are not silently replaced by an older model.
 
 ## Ubuntu deployment
 
