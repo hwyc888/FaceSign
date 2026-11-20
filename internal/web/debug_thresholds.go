@@ -29,11 +29,22 @@ func validateRecognitionThresholds(value store.RecognitionThresholds) error {
 		label string
 		value, min, max float64
 	}{
-		{"人脸匹配阈值", value.MatchThreshold, 0.000001, 0.999999},
-		{"人脸检测阈值", value.DetectionThreshold, 0.000001, 0.999999},
 		{"活体通过阈值", value.LivenessPassThreshold, 0.40, 0.95},
 		{"单帧有效阈值", value.LivenessFrameThreshold, 0.30, 0.90},
 		{"攻击判定阈值", value.LivenessSpoofThreshold, 0.05, 0.50},
+	}
+	// Match and detection flags accepted any value strictly between 0 and 1
+	// before the debug panel existed. Preserve those startup configurations.
+	for _, item := range []struct {
+		label string
+		value float64
+	}{
+		{"人脸匹配阈值", value.MatchThreshold},
+		{"人脸检测阈值", value.DetectionThreshold},
+	} {
+		if math.IsNaN(item.value) || math.IsInf(item.value, 0) || item.value <= 0 || item.value >= 1 {
+			return fmt.Errorf("%s必须在 0 和 1 之间", item.label)
+		}
 	}
 	for _, limit := range limits {
 		if math.IsNaN(limit.value) || math.IsInf(limit.value, 0) || limit.value < limit.min || limit.value > limit.max {

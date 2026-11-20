@@ -26,6 +26,13 @@ func TestRecognitionDebugThresholdsRequireAdminValidateAndReset(t *testing.T) {
 	user := store.User{ID: 2, CanEditSettings: true}
 	policy := `{"match_threshold":0.74,"detection_threshold":0.44,"liveness_pass_threshold":0.70,"liveness_frame_threshold":0.58,"liveness_spoof_threshold":0.38}`
 
+	getAsEditor := requestAsUser(httptest.NewRequest(http.MethodGet, "/api/debug/thresholds", nil), user)
+	getRec := httptest.NewRecorder()
+	s.recognitionDebugThresholds(getRec, getAsEditor)
+	if getRec.Code != http.StatusForbidden {
+		t.Fatalf("settings editor can inspect security thresholds: status=%d", getRec.Code)
+	}
+
 	noAdmin := httptest.NewRequest(http.MethodPut, "/api/debug/thresholds", strings.NewReader(policy))
 	noAdmin = requestAsUser(noAdmin, user)
 	rec := httptest.NewRecorder()
