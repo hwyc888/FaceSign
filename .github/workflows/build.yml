@@ -87,7 +87,8 @@ jobs:
             throw 'Installer must resolve the signed-in Windows user before startup-task registration'
           }
           $ensureFaceIndex = $installText.IndexOf('Ensure-FaceModels -TargetDir')
-          $ensureByIndex = $installText.IndexOf('Ensure-ByFaceModels')
+          $ensureByCall = [regex]::Match($installText, '(?m)^Ensure-ByFaceModels\s*$')
+          $ensureByIndex = if ($ensureByCall.Success) { $ensureByCall.Index } else { -1 }
           $stopIndex = $installText.IndexOf('$oldTask = Get-ScheduledTask')
           if ($ensureFaceIndex -lt 0 -or $ensureByIndex -lt 0 -or $stopIndex -lt 0 -or $ensureFaceIndex -gt $stopIndex -or $ensureByIndex -gt $stopIndex) {
             throw 'Installer must validate runtime and SCRFD/ArcFace models before stopping an existing service'
@@ -337,6 +338,23 @@ jobs:
             }
           }
           if (-not (Test-Path 'dist-full\models\by\README.md' -PathType Leaf)) { throw 'Full package is missing By model installation instructions' }
+
+          $byNames = @('scrfd_10g.onnx','arcface_w600k_r50.onnx','SHA256SUMS')
+          $sourceByCount = @($byNames | Where-Object { Test-Path (Join-Path 'models\by' $_) -PathType Leaf }).Count
+          $packagedByCount = @($byNames | Where-Object { Test-Path (Join-Path 'dist-full\models\by' $_) -PathType Leaf }).Count
+          if ($sourceByCount -notin @(0,3)) { throw 'models/by source contains an incomplete SCRFD/ArcFace bundle' }
+          if ($packagedByCount -ne $sourceByCount) { throw 'Full package did not preserve the supplied SCRFD/ArcFace bundle' }
+          if ($packagedByCount -eq 3) {
+            $byHashes = @{}
+            foreach ($line in Get-Content 'dist-full\models\by\SHA256SUMS') {
+              if ($line -match '^([0-9a-fA-F]{64})\s+(.+)$') { $byHashes[$matches[2].Trim()] = $matches[1].ToLowerInvariant() }
+            }
+            foreach ($name in @('scrfd_10g.onnx','arcface_w600k_r50.onnx')) {
+              if (-not $byHashes.ContainsKey($name)) { throw "By model manifest is missing $name" }
+              $actual = (Get-FileHash (Join-Path 'dist-full\models\by' $name) -Algorithm SHA256).Hash.ToLowerInvariant()
+              if ($actual -ne $byHashes[$name]) { throw "Packaged By model checksum mismatch: $name" }
+            }
+          }
 
           $checksums = Get-Content 'models\SHA256SUMS'
           foreach ($line in $checksums) {
