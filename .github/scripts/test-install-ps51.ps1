@@ -75,7 +75,11 @@ try {
   [IO.File]::WriteAllBytes((Join-Path $oldByDir 'arcface_w600k_r50.onnx'), [byte[]](7,8,9,10,11,12))
   $scrfdHash = (Get-FileHash -LiteralPath (Join-Path $oldByDir 'scrfd_10g.onnx') -Algorithm SHA256).Hash.ToLowerInvariant()
   $arcfaceHash = (Get-FileHash -LiteralPath (Join-Path $oldByDir 'arcface_w600k_r50.onnx') -Algorithm SHA256).Hash.ToLowerInvariant()
-  Set-Content -LiteralPath (Join-Path $oldByDir 'SHA256SUMS') -Value @($scrfdHash + '  scrfd_10g.onnx', $arcfaceHash + '  arcface_w600k_r50.onnx') -Encoding ASCII
+  $testManifest = [string[]]@(
+    [string]::Format('{0}  {1}', $scrfdHash, 'scrfd_10g.onnx'),
+    [string]::Format('{0}  {1}', $arcfaceHash, 'arcface_w600k_r50.onnx')
+  )
+  [IO.File]::WriteAllLines((Join-Path $oldByDir 'SHA256SUMS'), $testManifest, [Text.Encoding]::ASCII)
   Ensure-ByFaceModels
   foreach ($name in @('scrfd_10g.onnx','arcface_w600k_r50.onnx','SHA256SUMS')) {
     if (-not (Test-Path -LiteralPath (Join-Path $targetByDir $name) -PathType Leaf)) {
