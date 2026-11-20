@@ -1,5 +1,6 @@
 let editingCameraID = 0;
 let localCameraDevices = [];
+let browserCameraDevices = [];
 let cameraTestPreviewURL = null;
 
 const CAMERA_PRESETS = {
@@ -153,6 +154,92 @@ function cameraFormPayload() {
   return payload;
 }
 
+function renderBrowserCameraDeviceOptions(selected = $('#cameraBrowserFacing')?.value || 'user') {
+  const select = $('#cameraBrowserFacing');
+  if (!select) return;
+  const saved = String(selected ?? '');
+  const fixedOptions = [
+    '<option value="user">前置摄像头优先（推荐刷脸）</option>',
+    '<option value="environment">后置摄像头优先</option>',
+    '<option value="">自动选择当前设备</option>'
+  ];
+  const deviceOptions = browserCameraDevices.map((device, index) =>
+    '<option value="' + esc(device.deviceId) + '">USB / 摄像头 · ' +
+      esc(device.label || ('视频设备 ' + (index + 1))) + '</option>'
+  );
+  if (saved && !['user', 'environment'].includes(saved) &&
+      !browserCameraDevices.some(device => device.deviceId === saved)) {
+    deviceOptions.push('<option value="' + esc(saved) + '">已保存设备（当前浏览器未检测到，将回退默认设备）</option>');
+  }
+  select.innerHTML = fixedOptions.concat(deviceOptions).join('');
+  select.value = saved;
+  if (select.value !== saved) select.value = '';
+}
+
+async function refreshBrowserCameraDevices(showToast = false) {
+  if (!window.isSecureContext) {
+    throw new Error('检测当前电脑摄像头需要 HTTPS 安全连接，请使用 FaceSign 的 HTTPS 地址');
+  }
+  if (!navigator.mediaDevices?.getUserMedia || !navigator.mediaDevices?.enumerateDevices) {
+    throw new Error('当前浏览器不支持摄像头设备枚举，请更新浏览器后重试');
+  }
+
+  const activeBrowserStream = cameraOpen && activeCamera?.kind === 'browser' &&
+    stream?.getVideoTracks?.().some(track => track.readyState === 'live');
+  let temporaryStream = null;
+  if (!activeBrowserStream) {
+    stopCameraAudio(true);
+    try {
+      temporaryStream = await navigator.mediaDevices.getUserMedia({video: true, audio: false});
+    } catch (error) {
+      if (error?.name === 'NotAllowedError' || error?.name === 'PermissionDeniedError') {
+        throw new Error('浏览器尚未允许摄像头权限。请在地址栏网站权限中允许摄像头，再点击检测');
+      }
+      throw new Error('无法打开当前电脑摄像头：' + (error?.message || error));
+    }
+  }
+
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    browserCameraDevices = devices
+      .filter(device => device.kind === 'videoinput' && device.deviceId)
+      .map(device => ({deviceId: device.deviceId, label: device.label || ''}));
+    renderBrowserCameraDeviceOptions($('#cameraBrowserFacing')?.value || 'user');
+    renderCameraRows();
+    if (showToast) toast('当前访问设备检测到 ' + browserCameraDevices.length + ' 个摄像头（含 USB）');
+    return browserCameraDevices;
+  } finally {
+    if (temporaryStream) temporaryStream.getTracks().forEach(track => track.stop());
+  }
+}
+
+async function openBrowserCameraTestStream(camera) {
+  stopCameraAudio(true);
+  const attempts = [localVideoConstraints(camera)];
+  const requested = String(camera.device_id || '').trim();
+  if (requested && requested !== 'user' && requested !== 'environment') {
+    attempts.push(localVideoConstraints({...camera, device_id: ''}));
+  }
+  attempts.push({video: true, audio: false});
+
+  let lastError = null;
+  for (let index = 0; index < attempts.length; index++) {
+    try {
+      return {
+        stream: await navigator.mediaDevices.getUserMedia(attempts[index]),
+        fallback: index > 0
+      };
+    } catch (error) {
+      lastError = error;
+      if (!['NotFoundError', 'OverconstrainedError', 'NotReadableError', 'AbortError'].includes(error?.name)) {
+        throw error;
+      }
+      if (index + 1 < attempts.length) await new Promise(resolve => setTimeout(resolve, 120));
+    }
+  }
+  throw lastError || new Error('当前设备没有可用摄像头');
+}
+
 function resetCameraTestPanel(message = '填写摄像头参数后点击“测试连接”，系统会优先检查 RTSP/MJPEG 连续流；连续流失败时再验证 HTTP Snapshot 回退。') {
   const headline = $('#cameraTestHeadline');
   if (headline) {
@@ -257,30 +344,61 @@ async function testCurrentCameraConfig() {
         device_id: $('#cameraBrowserFacing').value
       };
       const started = performance.now();
+      const requestedDevice = String(camera.device_id || '').trim();
       const activeVideoTrack = cameraOpen && activeCamera?.kind === 'browser'
-        ? stream?.getVideoTracks?.()[0]
+        ? stream?.getVideoTracks?.().find(track => track.readyState === 'live') || null
         : null;
-      let testStream = null;
-      let videoTrack = activeVideoTrack || null;
-      if (!videoTrack || videoTrack.readyState !== 'live') {
-        const opened = await openBrowserCameraStream(camera);
-        testStream = opened.stream;
-        videoTrack = testStream.getVideoTracks()[0] || null;
+      const activeSettings = activeVideoTrack?.getSettings?.() || {};
+      const activeConstraints = activeVideoTrack?.getConstraints?.() || {};
+      const activeFacing = activeSettings.facingMode || activeConstraints.facingMode || '';
+      const activeMatches = Boolean(activeVideoTrack && (
+        !requestedDevice ||
+        (requestedDevice === 'user' && (!activeFacing || activeFacing === 'user')) ||
+        (requestedDevice === 'environment' && (!activeFacing || activeFacing === 'environment')) ||
+        (requestedDevice !== 'user' && requestedDevice !== 'environment' && activeSettings.deviceId === requestedDevice)
+      ));
+      if (activeVideoTrack && !activeMatches) {
+        throw new Error('当前正在使用其他摄像头。请先关闭正在运行的签到/采集摄像头，再测试所选 USB 设备');
       }
-      if (!videoTrack) throw new Error('当前访问设备摄像头没有可用的视频轨');
-      const settings = videoTrack.getSettings?.() || {};
-      if (testStream) testStream.getTracks().forEach(track => track.stop());
-      const reused = Boolean(activeVideoTrack && activeVideoTrack.readyState === 'live');
-      renderCameraConnectionTest({
-        ok: true,
-        message: `当前设备摄像头可用：${settings.width || camera.width}×${settings.height || camera.height}`,
-        elapsed_ms: Math.round(performance.now() - started),
-        checks: [
-          {name: '浏览器权限', status: 'ok', message: '当前手机/平板/电脑摄像头权限正常'},
-          {name: '设备连接', status: 'ok', message: reused ? 'FaceSign正在使用当前摄像头，连接正常' : '当前访问设备摄像头可以打开'}
-        ]
-      });
-      toast('当前访问设备摄像头测试成功');
+
+      let testStream = null;
+      let videoTrack = activeMatches ? activeVideoTrack : null;
+      let fallback = false;
+      try {
+        if (!videoTrack) {
+          const opened = await openBrowserCameraTestStream(camera);
+          testStream = opened.stream;
+          fallback = opened.fallback;
+          videoTrack = testStream.getVideoTracks()[0] || null;
+        }
+        if (!videoTrack) throw new Error('当前访问设备摄像头没有可用的视频轨');
+
+        const settings = videoTrack.getSettings?.() || {};
+        const devices = await navigator.mediaDevices.enumerateDevices().catch(() => []);
+        browserCameraDevices = devices
+          .filter(device => device.kind === 'videoinput' && device.deviceId)
+          .map(device => ({deviceId: device.deviceId, label: device.label || ''}));
+        renderBrowserCameraDeviceOptions(requestedDevice);
+        const selectedSpecificDevice = requestedDevice && requestedDevice !== 'user' && requestedDevice !== 'environment';
+        const selectionFailed = Boolean(selectedSpecificDevice && fallback);
+        const resolution = (settings.width || camera.width) + '×' + (settings.height || camera.height);
+        const trackName = videoTrack.label || '当前访问设备摄像头';
+        renderCameraConnectionTest({
+          ok: !selectionFailed,
+          message: selectionFailed
+            ? '所选 USB 摄像头未能打开，浏览器已回退到其他设备（' + trackName + ' · ' + resolution + '）。请重新检测并选择可用设备。'
+            : '当前访问设备摄像头可用：' + trackName + ' · ' + resolution,
+          elapsed_ms: Math.round(performance.now() - started),
+          checks: [
+            {name: '浏览器权限', status: 'ok', message: '浏览器已获得当前电脑摄像头权限'},
+            {name: '设备连接', status: selectionFailed ? 'error' : 'ok', message: selectionFailed ? '所选 USB 设备无法打开，当前画面来自回退设备' : '已成功打开 ' + trackName},
+            {name: '图像输出', status: 'ok', message: '已取得 ' + resolution + ' 视频轨'}
+          ]
+        });
+        toast(selectionFailed ? '所选 USB 摄像头不可用，请重新选择' : '当前访问设备摄像头测试成功');
+      } finally {
+        if (testStream) testStream.getTracks().forEach(track => track.stop());
+      }
       return;
     }
 
@@ -344,7 +462,9 @@ function cameraSourceLabel(camera) {
   if (camera.kind === 'browser') {
     if (camera.device_id === 'environment') return '后置摄像头优先';
     if (camera.device_id === 'user') return '前置摄像头优先';
-    return '当前设备系统默认摄像头';
+    if (!camera.device_id) return '当前访问设备自动选择';
+    const found = browserCameraDevices.find(device => device.deviceId === camera.device_id);
+    return found?.label || '已保存当前访问设备的 USB / 摄像头标识';
   }
   if (camera.kind === 'local') {
     if (!camera.device_id) return 'FaceSign主机第一个可用USB摄像头';
@@ -472,6 +592,7 @@ function resetCameraForm() {
   $('#cameraAgentSecret').value = '';
   $('#cameraAgentSecret').placeholder = '建议使用随机生成密钥';
   renderLocalCameraDeviceOptions('');
+  renderBrowserCameraDeviceOptions('user');
   updateCameraFormVisibility();
   resetCameraTestPanel();
 }
@@ -484,7 +605,7 @@ function editCamera(id) {
   $('#cameraName').value = camera.name;
   $('#cameraKind').value = camera.kind;
   renderLocalCameraDeviceOptions(camera.kind === 'local' ? (camera.device_id || '') : '');
-  $('#cameraBrowserFacing').value = camera.kind === 'browser' ? (camera.device_id || 'user') : 'user';
+  renderBrowserCameraDeviceOptions(camera.kind === 'browser' ? (camera.device_id || 'user') : 'user');
   const presetID = camera.kind === 'network' ? cameraPresetFromCamera(camera) : 'hikvision';
   $('#cameraPreset').value = presetID;
   $('#cameraIP').value = camera.kind === 'network' ? cameraIPFromCamera(camera) : '';
@@ -696,6 +817,7 @@ $('#cameraAdvancedToggle').addEventListener('click', () => {
 $('#cameraProtocol').addEventListener('change', updateCameraFormVisibility);
 $('#testCameraConfig').addEventListener('click', testCurrentCameraConfig);
 $('#refreshLocalCameras').addEventListener('click', () => refreshLocalCameraDevices(true).catch(e => toast(e.message)));
+$('#refreshBrowserCameras').addEventListener('click', () => refreshBrowserCameraDevices(true).catch(e => toast(e.message)));
 $('#cancelCameraEdit').addEventListener('click', resetCameraForm);
 
 $('#cameraForm').addEventListener('submit', async event => {
@@ -728,4 +850,5 @@ $('#cameraForm').addEventListener('submit', async event => {
 });
 
 resetCameraForm();
+renderBrowserCameraDeviceOptions('user');
 refreshLocalCameraDevices(false).catch(error => console.warn('host USB camera enumeration failed', error));

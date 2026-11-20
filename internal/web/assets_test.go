@@ -1194,11 +1194,12 @@ func TestBrowserAndHostUSBCamerasCanBothBeConfigured(t *testing.T) {
 	if err != nil { t.Fatal(err) }
 	html := string(htmlData)
 	for _, want := range []string{
-		`<option value="browser">当前访问设备摄像头（手机/平板/本机浏览器）</option>`,
+		`<option value="browser">当前访问设备摄像头（含本机 USB）</option>`,
 		`id="cameraBrowserFacing"`,
+		`id="refreshBrowserCameras"`,
 		"前置摄像头优先",
 		"后置摄像头优先",
-		"手机打开时就是手机摄像头",
+		"检测当前电脑摄像头 / USB",
 	} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("browser camera option missing %q", want)
@@ -1208,7 +1209,7 @@ func TestBrowserAndHostUSBCamerasCanBothBeConfigured(t *testing.T) {
 	cameraData, err := assets.ReadFile("assets/js/camera.js")
 	if err != nil { t.Fatal(err) }
 	cameraScript := string(cameraData)
-	for _, want := range []string{"camera.kind === 'browser'", "video.facingMode = {ideal: device}", "navigator.mediaDevices.getUserMedia"} {
+	for _, want := range []string{"camera.kind === 'browser'", "video.facingMode = {ideal: device}", "video.deviceId = {exact: device}", "navigator.mediaDevices.getUserMedia"} {
 		if !strings.Contains(cameraScript, want) {
 			t.Fatalf("browser camera runtime missing %q", want)
 		}
@@ -1221,10 +1222,10 @@ func TestBrowserAndHostUSBCamerasCanBothBeConfigured(t *testing.T) {
 		"kind === 'browser'",
 		"cameraBrowserFacing",
 		"当前访问设备摄像头测试成功",
-		"cameraOpen && activeCamera?.kind === 'browser'",
-		"stream?.getVideoTracks?.()[0]",
-		"const opened = await openBrowserCameraStream(camera)",
-		"FaceSign正在使用当前摄像头，连接正常",
+		"navigator.mediaDevices.enumerateDevices()",
+		"device.kind === 'videoinput'",
+		"refreshBrowserCameraDevices",
+		"openBrowserCameraTestStream",
 	} {
 		if !strings.Contains(settingsScript, want) {
 			t.Fatalf("browser camera settings missing %q", want)
@@ -1237,9 +1238,9 @@ func TestHostUSBCameraAndMobileCardLayoutAreEmbedded(t *testing.T) {
 	if err != nil { t.Fatal(err) }
 	html := string(htmlData)
 	for _, want := range []string{
-		"FaceSign主机 / USB摄像头",
-		"运行FaceSign程序那台电脑的摄像头",
-		"检测FaceSign电脑USB",
+		"FaceSign主机 / USB摄像头（服务端电脑）",
+		"运行 FaceSign 服务那台电脑的摄像头",
+		"检测FaceSign主机USB",
 	} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("host USB camera UI missing %q", want)
@@ -1259,13 +1260,15 @@ func TestHostUSBCameraAndMobileCardLayoutAreEmbedded(t *testing.T) {
 	cameraSettingsData, err := assets.ReadFile("assets/js/cameras.js")
 	if err != nil { t.Fatal(err) }
 	cameraSettings := string(cameraSettingsData)
-	for _, want := range []string{"/api/host-camera-devices", "protocol: kind === 'local' ? 'usb'"} {
+	for _, want := range []string{
+		"/api/host-camera-devices",
+		"protocol: kind === 'local' ? 'usb'",
+		"async function refreshLocalCameraDevices",
+		"async function refreshBrowserCameraDevices",
+	} {
 		if !strings.Contains(cameraSettings, want) {
 			t.Fatalf("camera settings missing %q", want)
 		}
-	}
-	if strings.Contains(cameraSettings, "navigator.mediaDevices.enumerateDevices") {
-		t.Fatal("saved FaceSign host USB cameras must not enumerate the remote browser device")
 	}
 
 	cssData, err := assets.ReadFile("assets/style.css")
@@ -1281,7 +1284,6 @@ func TestHostUSBCameraAndMobileCardLayoutAreEmbedded(t *testing.T) {
 		}
 	}
 }
-
 
 func TestResponsiveLayoutCoversDesktopTabletAndPhone(t *testing.T) {
 	htmlData, err := assets.ReadFile("assets/index.html")
@@ -1740,5 +1742,70 @@ func TestFaceCompareShowsOnlyBestMatchAndUsesFloatingCameraModal(t *testing.T) {
 	css := string(cssData)
 	for _, want := range []string{".face-compare-camera-modal{position:fixed", "z-index:1200"} {
 		if !strings.Contains(css, want) { t.Fatalf("floating camera overlay style missing %q", want) }
+	}
+}
+
+func TestBrowserCameraCanSelectClientUSBDevice(t *testing.T) {
+	htmlData, err := assets.ReadFile("assets/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	html := string(htmlData)
+	for _, want := range []string{"id=\"cameraBrowserFacing\"", "id=\"refreshBrowserCameras\"", "当前访问设备摄像头", "USB 摄像头"} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("browser USB camera UI missing %q", want)
+		}
+	}
+
+	cameraData, err := assets.ReadFile("assets/js/cameras.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cameraScript := string(cameraData)
+	for _, want := range []string{"navigator.mediaDevices.enumerateDevices()", "device.kind === 'videoinput'", "refreshBrowserCameraDevices", "openBrowserCameraTestStream", "cameraBrowserFacing"} {
+		if !strings.Contains(cameraScript, want) {
+			t.Fatalf("browser USB camera selection flow missing %q", want)
+		}
+	}
+
+	captureData, err := assets.ReadFile("assets/js/camera.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(captureData), "video.deviceId = {exact: device}") {
+		t.Fatal("browser capture must open the explicitly selected USB camera device")
+	}
+}
+
+func TestFaceSamplesUseDirectAngleButtonsAndAppendOnlyCapture(t *testing.T) {
+	htmlData, err := assets.ReadFile("assets/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	html := string(htmlData)
+	if !strings.Contains(html, "id=\"sampleAngle\" type=\"hidden\"") {
+		t.Fatal("selected angle must be passed as a hidden capture label")
+	}
+	if strings.Contains(html, "<select id=\"sampleAngle\"") {
+		t.Fatal("multi-angle capture must not use a mutable angle dropdown")
+	}
+
+	studentsData, err := assets.ReadFile("assets/js/students.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	studentsScript := string(studentsData)
+	for _, want := range []string{"data-sample-angle", "startSupplementAngle", "追加样本", "不会覆盖已有样本"} {
+		if !strings.Contains(studentsScript, want) {
+			t.Fatalf("direct angle capture flow missing %q", want)
+		}
+	}
+
+	enrollmentData, err := assets.ReadFile("assets/js/enrollment.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(enrollmentData), "fd.append('label', $('#sampleAngle').value)") || !strings.Contains(string(enrollmentData), "/faces") {
+		t.Fatal("selected angle must be submitted as a new face sample record")
 	}
 }

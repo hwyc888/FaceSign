@@ -151,11 +151,55 @@ $('#studentEditForm').addEventListener('submit', async event => {
 });
 
 function renderSampleChecklist(samples) {
-  const expected = ['正面', '左侧', '右侧', '轻微抬头', '轻微低头'];
-  const labels = new Set(samples.map(sample => sample.label || '补充'));
-  $('#sampleChecklist').innerHTML = expected.map(label =>
-    `<span class="angle-chip ${labels.has(label) ? 'done' : 'pending'}">${esc(label)} ${labels.has(label) ? '✓' : ''}</span>`
-  ).join('');
+  const expected = ['正面', '左侧', '右侧', '轻微抬头', '轻微低头', '其他'];
+  const counts = new Map();
+  samples.forEach(sample => {
+    const label = sample.label || '补充';
+    counts.set(label, (counts.get(label) || 0) + 1);
+  });
+  const canCapture = Boolean(samplesStudent && hasPermission('can_resample_faces'));
+  $('#sampleChecklist').innerHTML = expected.map(angle => {
+    const count = counts.get(angle) || 0;
+    const status = count > 0 ? '已录入 ' + count : (canCapture ? '点击采集' : '未录入');
+    const title = count > 0 ? '已有样本不会被覆盖，点击可继续追加' : '点击后直接打开摄像头采集';
+    return '<button type="button" class="angle-chip ' + (count > 0 ? 'done' : 'pending') +
+      '" data-sample-angle="' + esc(angle) + '" ' + (canCapture ? '' : 'disabled') +
+      ' title="' + esc(title) + '"><span>' + esc(angle) + '</span><small>' +
+      esc(status) + '</small></button>';
+  }).join('');
+  $$('[data-sample-angle]').forEach(button => {
+    button.onclick = () => startSupplementAngle(button.dataset.sampleAngle);
+  });
+}
+
+async function startSupplementAngle(angle) {
+  if (!hasPermission('can_resample_faces')) {
+    toast('没有补充或重新采样人脸的权限');
+    return;
+  }
+  if (!samplesStudent) return;
+  const allowedAngles = ['正面', '左侧', '右侧', '轻微抬头', '轻微低头', '其他'];
+  if (!allowedAngles.includes(angle)) return;
+
+  supplementStudent = samplesStudent;
+  $('#sampleAngle').value = angle;
+  $('#enrollMode').textContent = '追加样本：' + supplementStudent.name;
+  $('#cancelSupplement').classList.remove('hidden');
+  $('#captureEnrollment').textContent = '拍照保存“' + angle + '”样本';
+  setEnrollmentAngle(angle);
+  setEnrollmentStatus(
+    '准备采集“' + angle + '”样本',
+    '请将 ' + supplementStudent.name + ' 调整为“' + angle + '”角度。拍照后会新增一条独立样本，不会覆盖已有样本。',
+    'working'
+  );
+  try {
+    await startCamera();
+  } catch (error) {
+    cancelSupplementMode(false);
+    setEnrollmentStatus('摄像头未能打开', error?.message || String(error), 'error');
+    return;
+  }
+  $('#enrollmentWorkbench').scrollIntoView({behavior: 'smooth', block: 'start'});
 }
 
 function renderSamplePanelEmpty() {
@@ -223,43 +267,14 @@ async function openSamplesPanel(studentID, options = {}) {
   }
 }
 
-$('#startSupplement').addEventListener('click', async () => {
-  if (!hasPermission('can_resample_faces')) {
-    toast('没有补充或重新采样人脸的权限');
-    return;
-  }
-  if (!samplesStudent) return;
-  supplementStudent = samplesStudent;
-  const angle = $('#sampleAngle').value;
-  $('#enrollMode').textContent = `补充：${supplementStudent.name}`;
-  $('#cancelSupplement').classList.remove('hidden');
-  $('#captureEnrollment').textContent = '拍照补充样本';
-  setEnrollmentAngle(angle);
-  setEnrollmentStatus(
-    `正在补充 ${supplementStudent.name}`,
-    `请调整为“${angle}”角度，并确保镜头前只有该学生。`,
-    'working'
-  );
-  await startCamera();
-  $('#enrollmentWorkbench').scrollIntoView({behavior: 'smooth', block: 'start'});
-});
 
-$('#sampleAngle').addEventListener('change', () => {
-  if (!supplementStudent) return;
-  const angle = $('#sampleAngle').value;
-  setEnrollmentAngle(angle);
-  setEnrollmentStatus(
-    `正在补充 ${supplementStudent.name}`,
-    `请调整为“${angle}”角度，再点击拍照补充样本。`,
-    'working'
-  );
-});
 
 function cancelSupplementMode(resetStatus = true) {
   supplementStudent = null;
   $('#enrollMode').textContent = '首次录入';
   $('#cancelSupplement').classList.add('hidden');
   $('#captureEnrollment').textContent = '拍照并录入';
+  if ($('#sampleAngle')) $('#sampleAngle').value = '正面';
   setEnrollmentAngle('正面');
   if (resetStatus) {
     setEnrollmentStatus('准备采集', '首次录入请正对摄像头；已有学生可从右侧选择角度继续补充。', 'neutral');
