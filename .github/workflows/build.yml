@@ -49,7 +49,7 @@ jobs:
           }
           node --test scripts/auto-class-seat-board.test.cjs scripts/auto-start-checkin.test.cjs
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          foreach ($script in @('scripts\install.ps1','scripts\upgrade.ps1','scripts\uninstall.ps1','scripts\test-install-ps51.ps1')) {
+          foreach ($script in @('scripts\install.ps1','scripts\upgrade.ps1','scripts\uninstall.ps1','.github\scripts\test-install-ps51.ps1')) {
             $tokens = $null
             $parseErrors = $null
             [System.Management.Automation.Language.Parser]::ParseFile((Resolve-Path $script).Path, [ref]$tokens, [ref]$parseErrors) | Out-Null
@@ -63,7 +63,7 @@ jobs:
           if (-not (Test-Path $windowsPowerShell -PathType Leaf)) {
             throw 'Windows PowerShell 5.1 is unavailable on the build runner'
           }
-          & $windowsPowerShell -NoLogo -NoProfile -NonInteractive -File 'scripts\test-install-ps51.ps1'
+          & $windowsPowerShell -NoLogo -NoProfile -NonInteractive -File '.github\scripts\test-install-ps51.ps1'
           if ($LASTEXITCODE -ne 0) {
             throw 'Windows PowerShell 5.1 installer parser/argument tests failed'
           }
