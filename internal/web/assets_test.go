@@ -1626,3 +1626,17 @@ func TestDisableLivenessDetectionSettingUI(t *testing.T) {
 	}
 }
 
+
+func TestAdminControlsUseQuerySelectorAll(t *testing.T) {
+	data, err := assets.ReadFile("assets/js/auth.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(data)
+	if !strings.Contains(script, "$$('[data-admin-only]').forEach") {
+		t.Fatal("administrator-only controls must use querySelectorAll before iterating")
+	}
+	if strings.Contains(script, "$('[data-admin-only]').forEach") {
+		t.Fatal("querySelector cannot be iterated with forEach")
+	}
+}
