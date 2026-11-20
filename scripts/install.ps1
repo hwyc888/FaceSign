@@ -388,7 +388,7 @@ Remove-ObsoleteLivenessModels
 $operation = if ($isUpgrade) { 'upgraded in place' } elseif ($installInPlace) { 'registered in the current directory' } else { 'installed' }
 Write-Host "FaceSign $operation and started for interactive user: $interactiveUser"
 Write-Host "Version:       $($versionInfo.version)"
-Write-Host "Models:        face models pinned at $ModelCommit; YOLOX-Nano pinned by SHA-256"
+Write-Host "Models:        $activeBackend liveness + YOLOX-Nano; SCRFD/ArcFace verified from models/by/SHA256SUMS"
 Write-Host "Root CA:       $rootCAPath"
 Write-Host "CA Thumbprint: $rootThumbprint"
 Write-Host "Local HTTPS:   $url"
