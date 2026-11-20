@@ -1142,7 +1142,7 @@ async function startCamera() {
     if (typeof setEnrollmentStatus === 'function') {
       setEnrollmentStatus(
         supplementStudent ? '准备补充样本' : '摄像头已就绪',
-        supplementStudent ? '调整到右侧选择的角度后拍照。' : '请正对摄像头，保持单人入镜。',
+        supplementStudent ? '调整到本次选择的角度后拍照，系统会将样本独立追加保存。' : '请正对摄像头，保持单人入镜。',
         'neutral'
       );
     }
