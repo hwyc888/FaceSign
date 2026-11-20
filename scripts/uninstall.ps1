@@ -1,4 +1,4 @@
-param(
+﻿param(
   [string]$InstallDir = "",
   [switch]$RemoveProgramFiles
 )
