@@ -5,6 +5,7 @@ package main
 import (
 	"context"
 	"crypto/x509"
+	"encoding/binary"
 	"encoding/csv"
 	"encoding/pem"
 	"errors"
@@ -20,6 +21,7 @@ import (
 	"sync"
 	"syscall"
 	"time"
+	"unicode/utf16"
 	"unicode/utf8"
 	"unsafe"
 )
@@ -766,10 +768,12 @@ func disableStartup() error {
 
 func installPowerShellCommand(installDir string) string {
 	script := filepath.Join(installDir, "scripts", "install.ps1")
+	logPath := filepath.Join(installDir, "data", "facesign-install.log")
 	return fmt.Sprintf(
-		"& %s -InstallDir %s -OpenBrowser:$false",
+		"$ErrorActionPreference='Stop'; $ProgressPreference='SilentlyContinue'; $utf8=New-Object System.Text.UTF8Encoding($false); [Console]::OutputEncoding=$utf8; $OutputEncoding=$utf8; try { & %s -InstallDir %s -LogPath %s -OpenBrowser:$false } catch { [Console]::Error.WriteLine((($_ | Format-List * -Force | Out-String))); if ($_.ScriptStackTrace) { [Console]::Error.WriteLine($_.ScriptStackTrace) }; exit 1 }",
 		powerShellLiteral(script),
 		powerShellLiteral(installDir),
+		powerShellLiteral(logPath),
 	)
 }
 
@@ -875,7 +879,9 @@ func installCurrentDirectory() error {
 	cmd := exec.CommandContext(
 		ctx,
 		"powershell.exe",
+		"-NoLogo",
 		"-NoProfile",
+		"-NonInteractive",
 		"-ExecutionPolicy", "Bypass",
 		"-Command", installPowerShellCommand(installDirFlag),
 	)
@@ -886,11 +892,19 @@ func installCurrentDirectory() error {
 		return errors.New("安装超过10分钟，已自动终止；请检查网络、模型文件或 Windows 计划任务")
 	}
 	if err != nil {
-		message := strings.TrimSpace(string(out))
-		if message == "" || !utf8.ValidString(message) {
+		message := decodeCommandOutput(out)
+		if message == "" {
+			if logData, readErr := os.ReadFile(filepath.Join(installDirFlag, "data", "facesign-install.log")); readErr == nil {
+				message = decodeCommandOutput(logData)
+			}
+		}
+		if message == "" {
 			message = err.Error()
 		}
-		return fmt.Errorf("安装本目录失败: %s", message)
+		if len(message) > 12000 {
+			message = message[len(message)-12000:]
+		}
+		return fmt.Errorf("安装本目录失败（PowerShell %v）：\n%s", err, message)
 	}
 	return nil
 }
@@ -1150,11 +1164,61 @@ func execHidden(name string, args ...string) ([]byte, error) {
 }
 
 func commandErrorMessage(name string, out []byte, err error) string {
-	message := strings.TrimSpace(string(out))
-	if message == "" || !utf8.ValidString(message) {
+	message := strings.TrimSpace(decodeCommandOutput(out))
+	if message == "" {
 		return fmt.Sprintf("%s 执行失败: %v", filepath.Base(name), err)
 	}
 	return message
+}
+
+func decodeCommandOutput(out []byte) string {
+	if len(out) == 0 {
+		return ""
+	}
+	if len(out) >= 2 && out[0] == 0xff && out[1] == 0xfe {
+		out = out[2:]
+		return decodeUTF16(out, binary.LittleEndian)
+	}
+	if len(out) >= 2 && out[0] == 0xfe && out[1] == 0xff {
+		out = out[2:]
+		return decodeUTF16(out, binary.BigEndian)
+	}
+	if utf8.Valid(out) {
+		return strings.TrimSpace(string(out))
+	}
+
+	// Windows PowerShell can emit UTF-16 text when a command is redirected.
+	// Detect that form even when the byte-order mark was omitted.
+	if len(out) >= 4 && len(out)%2 == 0 {
+		evenNUL, oddNUL := 0, 0
+		for i, value := range out {
+			if value == 0 {
+				if i%2 == 0 {
+					evenNUL++
+				} else {
+					oddNUL++
+				}
+			}
+		}
+		if oddNUL > len(out)/8 {
+			return strings.TrimSpace(decodeUTF16(out, binary.LittleEndian))
+		}
+		if evenNUL > len(out)/8 {
+			return strings.TrimSpace(decodeUTF16(out, binary.BigEndian))
+		}
+	}
+	return strings.TrimSpace(strings.ToValidUTF8(string(out), "�"))
+}
+
+func decodeUTF16(data []byte, order binary.ByteOrder) string {
+	if len(data)%2 != 0 {
+		data = data[:len(data)-1]
+	}
+	units := make([]uint16, len(data)/2)
+	for i := range units {
+		units[i] = order.Uint16(data[i*2 : i*2+2])
+	}
+	return string(utf16.Decode(units))
 }
 
 func faceSignExePaths() []string {
