@@ -1,4 +1,4 @@
-param(
+﻿param(
   [string]$InstallDir = "",
   [bool]$OpenBrowser = $true
 )
