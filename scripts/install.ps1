@@ -224,10 +224,12 @@ function Get-TaskArgumentValue {
   # Parse the generated task argument string without regex or newer parser
   # syntax. This keeps the installer compatible with Windows PowerShell 5.1.
   $needle = '--' + $Name
+  $lowerArguments = $Arguments.ToLowerInvariant()
+  $lowerNeedle = $needle.ToLowerInvariant()
   $searchFrom = 0
   $foundIndex = -1
   while ($searchFrom -lt $Arguments.Length) {
-    $index = $Arguments.ToLowerInvariant().IndexOf($needle.ToLowerInvariant(), $searchFrom)
+    $index = $lowerArguments.IndexOf($lowerNeedle, $searchFrom)
     if ($index -lt 0) { break }
 
     $beforeOK = ($index -eq 0)
