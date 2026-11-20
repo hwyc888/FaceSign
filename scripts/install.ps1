@@ -227,7 +227,7 @@ function Get-TaskArgumentValue {
   $searchFrom = 0
   $foundIndex = -1
   while ($searchFrom -lt $Arguments.Length) {
-    $index = $Arguments.IndexOf($needle, $searchFrom, [StringComparison]::OrdinalIgnoreCase)
+    $index = $Arguments.ToLowerInvariant().IndexOf($needle.ToLowerInvariant(), $searchFrom)
     if ($index -lt 0) { break }
 
     $beforeOK = ($index -eq 0)
@@ -414,7 +414,8 @@ if (-not $rootReady) {
   throw 'FaceSign root CA was not generated or could not be downloaded from the HTTP bootstrap endpoint.'
 }
 
-& icacls.exe $tlsDir /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' "*$($interactiveUserSid):(OI)(CI)F" | Out-Null
+$userAcl = '*' + $interactiveUserSid + ':(OI)(CI)F'
+& icacls.exe $tlsDir /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' $userAcl | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'Failed to protect the FaceSign TLS directory ACL.' }
 
 $rootCertificate = Import-Certificate -FilePath $rootCAPath -CertStoreLocation 'Cert:\LocalMachine\Root'
