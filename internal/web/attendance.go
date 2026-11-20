@@ -38,6 +38,7 @@ func (s *Server) attendanceSeats(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, board)
 }
 
+
 func (s *Server) attendanceSnapshot(w http.ResponseWriter, r *http.Request) {
 	if !requireAdmin(w, r) {
 		return
@@ -47,16 +48,49 @@ func (s *Server) attendanceSnapshot(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	parts := strings.Split(strings.Trim(r.URL.Path, "/"), "/")
-	if len(parts) != 4 || parts[0] != "api" || parts[1] != "attendance" || parts[3] != "snapshot" {
+	if len(parts) == 4 && parts[0] == "api" && parts[1] == "attendance" && parts[2] == "snapshots" {
+		s.serveAttendanceSnapshotImage(w, r, parts[3])
+		return
+	}
+	if len(parts) == 4 && parts[0] == "api" && parts[1] == "attendance" && parts[3] == "snapshots" {
+		attendanceID, err := strconv.ParseInt(parts[2], 10, 64)
+		if err != nil || attendanceID <= 0 {
+			http.NotFound(w, r)
+			return
+		}
+		items, err := s.store.ListAttendanceSnapshots(r.Context(), attendanceID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, items)
+		return
+	}
+	// Backward compatibility for the previous single-photo URL.
+	if len(parts) == 4 && parts[0] == "api" && parts[1] == "attendance" && parts[3] == "snapshot" {
+		attendanceID, err := strconv.ParseInt(parts[2], 10, 64)
+		if err != nil || attendanceID <= 0 {
+			http.NotFound(w, r)
+			return
+		}
+		items, err := s.store.ListAttendanceSnapshots(r.Context(), attendanceID)
+		if err != nil || len(items) == 0 {
+			http.NotFound(w, r)
+			return
+		}
+		s.serveAttendanceSnapshotImage(w, r, strconv.FormatInt(items[0].ID, 10))
+		return
+	}
+	http.NotFound(w, r)
+}
+
+func (s *Server) serveAttendanceSnapshotImage(w http.ResponseWriter, r *http.Request, rawID string) {
+	snapshotID, err := strconv.ParseInt(rawID, 10, 64)
+	if err != nil || snapshotID <= 0 {
 		http.NotFound(w, r)
 		return
 	}
-	attendanceID, err := strconv.ParseInt(parts[2], 10, 64)
-	if err != nil || attendanceID <= 0 {
-		http.NotFound(w, r)
-		return
-	}
-	path, err := s.store.AttendanceSnapshotPath(r.Context(), attendanceID)
+	path, err := s.store.AttendanceSnapshotPath(r.Context(), snapshotID)
 	if errors.Is(err, os.ErrNotExist) {
 		http.NotFound(w, r)
 		return

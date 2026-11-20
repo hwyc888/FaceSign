@@ -75,6 +75,7 @@ function handleAuthExpired() {
   authAppStarted = false;
   if (typeof stopAutoRecognition === 'function') stopAutoRecognition();
   if (typeof stopCamera === 'function') stopCamera().catch(() => {});
+  if (typeof stopFaceCompareCamera === 'function') stopFaceCompareCamera();
   showAuthPanel('login');
   $('#authError').textContent = '登录已过期，请重新登录。';
 }
@@ -133,6 +134,7 @@ $('#authSetupForm').addEventListener('submit', async event => {
 $('#logoutButton').addEventListener('click', async () => {
   if (typeof stopAutoRecognition === 'function') stopAutoRecognition();
   if (typeof stopCamera === 'function') await stopCamera().catch(() => {});
+  if (typeof stopFaceCompareCamera === 'function') stopFaceCompareCamera();
   try {
     await api('/api/auth/logout', {method: 'POST'});
   } catch (error) {

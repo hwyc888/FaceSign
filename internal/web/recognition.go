@@ -571,17 +571,20 @@ func (s *Server) saveAttendanceSnapshot(ctx context.Context, record *store.Atten
 	}
 	var encoded bytes.Buffer
 	if err := jpeg.Encode(&encoded, img, &jpeg.Options{Quality: 82}); err != nil {
-		s.logger.Warn("encode attendance recognition snapshot failed", "attendance_id", record.ID, "error", err)
+		if s.logger != nil {
+			s.logger.Warn("encode attendance recognition snapshot failed", "attendance_id", record.ID, "error", err)
+		}
 		return
 	}
-	available, err := s.store.SaveAttendanceSnapshot(ctx, record.ID, encoded.Bytes())
+	_, err := s.store.SaveAttendanceSnapshot(ctx, record.ID, encoded.Bytes())
 	if err != nil {
 		if s.logger != nil {
 			s.logger.Warn("save attendance recognition snapshot failed", "attendance_id", record.ID, "error", err)
 		}
 		return
 	}
-	record.SnapshotAvailable = available
+	record.SnapshotAvailable = true
+	record.SnapshotCount++
 }
 
 func boxFromRectangle(rect image.Rectangle) faceBox {
