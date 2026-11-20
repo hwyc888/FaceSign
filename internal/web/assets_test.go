@@ -1742,3 +1742,68 @@ func TestFaceCompareShowsOnlyBestMatchAndUsesFloatingCameraModal(t *testing.T) {
 		if !strings.Contains(css, want) { t.Fatalf("floating camera overlay style missing %q", want) }
 	}
 }
+
+func TestBrowserCameraCanSelectClientUSBDevice(t *testing.T) {
+	htmlData, err := assets.ReadFile("assets/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	html := string(htmlData)
+	for _, want := range []string{"id=\"cameraBrowserFacing\"", "id=\"refreshBrowserCameras\"", "当前访问设备摄像头", "USB 摄像头"} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("browser USB camera UI missing %q", want)
+		}
+	}
+
+	cameraData, err := assets.ReadFile("assets/js/cameras.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cameraScript := string(cameraData)
+	for _, want := range []string{"navigator.mediaDevices.enumerateDevices()", "device.kind === 'videoinput'", "refreshBrowserCameraDevices", "openBrowserCameraTestStream", "cameraBrowserFacing"} {
+		if !strings.Contains(cameraScript, want) {
+			t.Fatalf("browser USB camera selection flow missing %q", want)
+		}
+	}
+
+	captureData, err := assets.ReadFile("assets/js/camera.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(captureData), "video.deviceId = {exact: device}") {
+		t.Fatal("browser capture must open the explicitly selected USB camera device")
+	}
+}
+
+func TestFaceSamplesUseDirectAngleButtonsAndAppendOnlyCapture(t *testing.T) {
+	htmlData, err := assets.ReadFile("assets/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	html := string(htmlData)
+	if !strings.Contains(html, "id=\"sampleAngle\" type=\"hidden\"") {
+		t.Fatal("selected angle must be passed as a hidden capture label")
+	}
+	if strings.Contains(html, "<select id=\"sampleAngle\"") {
+		t.Fatal("multi-angle capture must not use a mutable angle dropdown")
+	}
+
+	studentsData, err := assets.ReadFile("assets/js/students.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	studentsScript := string(studentsData)
+	for _, want := range []string{"data-sample-angle", "startSupplementAngle", "追加样本", "不会覆盖已有样本"} {
+		if !strings.Contains(studentsScript, want) {
+			t.Fatalf("direct angle capture flow missing %q", want)
+		}
+	}
+
+	enrollmentData, err := assets.ReadFile("assets/js/enrollment.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(enrollmentData), "fd.append('label', $('#sampleAngle').value)") || !strings.Contains(string(enrollmentData), "/faces") {
+		t.Fatal("selected angle must be submitted as a new face sample record")
+	}
+}
