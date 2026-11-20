@@ -24,10 +24,9 @@ if ([string]::IsNullOrWhiteSpace($LogPath)) {
 $LogPath = [IO.Path]::GetFullPath($LogPath)
 New-Item -ItemType Directory -Force -Path (Split-Path -Parent $LogPath) | Out-Null
 try { Start-Transcript -Path $LogPath -Append -Force | Out-Null } catch { }
-trap {
-  try { Stop-Transcript | Out-Null } catch { }
-  throw
-}
+# Do not install a global trap here. A bare "throw" inside a PowerShell trap
+# can replace the original exception with ScriptHalted and hide the real cause.
+# Let the original terminating error reach the manager's diagnostic output.
 
 function Get-FaceSignInteractiveUser {
   $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
@@ -157,40 +156,141 @@ function Ensure-ByFaceModels {
   }
   New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
 
-  $sourceNames = @('scrfd_10g.onnx','arcface_w600k_r50.onnx','SHA256SUMS')
-  $sourcePresent = @($sourceNames | Where-Object { Test-Path (Join-Path $sourceDir $_) -PathType Leaf })
-  if ($sourcePresent.Count -ne 0 -and $sourcePresent.Count -ne $sourceNames.Count) {
-    throw '发布包中的 models\by 不完整。必须同时提供 SCRFD、ArcFace 和 SHA256SUMS，不能覆盖现有模型。'
+  $requiredNames = @('scrfd_10g.onnx','arcface_w600k_r50.onnx')
+  $candidateDirs = @()
+  if (-not [string]::IsNullOrWhiteSpace($customModelDir)) {
+    $candidateDirs += $targetDir
   }
-  if (($sourcePresent.Count -eq $sourceNames.Count) -and
-      ([IO.Path]::GetFullPath($sourceDir) -ine [IO.Path]::GetFullPath($targetDir))) {
-    foreach ($name in $sourceNames) {
-      Copy-Item (Join-Path $sourceDir $name) (Join-Path $targetDir $name) -Force
+  if (-not [string]::IsNullOrWhiteSpace($previousAssetsDir)) {
+    $candidateDirs += (Join-Path $previousAssetsDir 'models\by')
+  }
+  $candidateDirs += $targetDir
+  $candidateDirs += $sourceDir
+
+  $programDataPath = [string]$env:ProgramData
+  if (-not [string]::IsNullOrWhiteSpace($programDataPath)) {
+    $candidateDirs += (Join-Path $programDataPath 'FaceSign\models\by')
+  }
+  $localAppDataPath = [Environment]::GetFolderPath('LocalApplicationData')
+  if (-not [string]::IsNullOrWhiteSpace($localAppDataPath)) {
+    $candidateDirs += (Join-Path $localAppDataPath 'FaceSign\models\by')
+  }
+
+  # A portable package is often extracted to a new folder next to the previous
+  # installation. Check the same-named sibling folder without scanning drives.
+  $sourceParent = Split-Path -Parent $source
+  $sourceLeaf = Split-Path -Leaf $source
+  $grandParent = Split-Path -Parent $sourceParent
+  if (-not [string]::IsNullOrWhiteSpace($grandParent)) {
+    $candidateDirs += (Join-Path (Join-Path $grandParent $sourceLeaf) 'models\by')
+  }
+
+  $seenDirs = @{}
+  $uniqueCandidates = @()
+  foreach ($candidate in $candidateDirs) {
+    if ([string]::IsNullOrWhiteSpace($candidate)) { continue }
+    $candidate = [IO.Path]::GetFullPath($candidate)
+    $key = $candidate.ToLowerInvariant()
+    if (-not $seenDirs.ContainsKey($key)) {
+      $seenDirs[$key] = $true
+      $uniqueCandidates += $candidate
     }
+  }
+
+  $selectedDir = $null
+  $selectedManifest = $null
+  $candidateProblems = @()
+  foreach ($candidate in $uniqueCandidates) {
+    $hasAllModels = $true
+    foreach ($name in $requiredNames) {
+      if (-not (Test-Path -LiteralPath (Join-Path $candidate $name) -PathType Leaf)) {
+        $hasAllModels = $false
+        break
+      }
+    }
+    if (-not $hasAllModels) { continue }
+
+    $candidateManifest = Join-Path $candidate 'SHA256SUMS'
+    $candidateHashes = @{}
+    if (Test-Path -LiteralPath $candidateManifest -PathType Leaf) {
+      foreach ($line in Get-Content -LiteralPath $candidateManifest) {
+        if ($line -match '^([0-9a-fA-F]{64})\s+[*]?(.+)$') {
+          $candidateHashes[$matches[2].Trim()] = $matches[1].ToLowerInvariant()
+        }
+      }
+      $manifestValid = $true
+      foreach ($name in $requiredNames) {
+        if (-not $candidateHashes.ContainsKey($name)) {
+          $manifestValid = $false
+          break
+        }
+        $actual = (Get-FileHash -LiteralPath (Join-Path $candidate $name) -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($actual -ne $candidateHashes[$name]) {
+          $manifestValid = $false
+          break
+        }
+      }
+      if (-not $manifestValid) {
+        $candidateProblems += ($candidate + '（SHA256SUMS 缺项或校验不匹配）')
+        continue
+      }
+    } else {
+      # Older working installations may predate the local manifest. Keep the
+      # original weights and create a checksum manifest after copying them.
+      $candidateHashes = @{}
+      foreach ($name in $requiredNames) {
+        $candidateHashes[$name] = (Get-FileHash -LiteralPath (Join-Path $candidate $name) -Algorithm SHA256).Hash.ToLowerInvariant()
+      }
+    }
+
+    $selectedDir = $candidate
+    $selectedManifest = $candidateManifest
+    $selectedHashes = $candidateHashes
+    break
+  }
+
+  if ([string]::IsNullOrWhiteSpace($selectedDir)) {
+    $checked = $uniqueCandidates -join '; '
+    $details = ''
+    if ($candidateProblems.Count -gt 0) {
+      $details = '；发现但未通过校验：' + ($candidateProblems -join '; ')
+    }
+    throw ('未找到可用的 SCRFD / ArcFace 身份模型。已检查：' + $checked + $details + '。请将原安装目录的 models\by 文件夹保留/复制到当前目录，或设置 FACESIGN_BY_MODEL_DIR 指向包含 scrfd_10g.onnx 和 arcface_w600k_r50.onnx 的目录。安装尚未停止或覆盖现有 FaceSign 服务。')
+  }
+
+  if ($selectedDir -ine [IO.Path]::GetFullPath($targetDir)) {
+    foreach ($name in $requiredNames) {
+      Copy-Item -LiteralPath (Join-Path $selectedDir $name) -Destination (Join-Path $targetDir $name) -Force
+    }
+    Write-Host ('Reused SCRFD / ArcFace weights from existing model directory: ' + $selectedDir)
+  } else {
+    Write-Host ('Using SCRFD / ArcFace weights in: ' + $selectedDir)
   }
 
   $manifestPath = Join-Path $targetDir 'SHA256SUMS'
-  if (-not (Test-Path $manifestPath -PathType Leaf)) {
-    throw ('缺少新模型校验清单：{0}。请在 models\by 中放置 SCRFD、ArcFace 和 SHA256SUMS。' -f $manifestPath)
+  if ((Test-Path -LiteralPath $selectedManifest -PathType Leaf) -and ($selectedDir -ine [IO.Path]::GetFullPath($targetDir))) {
+    Copy-Item -LiteralPath $selectedManifest -Destination $manifestPath -Force
   }
-
-  $hashes = @{}
-  foreach ($line in Get-Content -LiteralPath $manifestPath) {
-    if ($line -match '^([0-9a-fA-F]{64})\s+(.+)$') {
-      $hashes[$matches[2].Trim()] = $matches[1].ToLowerInvariant()
+  if (-not (Test-Path -LiteralPath $manifestPath -PathType Leaf)) {
+    $manifestLines = @()
+    foreach ($name in $requiredNames) {
+      $hash = (Get-FileHash -LiteralPath (Join-Path $targetDir $name) -Algorithm SHA256).Hash.ToLowerInvariant()
+      $manifestLines += ($hash + '  ' + $name)
     }
+    Set-Content -LiteralPath $manifestPath -Value $manifestLines -Encoding ASCII
+    Write-Warning '原安装目录没有 SHA256SUMS；已根据保留的现有人脸模型生成本地完整性清单。'
   }
 
-  foreach ($name in @('scrfd_10g.onnx','arcface_w600k_r50.onnx')) {
+  foreach ($name in $requiredNames) {
     $modelPath = Join-Path $targetDir $name
-    if (-not (Test-Path $modelPath -PathType Leaf)) {
+    if (-not (Test-Path -LiteralPath $modelPath -PathType Leaf)) {
       throw ('缺少新模型文件：' + $modelPath)
     }
-    if (-not $hashes.ContainsKey($name)) {
+    if (-not $selectedHashes.ContainsKey($name)) {
       throw ('SHA256SUMS 缺少 ' + $name + ' 的校验值')
     }
-    $actual = (Get-FileHash $modelPath -Algorithm SHA256).Hash.ToLowerInvariant()
-    if ($actual -ne $hashes[$name]) {
+    $actual = (Get-FileHash -LiteralPath $modelPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($actual -ne $selectedHashes[$name]) {
       throw ('新模型 SHA256 校验失败：' + $name)
     }
     Write-Host ('By face model ready: ' + $name)
@@ -271,22 +371,37 @@ function Get-TaskArgumentValue {
   return $Arguments.Substring($cursor, $end - $cursor)
 }
 
-# Validate every required model before stopping the old service. A failed
-# download, missing face weight or bad checksum must never leave the current
-# working installation stopped.
+# Read the existing scheduled task before model preflight. Its --assets path
+# is the most reliable source for recovering identity weights when the user
+# extracts a new package into a different folder.
+$oldTask = Get-ScheduledTask -TaskName 'FaceSign' -ErrorAction SilentlyContinue
+$oldAction = $null
+$oldActionArgs = ''
+$previousAssetsDir = $null
+if ($oldTask) {
+  $oldAction = @($oldTask.Actions)[0]
+  if ($oldAction) {
+    $oldActionArgs = [string]$oldAction.Arguments
+    $previousAssetsDir = Get-TaskArgumentValue -Arguments $oldActionArgs -Name 'assets'
+    if ([string]::IsNullOrWhiteSpace($previousAssetsDir) -and -not [string]::IsNullOrWhiteSpace([string]$oldAction.Execute)) {
+      $previousAssetsDir = Split-Path -Parent ([string]$oldAction.Execute)
+    }
+  }
+}
+
+# Validate all models before stopping the old service. Reuse the previous
+# scheduled task's asset directory, ProgramData/cache locations and the
+# same-named sibling installation before asking the user to restore weights.
 Ensure-FaceModels -TargetDir (Join-Path $InstallDir 'models')
 Ensure-ByFaceModels
 
 # Stop the current instance before replacing program files. During an upgrade
 # the scheduled task is deliberately kept in place so custom ports/TLS hosts
 # and the user's startup-enabled state survive the update.
-$oldTask = Get-ScheduledTask -TaskName 'FaceSign' -ErrorAction SilentlyContinue
 $isUpgrade = $null -ne $oldTask -and (Test-Path (Join-Path $InstallDir 'FaceSign.exe') -PathType Leaf)
 $taskWasDisabled = $false
 if ($oldTask) {
   $taskWasDisabled = $oldTask.State -eq 'Disabled'
-  $oldAction = @($oldTask.Actions)[0]
-  $oldActionArgs = [string]$oldAction.Arguments
 
   if (-not $PSBoundParameters.ContainsKey('Listen')) {
     $value = Get-TaskArgumentValue -Arguments $oldActionArgs -Name 'listen'
