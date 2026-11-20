@@ -57,6 +57,24 @@ jobs:
               throw "$script has PowerShell parse errors: $($parseErrors.Message -join '; ')"
             }
           }
+          # Windows Server / Windows 10 deployments may still run Windows PowerShell 5.1.
+          # Parse installer scripts with that engine in addition to PowerShell 7.
+          $windowsPowerShell = Join-Path $env:WINDIR 'System32\WindowsPowerShell\v1.0\powershell.exe'
+          if (-not (Test-Path $windowsPowerShell -PathType Leaf)) {
+            throw 'Windows PowerShell 5.1 is unavailable on the build runner'
+          }
+          $legacyParser = Join-Path $env:RUNNER_TEMP 'parse-windows-ps51.ps1'
+          @'
+          param([string]$Path)
+          $content = [IO.File]::ReadAllText($Path)
+          $null = [scriptblock]::Create($content)
+          '@ | Set-Content -Path $legacyParser -Encoding UTF8
+          foreach ($script in @('scripts\install.ps1','scripts\upgrade.ps1','scripts\uninstall.ps1')) {
+            & $windowsPowerShell -NoLogo -NoProfile -NonInteractive -File $legacyParser -Path (Resolve-Path $script).Path
+            if ($LASTEXITCODE -ne 0) {
+              throw "$script failed to parse in Windows PowerShell 5.1"
+            }
+          }
           $taskSettingsSmoke = New-ScheduledTaskSettingsSet -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1) -ExecutionTimeLimit ([TimeSpan]::Zero) -MultipleInstances IgnoreNew
           if ($taskSettingsSmoke.MultipleInstances -ne 'IgnoreNew') {
             throw "Scheduled-task MultipleInstances smoke test failed: $($taskSettingsSmoke.MultipleInstances)"
