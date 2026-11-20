@@ -448,7 +448,7 @@ func TestAttendanceShowsFirstLatestAndRecognitionCount(t *testing.T) {
 		t.Fatal(err)
 	}
 	attendanceScript := string(attendanceData)
-	for _, want := range []string{"a.last_seen_at || a.checked_at", "a.recognition_count || 1", "colspan=\"7\""} {
+	for _, want := range []string{"a.last_seen_at || a.checked_at", "a.recognition_count || 1", "colspan=\"8\""} {
 		if !strings.Contains(attendanceScript, want) {
 			t.Fatalf("attendance list missing %q", want)
 		}
