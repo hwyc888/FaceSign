@@ -1117,17 +1117,27 @@ func openWeb() error {
 }
 
 func openLog() error {
-	startup := filepath.Join(installDirFlag, "data", "facesign-startup.log")
-	errorLog := filepath.Join(installDirFlag, "facesign-error.log")
-	path := startup
-	if _, err := os.Stat(path); err != nil {
-		if _, err2 := os.Stat(errorLog); err2 == nil {
-			path = errorLog
-		} else {
-			return errors.New("暂时没有找到 FaceSign 启动日志")
+	candidates := []string{
+		filepath.Join(installDirFlag, "data", "facesign-install.log"),
+		filepath.Join(installDirFlag, "facesign-error.log"),
+		filepath.Join(installDirFlag, "data", "facesign-startup.log"),
+	}
+	var selected string
+	var selectedTime time.Time
+	for _, candidate := range candidates {
+		info, err := os.Stat(candidate)
+		if err != nil || info.IsDir() {
+			continue
+		}
+		if selected == "" || info.ModTime().After(selectedTime) {
+			selected = candidate
+			selectedTime = info.ModTime()
 		}
 	}
-	cmd := exec.Command("notepad.exe", path)
+	if selected == "" {
+		return errors.New("暂时没有找到 FaceSign 安装或启动日志")
+	}
+	cmd := exec.Command("notepad.exe", selected)
 	cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true}
 	return cmd.Start()
 }
