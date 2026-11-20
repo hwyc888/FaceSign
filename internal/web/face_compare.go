@@ -28,7 +28,7 @@ func (s *Server) faceCompare(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	detection, err := s.engine.ExtractEnrollment(img, s.currentRecognitionThresholds().DetectionThreshold)
+	feature, err := s.engine.ExtractEnrollment(img, s.currentRecognitionThresholds().DetectionThreshold)
 	if err != nil {
 		writeFaceError(w, err)
 		return
@@ -48,7 +48,7 @@ func (s *Server) faceCompare(w http.ResponseWriter, r *http.Request) {
 			byStudent[sample.Student.ID] = candidate
 		}
 		candidate.SampleCount++
-		score := face.Similarity(detection.Feature, sample.Feature)
+		score := face.Similarity(feature, sample.Feature)
 		if score > candidate.Similarity {
 			candidate.Similarity = score
 		}
