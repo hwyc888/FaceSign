@@ -21,7 +21,7 @@ import (
 	"sync"
 	"syscall"
 	"time"
-	"unicode/utf16"
+	utf16pkg "unicode/utf16"
 	"unicode/utf8"
 	"unsafe"
 )
@@ -1218,7 +1218,7 @@ func decodeUTF16(data []byte, order binary.ByteOrder) string {
 	for i := range units {
 		units[i] = order.Uint16(data[i*2 : i*2+2])
 	}
-	return string(utf16.Decode(units))
+	return string(utf16pkg.Decode(units))
 }
 
 func faceSignExePaths() []string {
