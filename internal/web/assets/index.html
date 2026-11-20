@@ -375,7 +375,7 @@
               <input id="faceCompareFile" type="file" accept="image/jpeg,image/png">
               <span class="face-compare-upload-icon">＋</span>
               <strong>选择一张照片</strong>
-              <small>支持 JPG、PNG、WEBP，最大 8 MB</small>
+              <small>支持 JPG、PNG，最大 8 MB</small>
             </label>
             <div class="face-compare-preview-wrap hidden" id="faceComparePreviewWrap">
               <img id="faceComparePreview" alt="待比对的人脸照片">
@@ -383,11 +383,6 @@
             </div>
             <div class="face-compare-camera-actions">
               <button id="faceCompareOpenCamera" type="button">打开摄像头拍照</button>
-              <button id="faceCompareCapture" type="button" class="primary" disabled>拍摄当前画面</button>
-              <button id="faceCompareCloseCamera" type="button" disabled>关闭摄像头</button>
-            </div>
-            <div class="face-compare-camera-wrap hidden" id="faceCompareCameraWrap">
-              <video id="faceCompareCamera" autoplay playsinline muted></video>
             </div>
             <button id="faceCompareRun" class="primary block face-compare-submit" type="button" disabled>开始人脸库比对</button>
             <p class="muted face-compare-privacy">照片只在本次请求中用于提取特征和相似度计算，不会新增到人脸库，也不会保存上传照片。</p>
@@ -410,8 +405,6 @@
                 <strong id="faceCompareThreshold">--</strong>
               </div>
               <div class="face-compare-match" id="faceCompareBestMatch"></div>
-              <h3>相似度排名</h3>
-              <div id="faceCompareCandidates" class="face-compare-candidates"></div>
               <p id="faceCompareModelInfo" class="muted compact"></p>
             </div>
           </div>
@@ -1113,6 +1106,25 @@
         <button id="duplicateBackToEdit" type="button">返回修改</button>
         <button id="duplicateKeepOriginal" type="button">不更新</button>
         <button class="primary" id="duplicateConfirmUpdate" type="button">确认更新</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="face-compare-camera-modal hidden" id="faceCompareCameraModal" role="dialog" aria-modal="true" aria-labelledby="faceCompareCameraTitle">
+    <div class="face-compare-camera-dialog">
+      <div class="face-compare-camera-modal-head">
+        <div>
+          <h2 id="faceCompareCameraTitle">现场拍摄</h2>
+          <p>调整好人脸位置后拍摄，照片将用于本次人脸库比对。</p>
+        </div>
+        <button id="faceCompareCloseCamera" type="button" class="icon-button" aria-label="关闭摄像头">×</button>
+      </div>
+      <div class="face-compare-camera-wrap" id="faceCompareCameraWrap">
+        <video id="faceCompareCamera" autoplay playsinline muted></video>
+      </div>
+      <div class="face-compare-camera-modal-actions">
+        <span>请确保画面中只有一张清晰正脸</span>
+        <button id="faceCompareCapture" type="button" class="primary" disabled>拍摄当前画面</button>
       </div>
     </div>
   </div>

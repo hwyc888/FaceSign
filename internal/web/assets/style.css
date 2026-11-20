@@ -893,3 +893,16 @@ pre{background:#0b1220;color:#d8e2f3;border-radius:12px;padding:16px;overflow:au
 .face-compare-disclaimer strong{font-size:13px;color:#4e5f77}
 .face-compare-disclaimer p{margin:7px 0 0;line-height:1.7}
 @media(max-width:720px){.attendance-snapshot-timeline{grid-template-columns:1fr}.model-health-pill{min-width:0;max-width:100%}.face-compare-layout{grid-template-columns:minmax(0,1fr)}}
+
+/* Camera capture is a floating dialog: it overlays the page without reflowing the FaceSign layout. */
+.face-compare-camera-modal{position:fixed;inset:0;z-index:1200;display:flex;align-items:center;justify-content:center;padding:24px;background:rgba(9,18,34,.66);backdrop-filter:blur(5px)}
+.face-compare-camera-modal.hidden{display:none}
+.face-compare-camera-dialog{width:min(760px,calc(100vw - 32px));max-height:calc(100vh - 48px);overflow:auto;padding:20px;border:1px solid rgba(255,255,255,.7);border-radius:18px;background:#fff;box-shadow:0 28px 90px rgba(7,19,40,.34)}
+.face-compare-camera-modal-head{display:flex;align-items:flex-start;justify-content:space-between;gap:16px;margin-bottom:14px}
+.face-compare-camera-modal-head h2{margin:0;color:#1d2d45;font-size:19px}
+.face-compare-camera-modal-head p{margin:6px 0 0;color:#8290a4;font-size:12px}
+.face-compare-camera-modal .face-compare-camera-wrap{margin:0;min-height:180px;max-height:min(62vh,520px);display:flex;align-items:center;justify-content:center}
+.face-compare-camera-modal .face-compare-camera-wrap video{width:100%;max-height:min(62vh,520px);object-fit:contain}
+.face-compare-camera-modal-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:16px}
+.face-compare-camera-modal-actions span{font-size:12px;color:#8290a4}
+@media(max-width:600px){.face-compare-camera-modal{padding:10px}.face-compare-camera-dialog{width:100%;padding:14px}.face-compare-camera-modal-actions{align-items:stretch;flex-direction:column-reverse}.face-compare-camera-modal-actions button{width:100%}}
