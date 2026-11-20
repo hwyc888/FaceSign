@@ -137,7 +137,12 @@ function Ensure-FaceModels {
 
 function Ensure-ByFaceModels {
   $sourceDir = Join-Path $source 'models\by'
-  $targetDir = Join-Path $InstallDir 'models\by'
+  $customModelDir = ([string]$env:FACESIGN_BY_MODEL_DIR).Trim()
+  $targetDir = if ([string]::IsNullOrWhiteSpace($customModelDir)) {
+    Join-Path $InstallDir 'models\by'
+  } else {
+    [IO.Path]::GetFullPath($customModelDir)
+  }
   New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
 
   if (-not [string]::Equals([IO.Path]::GetFullPath($sourceDir), [IO.Path]::GetFullPath($targetDir), [StringComparison]::OrdinalIgnoreCase)) {
