@@ -357,6 +357,7 @@ func (s *Server) cameraTest(w http.ResponseWriter, r *http.Request) {
 		if primaryErr != nil {
 			message += "：" + primaryErr.Error()
 		}
+		message += "。如果USB摄像头插在当前访问网页的电脑，请改选“当前访问设备摄像头”，点击检测并选择该USB设备。"
 		diagnosticCtx, cancel := context.WithTimeout(r.Context(), 8*time.Second)
 		diagnosticChecks := hostCameraDiagnosticChecks(diagnosticCtx)
 		cancel()
