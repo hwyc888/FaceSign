@@ -167,6 +167,7 @@ func (s *Server) recognizePreparedImage(
 	personDetections []person.Detection,
 	detections []face.Detection,
 ) {
+	thresholds := s.currentRecognitionThresholds()
 	disableLivenessDetection, livenessSettingsErr := s.store.DisableLivenessDetection(r.Context())
 	if livenessSettingsErr != nil {
 		s.logger.Warn("read liveness detection setting failed; keeping liveness enabled", "error", livenessSettingsErr)
@@ -274,7 +275,7 @@ func (s *Server) recognizePreparedImage(
 			featureEvaluated[i] = true
 			for _, sample := range decoded {
 				score := face.Similarity(feature, sample.Feature)
-				if score >= s.currentRecognitionThresholds().MatchThreshold {
+				if score >= thresholds.MatchThreshold {
 					candidates = append(candidates, matchCandidate{
 						DetectionIndex: i,
 						Student:        sample.Student,
@@ -492,13 +493,13 @@ func (s *Server) recognizePreparedImage(
 		"timeout_count":           timeoutCount,
 		"spoof_count":             spoofCount,
 		"unregistered_count":      unregisteredCount,
-		"threshold":               s.currentRecognitionThresholds().MatchThreshold,
+		"threshold":               thresholds.MatchThreshold,
 		"face_quality_threshold":  qualityThreshold,
 		"liveness_detection_disabled": disableLivenessDetection,
 		"liveness_model":          s.liveness.ModelName(),
-		"liveness_threshold":      s.currentRecognitionThresholds().LivenessPassThreshold,
-		"liveness_frame_threshold": s.currentRecognitionThresholds().LivenessFrameThreshold,
-		"liveness_spoof_threshold": s.currentRecognitionThresholds().LivenessSpoofThreshold,
+		"liveness_threshold":      thresholds.LivenessPassThreshold,
+		"liveness_frame_threshold": thresholds.LivenessFrameThreshold,
+		"liveness_spoof_threshold": thresholds.LivenessSpoofThreshold,
 		"liveness_fast_threshold": livenessFastPassThreshold,
 		"liveness_fast_frames":    livenessFastFrames,
 		"liveness_min_frames":     livenessMinFrames,

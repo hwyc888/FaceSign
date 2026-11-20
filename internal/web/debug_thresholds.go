@@ -29,8 +29,8 @@ func validateRecognitionThresholds(value store.RecognitionThresholds) error {
 		label string
 		value, min, max float64
 	}{
-		{"人脸匹配阈值", value.MatchThreshold, 0.30, 0.95},
-		{"人脸检测阈值", value.DetectionThreshold, 0.10, 0.95},
+		{"人脸匹配阈值", value.MatchThreshold, 0.000001, 0.999999},
+		{"人脸检测阈值", value.DetectionThreshold, 0.000001, 0.999999},
 		{"活体通过阈值", value.LivenessPassThreshold, 0.40, 0.95},
 		{"单帧有效阈值", value.LivenessFrameThreshold, 0.30, 0.90},
 		{"攻击判定阈值", value.LivenessSpoofThreshold, 0.05, 0.50},

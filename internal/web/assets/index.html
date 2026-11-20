@@ -438,7 +438,7 @@
               <label class="recognition-debug-field">
                 <span class="recognition-debug-title">人脸检测置信阈值</span>
                 <input id="debugDetectionThreshold" name="detection_threshold" type="number" min="0.10" max="0.95" step="0.01" inputmode="decimal" required>
-                <small>SCRFD 检测得分门槛，调低更容易检测弱光或小脸，也可能增加误检。</small>
+                <small>SCRFD 检测得分门槛，调低可能增加误检；RTSP 人体 ROI 检测保留 0.65 上限以兼顾小脸。</small>
                 <span class="recognition-debug-default">默认 <strong id="debugDetectionThresholdDefault">--</strong></span>
               </label>
               <label class="recognition-debug-field">
