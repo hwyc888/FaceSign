@@ -1,4 +1,4 @@
-param(
+﻿param(
   [string]$InstallDir = "",
   [string]$Listen = "0.0.0.0:8080",
   [string]$HTTPSListen = "0.0.0.0:8443",
@@ -7,13 +7,17 @@ param(
   [bool]$OpenBrowser = $true
 )
 $ErrorActionPreference = 'Stop'
+if (($PSVersionTable.PSVersion.Major -lt 5) -or
+    (($PSVersionTable.PSVersion.Major -eq 5) -and ($PSVersionTable.PSVersion.Minor -lt 1))) {
+  throw 'FaceSign installer requires Windows PowerShell 5.1 or later.'
+}
 $source = Split-Path -Parent $PSScriptRoot
 if ([string]::IsNullOrWhiteSpace($InstallDir)) {
   $InstallDir = $source
 }
 $source = [IO.Path]::GetFullPath($source)
 $InstallDir = [IO.Path]::GetFullPath($InstallDir)
-$installInPlace = [string]::Equals($source, $InstallDir, [StringComparison]::OrdinalIgnoreCase)
+$installInPlace = ($source -ieq $InstallDir)
 if ([string]::IsNullOrWhiteSpace($LogPath)) {
   $LogPath = Join-Path $InstallDir 'data\facesign-install.log'
 }
@@ -27,7 +31,7 @@ trap {
 
 function Get-FaceSignInteractiveUser {
   $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
-  if ($identity -and $identity.User -and $identity.Name -notmatch '(?i)\\SYSTEM$') {
+  if (($null -ne $identity) -and ($null -ne $identity.User) -and ($identity.Name -notmatch '(?i)\\SYSTEM$')) {
     return $identity.Name
   }
 
@@ -40,20 +44,24 @@ function Get-FaceSignInteractiveUser {
 
 $interactiveUser = Get-FaceSignInteractiveUser
 $currentIdentity = [Security.Principal.WindowsIdentity]::GetCurrent()
-if ($currentIdentity -and $currentIdentity.User -and [string]::Equals($currentIdentity.Name, $interactiveUser, [StringComparison]::OrdinalIgnoreCase)) {
+$interactiveUserSid = $null
+if (($null -ne $currentIdentity) -and ($null -ne $currentIdentity.User) -and ($currentIdentity.Name -ieq $interactiveUser)) {
   $interactiveUserSid = $currentIdentity.User.Value
-} else {
+}
+if ([string]::IsNullOrWhiteSpace($interactiveUserSid)) {
   try {
-    $interactiveUserSid = [Security.Principal.NTAccount]::new($interactiveUser).Translate([Security.Principal.SecurityIdentifier]).Value
+    $account = New-Object -TypeName System.Security.Principal.NTAccount -ArgumentList $interactiveUser
+    $sidObject = $account.Translate([System.Security.Principal.SecurityIdentifier])
+    $interactiveUserSid = $sidObject.Value
   } catch {
-    throw "无法解析当前 Windows 登录用户的 SID：$interactiveUser。请使用该用户登录后重新运行安装。"
+    throw ('无法解析当前 Windows 登录用户的 SID：{0}。请使用该用户登录后重新运行安装。' -f $interactiveUser)
   }
 }
 
 $ModelCommit = 'de5287c66e9e37e9f804686bf63f5a0974f68f72'
 $ModelBaseUrl = 'https://raw.githubusercontent.com/hwyc888/FaceSign/' + $ModelCommit + '/models'
 $activeBackend = ([string]$env:FACESIGN_LIVENESS_BACKEND).Trim().ToLowerInvariant()
-if ($activeBackend -notin @('mn3','minifas')) { $activeBackend = 'silent' }
+if (@('mn3','minifas') -notcontains $activeBackend) { $activeBackend = 'silent' }
 $Models = @(
   @{
     Name = 'yolox_nano.onnx'
@@ -109,24 +117,28 @@ function Ensure-FaceModels {
   foreach ($model in $Models) {
     $target = Join-Path $TargetDir $model.Name
     if (Test-ModelFile -Path $target -SHA256 $model.SHA256) {
-      Write-Host "Model ready: $($model.Name)"
+      Write-Host ('Model ready: ' + $model.Name)
       continue
     }
 
     $sourceModel = Join-Path $sourceModels $model.Name
     if (Test-ModelFile -Path $sourceModel -SHA256 $model.SHA256) {
       Copy-Item $sourceModel $target -Force
-      Write-Host "Model installed from local models folder: $($model.Name)"
+      Write-Host ('Model installed from local models folder: ' + $model.Name)
       continue
     }
 
-    $url = if ($model.URL) { $model.URL } else { "$ModelBaseUrl/$($model.Name)" }
-    $temp = "$target.download"
-    Write-Host "Downloading model once: $($model.Name)"
+    if (-not [string]::IsNullOrWhiteSpace([string]$model.URL)) {
+      $url = $model.URL
+    } else {
+      $url = $ModelBaseUrl + '/' + $model.Name
+    }
+    $temp = $target + '.download'
+    Write-Host ('Downloading model once: ' + $model.Name)
     try {
       Invoke-WebRequest -Uri $url -OutFile $temp -UseBasicParsing
       if (-not (Test-ModelFile -Path $temp -SHA256 $model.SHA256)) {
-        throw "Model checksum verification failed: $($model.Name)"
+        throw ('Model checksum verification failed: ' + $model.Name)
       }
       Move-Item $temp $target -Force
     } finally {
@@ -138,10 +150,10 @@ function Ensure-FaceModels {
 function Ensure-ByFaceModels {
   $sourceDir = Join-Path $source 'models\by'
   $customModelDir = ([string]$env:FACESIGN_BY_MODEL_DIR).Trim()
-  $targetDir = if ([string]::IsNullOrWhiteSpace($customModelDir)) {
-    Join-Path $InstallDir 'models\by'
+  if ([string]::IsNullOrWhiteSpace($customModelDir)) {
+    $targetDir = Join-Path $InstallDir 'models\by'
   } else {
-    [IO.Path]::GetFullPath($customModelDir)
+    $targetDir = [IO.Path]::GetFullPath($customModelDir)
   }
   New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
 
@@ -150,8 +162,8 @@ function Ensure-ByFaceModels {
   if ($sourcePresent.Count -ne 0 -and $sourcePresent.Count -ne $sourceNames.Count) {
     throw '发布包中的 models\by 不完整。必须同时提供 SCRFD、ArcFace 和 SHA256SUMS，不能覆盖现有模型。'
   }
-  if ($sourcePresent.Count -eq $sourceNames.Count -and
-      -not [string]::Equals([IO.Path]::GetFullPath($sourceDir), [IO.Path]::GetFullPath($targetDir), [StringComparison]::OrdinalIgnoreCase)) {
+  if (($sourcePresent.Count -eq $sourceNames.Count) -and
+      ([IO.Path]::GetFullPath($sourceDir) -ine [IO.Path]::GetFullPath($targetDir))) {
     foreach ($name in $sourceNames) {
       Copy-Item (Join-Path $sourceDir $name) (Join-Path $targetDir $name) -Force
     }
@@ -159,7 +171,7 @@ function Ensure-ByFaceModels {
 
   $manifestPath = Join-Path $targetDir 'SHA256SUMS'
   if (-not (Test-Path $manifestPath -PathType Leaf)) {
-    throw "缺少新模型校验清单：$manifestPath。请在 models\by 中放置 SCRFD、ArcFace 和 SHA256SUMS。"
+    throw ('缺少新模型校验清单：{0}。请在 models\by 中放置 SCRFD、ArcFace 和 SHA256SUMS。' -f $manifestPath)
   }
 
   $hashes = @{}
@@ -172,16 +184,16 @@ function Ensure-ByFaceModels {
   foreach ($name in @('scrfd_10g.onnx','arcface_w600k_r50.onnx')) {
     $modelPath = Join-Path $targetDir $name
     if (-not (Test-Path $modelPath -PathType Leaf)) {
-      throw "缺少新模型文件：$modelPath"
+      throw ('缺少新模型文件：' + $modelPath)
     }
     if (-not $hashes.ContainsKey($name)) {
-      throw "SHA256SUMS 缺少 $name 的校验值"
+      throw ('SHA256SUMS 缺少 ' + $name + ' 的校验值')
     }
     $actual = (Get-FileHash $modelPath -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($actual -ne $hashes[$name]) {
-      throw "新模型 SHA256 校验失败：$name"
+      throw ('新模型 SHA256 校验失败：' + $name)
     }
-    Write-Host "By face model ready: $name"
+    Write-Host ('By face model ready: ' + $name)
   }
 }
 
@@ -195,7 +207,7 @@ function Remove-ObsoleteLivenessModels {
   }
 
   foreach ($name in @('anti-spoof-mn3.onnx','minifasnet-v2se.onnx','MiniFASNetV2.onnx','MiniFASNetV1SE.onnx')) {
-    if ($name -notin $keep) {
+    if ($keep -notcontains $name) {
       Remove-Item (Join-Path $modelDir $name) -Force -ErrorAction SilentlyContinue
     }
   }
@@ -206,12 +218,57 @@ function Get-TaskArgumentValue {
     [string]$Arguments,
     [string]$Name
   )
-  if ([string]::IsNullOrWhiteSpace($Arguments)) { return $null }
-  $pattern = '(?:^|\s)--' + [regex]::Escape($Name) + '\s+(?:"([^"]*)"|(\S+))'
-  $match = [regex]::Match($Arguments, $pattern)
-  if (-not $match.Success) { return $null }
-  if ($match.Groups[1].Success) { return $match.Groups[1].Value }
-  return $match.Groups[2].Value
+  if ([string]::IsNullOrWhiteSpace($Arguments) -or [string]::IsNullOrWhiteSpace($Name)) {
+    return $null
+  }
+
+  # Parse the generated task argument string without regex or newer parser
+  # syntax. This keeps the installer compatible with Windows PowerShell 5.1.
+  $needle = '--' + $Name
+  $lowerArguments = $Arguments.ToLowerInvariant()
+  $lowerNeedle = $needle.ToLowerInvariant()
+  $searchFrom = 0
+  $foundIndex = -1
+  while ($searchFrom -lt $Arguments.Length) {
+    $index = $lowerArguments.IndexOf($lowerNeedle, $searchFrom)
+    if ($index -lt 0) { break }
+
+    $beforeOK = ($index -eq 0)
+    if ($index -gt 0) {
+      $beforeOK = [char]::IsWhiteSpace($Arguments[$index - 1])
+    }
+    $valueStart = $index + $needle.Length
+    $afterOK = ($valueStart -lt $Arguments.Length)
+    if ($afterOK) {
+      $afterOK = [char]::IsWhiteSpace($Arguments[$valueStart])
+    }
+    if ($beforeOK -and $afterOK) {
+      $foundIndex = $valueStart
+      break
+    }
+    $searchFrom = $index + 1
+  }
+  if ($foundIndex -lt 0) { return $null }
+
+  $cursor = $foundIndex
+  while (($cursor -lt $Arguments.Length) -and [char]::IsWhiteSpace($Arguments[$cursor])) {
+    $cursor++
+  }
+  if ($cursor -ge $Arguments.Length) { return $null }
+
+  if ($Arguments[$cursor] -eq '"') {
+    $cursor++
+    $end = $Arguments.IndexOf('"', $cursor)
+    if ($end -lt 0) { return $null }
+    return $Arguments.Substring($cursor, $end - $cursor)
+  }
+
+  $end = $cursor
+  while (($end -lt $Arguments.Length) -and (-not [char]::IsWhiteSpace($Arguments[$end]))) {
+    $end++
+  }
+  if ($end -eq $cursor) { return $null }
+  return $Arguments.Substring($cursor, $end - $cursor)
 }
 
 # Validate every required model before stopping the old service. A failed
@@ -252,7 +309,7 @@ Get-Process -Name 'FaceSign' -ErrorAction SilentlyContinue |
 
 $installedFFmpeg = Join-Path $InstallDir 'ffmpeg.exe'
 Get-CimInstance Win32_Process -Filter "Name='ffmpeg.exe'" -ErrorAction SilentlyContinue |
-  Where-Object { $_.ExecutablePath -and ([string]::Equals($_.ExecutablePath, $installedFFmpeg, [System.StringComparison]::OrdinalIgnoreCase)) } |
+  Where-Object { $_.ExecutablePath -and ($_.ExecutablePath -ieq $installedFFmpeg) } |
   ForEach-Object { Stop-Process -Id $_.ProcessId -Force -ErrorAction SilentlyContinue }
 Start-Sleep -Milliseconds 700
 
@@ -265,13 +322,13 @@ New-Item -ItemType Directory -Force -Path $InstallDir | Out-Null
 if ($installInPlace) {
   foreach ($required in @('FaceSign.exe','FaceSignManager.exe','onnxruntime.dll')) {
     if (-not (Test-Path (Join-Path $InstallDir $required) -PathType Leaf)) {
-      throw "The current FaceSign directory is incomplete; missing $required"
+      throw ('The current FaceSign directory is incomplete; missing ' + $required)
     }
   }
   if (-not (Test-Path (Join-Path $InstallDir 'ffmpeg.exe') -PathType Leaf)) {
     throw 'This package has no ffmpeg.exe. Use the full portable package when installing the current directory as a service.'
   }
-  Write-Host "Installing FaceSign in place; program files stay in: $InstallDir"
+  Write-Host ('Installing FaceSign in place; program files stay in: ' + $InstallDir)
 } else {
   Copy-Item (Join-Path $source 'FaceSign.exe') $InstallDir -Force
   Copy-Item (Join-Path $source 'FaceSignManager.exe') $InstallDir -Force
@@ -360,7 +417,8 @@ if (-not $rootReady) {
   throw 'FaceSign root CA was not generated or could not be downloaded from the HTTP bootstrap endpoint.'
 }
 
-& icacls.exe $tlsDir /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' "*$($interactiveUserSid):(OI)(CI)F" | Out-Null
+$userAcl = '*' + $interactiveUserSid + ':(OI)(CI)F'
+& icacls.exe $tlsDir /inheritance:r /grant:r '*S-1-5-18:(OI)(CI)F' '*S-1-5-32-544:(OI)(CI)F' $userAcl | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'Failed to protect the FaceSign TLS directory ACL.' }
 
 $rootCertificate = Import-Certificate -FilePath $rootCAPath -CertStoreLocation 'Cert:\LocalMachine\Root'
@@ -378,16 +436,23 @@ for ($i = 0; $i -lt 20; $i++) {
 if (-not $versionInfo.version) {
   $errorLog = Join-Path $InstallDir 'facesign-error.log'
   if (Test-Path $errorLog) {
-    throw "FaceSign failed to start: $(Get-Content $errorLog -Raw)"
+    $startupError = Get-Content $errorLog -Raw
+    throw ('FaceSign failed to start: ' + $startupError)
   }
   throw "FaceSign failed to start. Check $InstallDir\data\facesign-startup.log and Windows Task Scheduler."
 }
 
-$url = "https://127.0.0.1:$httpsPort/?v=$($versionInfo.version)"
+$url = 'https://127.0.0.1:' + $httpsPort + '/?v=' + $versionInfo.version
 Remove-ObsoleteLivenessModels
-$operation = if ($isUpgrade) { 'upgraded in place' } elseif ($installInPlace) { 'registered in the current directory' } else { 'installed' }
-Write-Host "FaceSign $operation and started for interactive user: $interactiveUser"
-Write-Host "Version:       $($versionInfo.version)"
+if ($isUpgrade) {
+  $operation = 'upgraded in place'
+} elseif ($installInPlace) {
+  $operation = 'registered in the current directory'
+} else {
+  $operation = 'installed'
+}
+Write-Host ('FaceSign ' + $operation + ' and started for interactive user: ' + $interactiveUser)
+Write-Host ('Version:       ' + $versionInfo.version)
 Write-Host "Models:        $activeBackend liveness + YOLOX-Nano; SCRFD/ArcFace verified from models/by/SHA256SUMS"
 Write-Host "Root CA:       $rootCAPath"
 Write-Host "CA Thumbprint: $rootThumbprint"
@@ -397,11 +462,11 @@ $lanIPs = @(Get-NetIPAddress -AddressFamily IPv4 -AddressState Preferred -ErrorA
   Select-Object -ExpandProperty IPAddress -Unique)
 foreach ($ip in $lanIPs) {
   $lanURL = "https://{0}:{1}/" -f $ip, $httpsPort
-  Write-Host "LAN HTTPS:     $lanURL"
+  Write-Host ('LAN HTTPS:     ' + $lanURL)
   Write-Host ("Client CA:     .\scripts\install-client-ca.ps1 -Server {0} -HTTPPort {1} -HTTPSPort {2} -ExpectedThumbprint {3}" -f $ip, $port, $httpsPort, $rootThumbprint)
 }
 if ($TLSHosts) {
-  Write-Host "Extra TLS SAN: $TLSHosts"
+  Write-Host ('Extra TLS SAN: ' + $TLSHosts)
 }
 
 $commonPrograms = [Environment]::GetFolderPath('CommonPrograms')
@@ -412,12 +477,12 @@ $managerPath = Join-Path $InstallDir 'FaceSignManager.exe'
 $wsh = New-Object -ComObject WScript.Shell
 $shortcut = $wsh.CreateShortcut($shortcutPath)
 $shortcut.TargetPath = $managerPath
-$shortcut.Arguments = '--install-dir "{0}"' -f $InstallDir
+$shortcut.Arguments = ('--install-dir "{0}"' -f $InstallDir)
 $shortcut.WorkingDirectory = $InstallDir
 $shortcut.Description = 'FaceSign 服务管理工具'
 $shortcut.Save()
 
-Write-Host "Manager:       $managerPath"
+Write-Host ('Manager:       ' + $managerPath)
 Write-Host "Start Menu:    FaceSign\FaceSign 管理工具"
 if ($OpenBrowser) {
   Start-Process $url
