@@ -7,7 +7,8 @@
   [bool]$OpenBrowser = $true
 )
 $ErrorActionPreference = 'Stop'
-if ($PSVersionTable.PSVersion.Major -lt 5) {
+if (($PSVersionTable.PSVersion.Major -lt 5) -or
+    (($PSVersionTable.PSVersion.Major -eq 5) -and ($PSVersionTable.PSVersion.Minor -lt 1))) {
   throw 'FaceSign installer requires Windows PowerShell 5.1 or later.'
 }
 $source = Split-Path -Parent $PSScriptRoot
