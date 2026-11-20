@@ -21,8 +21,12 @@ const (
 // to non-commercial research unless a separate licence is obtained.
 func livenessModelBackend() string {
 	backend := strings.ToLower(strings.TrimSpace(os.Getenv("FACESIGN_LIVENESS_BACKEND")))
-	if backend == "" { return "silent" }
-	return backend
+	switch backend {
+	case "mn3", "minifas":
+		return backend
+	default:
+		return "silent"
+	}
 }
 
 func livenessModelSpec() spec {
