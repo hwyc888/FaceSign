@@ -99,7 +99,7 @@ jobs:
           $ensureFaceIndex = $installText.IndexOf('Ensure-FaceModels -TargetDir')
           $ensureByCall = [regex]::Match($installText, '(?m)^Ensure-ByFaceModels\s*$')
           $ensureByIndex = if ($ensureByCall.Success) { $ensureByCall.Index } else { -1 }
-          $stopIndex = $installText.IndexOf('$oldTask = Get-ScheduledTask')
+          $stopIndex = $installText.IndexOf("Stop-ScheduledTask -TaskName 'FaceSign'")
           if ($ensureFaceIndex -lt 0 -or $ensureByIndex -lt 0 -or $stopIndex -lt 0 -or $ensureFaceIndex -gt $stopIndex -or $ensureByIndex -gt $stopIndex) {
             throw 'Installer must validate runtime and SCRFD/ArcFace models before stopping an existing service'
           }
