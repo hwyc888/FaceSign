@@ -1636,7 +1636,9 @@ func TestAdminControlsUseQuerySelectorAll(t *testing.T) {
 	if !strings.Contains(script, "$$('[data-admin-only]').forEach") {
 		t.Fatal("administrator-only controls must use querySelectorAll before iterating")
 	}
-	if strings.Contains(script, "$('[data-admin-only]').forEach") {
-		t.Fatal("querySelector cannot be iterated with forEach")
+	for _, line := range strings.Split(script, "\n") {
+		if strings.TrimSpace(line) == "$('[data-admin-only]').forEach(element => {" {
+			t.Fatal("querySelector cannot be iterated with forEach")
+		}
 	}
 }
