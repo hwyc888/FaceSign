@@ -145,12 +145,15 @@ function Ensure-ByFaceModels {
   }
   New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
 
-  if (-not [string]::Equals([IO.Path]::GetFullPath($sourceDir), [IO.Path]::GetFullPath($targetDir), [StringComparison]::OrdinalIgnoreCase)) {
-    foreach ($name in @('scrfd_10g.onnx','arcface_w600k_r50.onnx','SHA256SUMS')) {
-      $sourceFile = Join-Path $sourceDir $name
-      if (Test-Path $sourceFile -PathType Leaf) {
-        Copy-Item $sourceFile (Join-Path $targetDir $name) -Force
-      }
+  $sourceNames = @('scrfd_10g.onnx','arcface_w600k_r50.onnx','SHA256SUMS')
+  $sourcePresent = @($sourceNames | Where-Object { Test-Path (Join-Path $sourceDir $_) -PathType Leaf })
+  if ($sourcePresent.Count -ne 0 -and $sourcePresent.Count -ne $sourceNames.Count) {
+    throw '发布包中的 models\by 不完整。必须同时提供 SCRFD、ArcFace 和 SHA256SUMS，不能覆盖现有模型。'
+  }
+  if ($sourcePresent.Count -eq $sourceNames.Count -and
+      -not [string]::Equals([IO.Path]::GetFullPath($sourceDir), [IO.Path]::GetFullPath($targetDir), [StringComparison]::OrdinalIgnoreCase)) {
+    foreach ($name in $sourceNames) {
+      Copy-Item (Join-Path $sourceDir $name) (Join-Path $targetDir $name) -Force
     }
   }
 
