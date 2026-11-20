@@ -154,7 +154,7 @@ function cameraFormPayload() {
   return payload;
 }
 
-function renderBrowserCameraDeviceOptions(selected = $('#cameraBrowserFacing')?.value || 'user') {
+function renderBrowserCameraDeviceOptions(selected = $('#cameraBrowserFacing')?.value ?? 'user') {
   const select = $('#cameraBrowserFacing');
   if (!select) return;
   const saved = String(selected ?? '');
@@ -204,7 +204,7 @@ async function refreshBrowserCameraDevices(showToast = false) {
     browserCameraDevices = devices
       .filter(device => device.kind === 'videoinput' && device.deviceId)
       .map(device => ({deviceId: device.deviceId, label: device.label || ''}));
-    renderBrowserCameraDeviceOptions($('#cameraBrowserFacing')?.value || 'user');
+    renderBrowserCameraDeviceOptions($('#cameraBrowserFacing')?.value ?? 'user');
     renderCameraRows();
     if (showToast) toast('当前访问设备检测到 ' + browserCameraDevices.length + ' 个摄像头（含 USB）');
     return browserCameraDevices;

@@ -8,6 +8,7 @@ import (
 	"net/url"
 	"strings"
 	"time"
+	"unicode"
 )
 
 type CameraInput struct {
@@ -99,10 +100,15 @@ func normalizeCameraInput(in CameraInput) (CameraInput, error) {
 		in.AgentID = ""
 		in.AgentSecretHash = ""
 		in.TLSInsecure = false
-		switch in.DeviceID {
-		case "", "user", "environment":
-		default:
-			return CameraInput{}, errors.New("当前访问设备摄像头方向只支持自动、前置或后置")
+		// Browser MediaDeviceInfo.deviceId values are opaque per-origin
+		// identifiers. Keep the user/environment facing-mode aliases, but also
+		// accept an enumerated device ID so a selected USB camera can be saved
+		// and reopened with deviceId: {exact: ...} in getUserMedia.
+		if len([]rune(in.DeviceID)) > 512 {
+			return CameraInput{}, errors.New("当前访问设备摄像头设备标识不能超过512个字符")
+		}
+		if strings.IndexFunc(in.DeviceID, unicode.IsControl) >= 0 {
+			return CameraInput{}, errors.New("当前访问设备摄像头设备标识包含无效控制字符")
 		}
 		if in.FPS == 0 {
 			in.FPS = 30

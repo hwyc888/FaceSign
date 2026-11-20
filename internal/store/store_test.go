@@ -571,15 +571,36 @@ func TestBrowserCameraCanBeSavedAsDefault(t *testing.T) {
 		t.Fatalf("unexpected browser camera: %#v", camera)
 	}
 
-	if _, err := s.CreateCamera(ctx, CameraInput{
-		Name: "错误浏览器摄像头",
+	// Browser device IDs are opaque strings, not just facingMode aliases.
+	usbDeviceID := "not-a-facing-mode"
+	usbCamera, err := s.CreateCamera(ctx, CameraInput{
+		Name: "USB摄像头",
 		Kind: "browser",
-		DeviceID: "not-a-facing-mode",
+		DeviceID: usbDeviceID,
+		Width: 1920,
+		Height: 1080,
+		FPS: 30,
+	})
+	if err != nil {
+		t.Fatalf("an enumerated browser USB device ID should be accepted: %v", err)
+	}
+	savedUSB, err := s.CameraByID(ctx, usbCamera.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if savedUSB.DeviceID != usbDeviceID || savedUSB.Kind != "browser" {
+		t.Fatalf("browser USB device ID was not persisted unchanged: %#v", savedUSB)
+	}
+
+	if _, err := s.CreateCamera(ctx, CameraInput{
+		Name: "无效浏览器摄像头",
+		Kind: "browser",
+		DeviceID: "bad\x00device",
 		Width: 1280,
 		Height: 720,
 		FPS: 30,
 	}); err == nil {
-		t.Fatal("invalid browser facing mode should fail")
+		t.Fatal("browser device IDs containing control characters must fail")
 	}
 }
 
