@@ -33,10 +33,12 @@ test('non-importable and skipped photos are removed from the current batch list'
     return script.slice(start, end + 2);
   };
   const helpers = new Function(
+    'canAddStudents',
+    'canResampleFaces',
     extractFunction('filterPhotoImportPreviewItems') + '\n' +
     extractFunction('removePhotoImportItemFromList') +
     '\nreturn {filterPhotoImportPreviewItems, removePhotoImportItemFromList};'
-  )();
+  )(true, true);
   const rows = [
     {id: 1, status: 'ready'},
     {id: 2, status: 'existing'},
@@ -44,7 +46,9 @@ test('non-importable and skipped photos are removed from the current batch list'
     {id: 4, status: 'review'},
     {id: 5, status: 'package_duplicate'}
   ];
-  assert.deepEqual(helpers.filterPhotoImportPreviewItems(rows), rows.slice(0, 2));
+  assert.deepEqual(helpers.filterPhotoImportPreviewItems(rows, true, true), rows.slice(0, 2));
+  assert.deepEqual(helpers.filterPhotoImportPreviewItems(rows, false, true), [rows[1]]);
+  assert.deepEqual(helpers.filterPhotoImportPreviewItems(rows, false, false), []);
   assert.deepEqual(helpers.removePhotoImportItemFromList(rows.slice(0, 2), 1), [rows[1]]);
   assert.match(script, /photoImportItems = filterPhotoImportPreviewItems\(allItems\)/);
   assert.match(script, /updatePhotoImportRowState\(Number\(select\.dataset\.importAction\), true\)/);
