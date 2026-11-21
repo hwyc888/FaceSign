@@ -1,5 +1,20 @@
 let photoImportSessionID = '';
 let photoImportItems = [];
+let photoImportAnalyzedCount = 0;
+let photoImportSkippedCount = 0;
+let photoImportIgnoredFiles = 0;
+
+function filterPhotoImportPreviewItems(items) {
+  return (Array.isArray(items) ? items : []).filter(function(item) {
+    return item && (item.status === 'ready' || item.status === 'existing');
+  });
+}
+
+function removePhotoImportItemFromList(items, id) {
+  return (Array.isArray(items) ? items : []).filter(function(item) {
+    return Number(item.id) !== Number(id);
+  });
+}
 
 function photoImportStatusMeta(item) {
   switch (item.status) {
@@ -38,48 +53,70 @@ function importSelector(name, id) {
   return '[' + name + '="' + id + '"]';
 }
 
+function renderPhotoImportSummary() {
+  const readyCount = photoImportItems.filter(function(item) {
+    return item.status === 'ready' && !item.committed;
+  }).length;
+  const existingCount = photoImportItems.filter(function(item) {
+    return item.status === 'existing' && !item.committed;
+  }).length;
+  $('#photoImportSummary').innerHTML = [
+    '<span class="import-summary-chip">共分析 ' + photoImportAnalyzedCount + ' 张</span>',
+    '<span class="import-summary-chip good">待新建 ' + readyCount + '</span>',
+    '<span class="import-summary-chip warn">可补充已有 ' + existingCount + '</span>',
+    '<span class="import-summary-chip bad">已排除/跳过 ' + photoImportSkippedCount + '</span>',
+    photoImportIgnoredFiles ? '<span class="import-summary-chip">忽略非图片 ' + photoImportIgnoredFiles + '</span>' : ''
+  ].join('');
+}
+
+function renderPhotoImportEmptyState() {
+  const body = $('#photoImportBody');
+  if (!body || photoImportItems.length) return;
+  body.innerHTML = '<tr class="photo-import-empty"><td colspan="7" class="muted">没有可处理的照片。不合格、重复或已跳过的照片已自动排除。</td></tr>';
+}
+
 function renderPhotoImportPreview(data) {
   photoImportSessionID = data.session_id;
-  photoImportItems = data.items || [];
+  const allItems = Array.isArray(data.items) ? data.items : [];
+  photoImportAnalyzedCount = allItems.length;
+  photoImportItems = filterPhotoImportPreviewItems(allItems);
+  photoImportSkippedCount = allItems.length - photoImportItems.length;
+  photoImportIgnoredFiles = Number(data.ignored_files || 0);
   renderPhotoImportClassOptions();
+  renderPhotoImportSummary();
 
-  const counts = data.counts || {};
-  $('#photoImportSummary').innerHTML = [
-    '<span class="import-summary-chip">共分析 ' + photoImportItems.length + ' 张</span>',
-    '<span class="import-summary-chip good">可新建 ' + (counts.ready || 0) + '</span>',
-    '<span class="import-summary-chip warn">已有 ' + (counts.existing || 0) + '</span>',
-    '<span class="import-summary-chip warn">需复核 ' + (counts.review || 0) + '</span>',
-    '<span class="import-summary-chip bad">不合格/重复 ' + ((counts.rejected || 0) + (counts.package_duplicate || 0)) + '</span>',
-    data.ignored_files ? '<span class="import-summary-chip">忽略非图片 ' + data.ignored_files + '</span>' : ''
-  ].join('');
-
-  $('#photoImportBody').innerHTML = photoImportItems.map(function(item) {
-    const meta = photoImportStatusMeta(item);
-    const matched = item.existing
-      ? '<span>匹配：' + esc(item.existing.name) + ' · ' + (Number(item.similarity || 0) * 100).toFixed(1) + '%</span>'
-      : '';
-    const duplicate = item.duplicate_file ? '<span>疑似同人：' + esc(item.duplicate_file) + '</span>' : '';
-    const reason = item.reason
-      ? '<span>' + esc(item.reason) + '</span>'
-      : '<span>' + esc(item.quality_note || '') + '</span>';
-    const editable = item.status === 'ready';
-    const thumb = item.thumbnail_url
-      ? '<img class="photo-thumb" src="' + esc(item.thumbnail_url) + '" alt="">'
-      : '<div class="photo-thumb"></div>';
-    return '<tr data-import-row="' + item.id + '">' +
-      '<td>' + thumb + '</td>' +
-      '<td><div class="photo-import-file-name">' + esc(item.file_name) + '</div><span class="badge ' + (item.quality === '优' ? 'yes' : 'no') + '">' + esc(item.quality || '-') + '</span></td>' +
-      '<td><input data-import-no="' + item.id + '" value="' + esc(item.student_no || '') + '" ' + (editable ? '' : 'disabled') + ' placeholder="学号"></td>' +
-      '<td><input data-import-name="' + item.id + '" value="' + esc(item.name || '') + '" ' + (editable ? '' : 'disabled') + ' placeholder="姓名"></td>' +
-      '<td>' + photoImportClassSelect(item) + '</td>' +
-      '<td><div class="import-status ' + meta.tone + '"><strong>' + meta.label + '</strong>' + matched + duplicate + reason + '</div></td>' +
-      '<td><select data-import-action="' + item.id + '">' + photoImportActionOptions(item) + '</select></td>' +
-      '</tr>';
-  }).join('');
+  const body = $('#photoImportBody');
+  if (photoImportItems.length) {
+    body.innerHTML = photoImportItems.map(function(item) {
+      const meta = photoImportStatusMeta(item);
+      const matched = item.existing
+        ? '<span>匹配：' + esc(item.existing.name) + ' · ' + (Number(item.similarity || 0) * 100).toFixed(1) + '%</span>'
+        : '';
+      const duplicate = item.duplicate_file ? '<span>疑似同人：' + esc(item.duplicate_file) + '</span>' : '';
+      const reason = item.reason
+        ? '<span>' + esc(item.reason) + '</span>'
+        : '<span>' + esc(item.quality_note || '') + '</span>';
+      const editable = item.status === 'ready';
+      const thumb = item.thumbnail_url
+        ? '<img class="photo-thumb" src="' + esc(item.thumbnail_url) + '" alt="">'
+        : '<div class="photo-thumb"></div>';
+      return '<tr data-import-row="' + item.id + '">' +
+        '<td>' + thumb + '</td>' +
+        '<td><div class="photo-import-file-name">' + esc(item.file_name) + '</div><span class="badge ' + (item.quality === '优' ? 'yes' : 'no') + '">' + esc(item.quality || '-') + '</span></td>' +
+        '<td><input data-import-no="' + item.id + '" value="' + esc(item.student_no || '') + '" ' + (editable ? '' : 'disabled') + ' placeholder="学号"></td>' +
+        '<td><input data-import-name="' + item.id + '" value="' + esc(item.name || '') + '" ' + (editable ? '' : 'disabled') + ' placeholder="姓名"></td>' +
+        '<td>' + photoImportClassSelect(item) + '</td>' +
+        '<td><div class="import-status ' + meta.tone + '"><strong>' + meta.label + '</strong>' + matched + duplicate + reason + '</div></td>' +
+        '<td><select data-import-action="' + item.id + '">' + photoImportActionOptions(item) + '</select></td>' +
+        '</tr>';
+    }).join('');
+  } else {
+    renderPhotoImportEmptyState();
+  }
 
   $$('[data-import-action]').forEach(function(select) {
     select.onchange = function() {
-      updatePhotoImportRowState(Number(select.dataset.importAction));
+      updatePhotoImportRowState(Number(select.dataset.importAction), true);
     };
   });
   photoImportItems.forEach(function(item) {
@@ -88,11 +125,31 @@ function renderPhotoImportPreview(data) {
   $('#photoImportPreview').classList.remove('hidden');
 }
 
-function updatePhotoImportRowState(id) {
+function removePhotoImportItem(id) {
+  const item = photoImportItems.find(function(row) {
+    return Number(row.id) === Number(id);
+  });
+  if (!item) return false;
+
+  photoImportItems = removePhotoImportItemFromList(photoImportItems, id);
+  photoImportSkippedCount++;
+  const row = $(importSelector('data-import-row', id));
+  if (row && typeof row.remove === 'function') row.remove();
+  renderPhotoImportSummary();
+  renderPhotoImportEmptyState();
+  return true;
+}
+
+function updatePhotoImportRowState(id, userInitiated = false) {
   const actionElement = $(importSelector('data-import-action', id));
   const action = actionElement ? actionElement.value : 'skip';
   const item = photoImportItems.find(function(row) { return Number(row.id) === Number(id); });
   if (!item) return;
+  if (userInitiated && action === 'skip') {
+    if (removePhotoImportItem(id)) toast('已跳过，照片已从当前导入列表移除');
+    return;
+  }
+
   const isNew = action === 'new';
   const no = $(importSelector('data-import-no', id));
   const name = $(importSelector('data-import-name', id));
@@ -168,7 +225,9 @@ $('#commitPhotoImport').addEventListener('click', async function() {
     toast('请先上传并分析照片');
     return;
   }
-  const items = photoImportItems.map(function(item) {
+  const items = photoImportItems.filter(function(item) {
+    return !item.committed;
+  }).map(function(item) {
     const actionElement = $(importSelector('data-import-action', item.id));
     const noElement = $(importSelector('data-import-no', item.id));
     const nameElement = $(importSelector('data-import-name', item.id));
@@ -183,7 +242,17 @@ $('#commitPhotoImport').addEventListener('click', async function() {
   });
   const selected = items.filter(function(item) { return item.action !== 'skip'; });
   if (!selected.length) {
-    toast('没有选择需要导入的照片');
+    const skippedIDs = items.filter(function(item) {
+      return item.action === 'skip';
+    }).map(function(item) {
+      return item.id;
+    });
+    skippedIDs.forEach(function(id) {
+      removePhotoImportItem(id);
+    });
+    toast(skippedIDs.length
+      ? '没有选择需要导入的照片，已跳过的照片已从列表移除'
+      : '当前没有待导入的照片');
     return;
   }
   if (selected.some(function(item) { return !item.class_name; })) {
@@ -205,11 +274,18 @@ $('#commitPhotoImport').addEventListener('click', async function() {
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify({items: items})
     });
-    toast('导入完成：成功 ' + result.imported + '，跳过 ' + result.skipped + '，失败 ' + result.failed);
     await loadStudents();
     await loadHealth();
     (result.results || []).forEach(function(row) {
-      if (row.status === 'imported' || row.status === 'skipped') {
+      if (row.status === 'skipped') {
+        removePhotoImportItem(row.id);
+        return;
+      }
+      if (row.status === 'imported') {
+        const item = photoImportItems.find(function(current) {
+          return Number(current.id) === Number(row.id);
+        });
+        if (item) item.committed = true;
         const action = $(importSelector('data-import-action', row.id));
         if (action) {
           action.innerHTML = '<option value="skip">已处理</option>';
@@ -217,6 +293,9 @@ $('#commitPhotoImport').addEventListener('click', async function() {
         }
       }
     });
+    renderPhotoImportSummary();
+    renderPhotoImportEmptyState();
+    toast('导入完成：成功 ' + result.imported + '，累计跳过 ' + photoImportSkippedCount + '，失败 ' + result.failed);
   } catch (e) {
     toast(e.message);
   } finally {
