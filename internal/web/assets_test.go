@@ -70,9 +70,26 @@ func TestPhotoImportUI(t *testing.T) {
 		t.Fatal(err)
 	}
 	html := string(data)
-	for _, want := range []string{`id="photoImportFile"`, `id="photoImportPreview"`, `/js/photo_import.js`} {
+	for _, want := range []string{
+		`id="photoImportFile"`,
+		`id="photoImportPreview"`,
+		`multiple accept=".jpg`,
+			`/js/photo_import.js`,
+			"可直接多选",
+		} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("photo import UI missing %s", want)
+		}
+	}
+
+	jsData, err := assets.ReadFile("assets/js/photo_import.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(jsData)
+	for _, want := range []string{"fd.append('files'", "fd.append('file'", "files.length > 500", "256 * 1024 * 1024"} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("multi-image upload flow missing %q", want)
 		}
 	}
 }
@@ -1808,5 +1825,88 @@ func TestFaceSamplesUseDirectAngleButtonsAndAppendOnlyCapture(t *testing.T) {
 	}
 	if !strings.Contains(string(enrollmentData), "fd.append('label', $('#sampleAngle').value)") || !strings.Contains(string(enrollmentData), "/faces") {
 		t.Fatal("selected angle must be submitted as a new face sample record")
+	}
+}
+
+
+func TestAppConfirmationDialogReplacesNativeBrowserDialogs(t *testing.T) {
+	indexData, err := assets.ReadFile("assets/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	html := string(indexData)
+	for _, want := range []string{
+		`id="appConfirmModal"`,
+		`id="appConfirmTitle"`,
+		`id="appConfirmMessage"`,
+		`id="appConfirmCancel"`,
+		`id="appConfirmAccept"`,
+		`id="appConfirmClose"`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("custom confirmation dialog missing %s", want)
+		}
+	}
+	coreData, err := assets.ReadFile("assets/js/core.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(coreData), "function showConfirmDialog(message, options = {})") {
+		t.Fatal("shared custom confirmation helper is missing")
+	}
+	modules := []string{
+		"assets/js/cameras.js",
+		"assets/js/classes.js",
+		"assets/js/debug.js",
+		"assets/js/seat_editor.js",
+		"assets/js/settings.js",
+		"assets/js/students.js",
+		"assets/js/users.js",
+	}
+	for _, path := range modules {
+		data, err := assets.ReadFile(path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		script := string(data)
+		for _, nativeDialog := range []string{"confirm(", "alert(", "prompt("} {
+			if strings.Contains(script, nativeDialog) {
+				t.Fatalf("%s still uses native browser dialog %q", path, nativeDialog)
+			}
+		}
+	}
+}
+
+func TestFirstEnrollmentOffersImmediateMultiAngleCapture(t *testing.T) {
+	indexData, err := assets.ReadFile("assets/index.html")
+	if err != nil {
+		t.Fatal(err)
+	}
+	html := string(indexData)
+	for _, want := range []string{
+		`id="enrollmentAngleModal"`,
+		`data-enrollment-angle="左侧"`,
+		`data-enrollment-angle="右侧"`,
+		`data-enrollment-angle="轻微抬头"`,
+		`data-enrollment-angle="轻微低头"`,
+	} {
+		if !strings.Contains(html, want) {
+			t.Fatalf("enrollment angle chooser missing %s", want)
+		}
+	}
+	data, err := assets.ReadFile("assets/js/enrollment.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	script := string(data)
+	for _, want := range []string{
+		"function chooseEnrollmentAngle(studentName)",
+		"showConfirmDialog(",
+		"await openSamplesPanel(studentID, {scroll: false})",
+		"await startSupplementAngle(angle)",
+	} {
+		if !strings.Contains(script, want) {
+			t.Fatalf("first enrollment angle prompt flow missing %q", want)
+		}
 	}
 }

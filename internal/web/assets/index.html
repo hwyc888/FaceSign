@@ -274,18 +274,18 @@
           <div class="card-head">
             <div>
               <h2>批量照片导入</h2>
-              <p class="muted compact">上传 ZIP 照片包，系统先做人脸质量检查、重复比对和预览，确认后才写入数据库。建议文件名使用“学号_姓名.jpg”。</p>
+              <p class="muted compact">可直接多选 JPG、PNG 等图片，也可上传一个 ZIP 照片包。系统先做人脸质量检查、重复比对和预览，确认后才写入数据库。建议文件名使用“学号_姓名.jpg”。</p>
             </div>
             <span class="mode-pill">默认：正面样本</span>
           </div>
 
           <div class="photo-import-upload">
             <label class="photo-import-file">
-              <span>照片压缩包</span>
-              <input id="photoImportFile" type="file" accept=".zip,application/zip">
+              <span>图片文件或 ZIP 包（支持多选）</span>
+              <input id="photoImportFile" type="file" multiple accept=".jpg,.jpeg,.jfif,.png,.webp,.gif,.bmp,.tif,.tiff,.zip,image/jpeg,image/png,image/webp,image/gif,image/bmp,image/tiff,application/zip">
             </label>
             <button class="primary" id="analyzePhotoImport" type="button">上传并分析</button>
-            <div class="photo-import-formats">支持 JPEG/JPG、PNG、WEBP、GIF、BMP、TIFF；按图片内容识别，不依赖扩展名。</div>
+            <div class="photo-import-formats">可一次选择多张 JPEG/JPG、PNG、WEBP、GIF、BMP、TIFF 图片；也支持单个 ZIP 包。文件名支持“学号_姓名.jpg”自动识别。</div>
           </div>
 
           <div class="photo-import-progress hidden" id="photoImportProgress">
@@ -909,6 +909,44 @@
         </div>
       </section>
     </main>
+  </div>
+
+  <div class="modal-backdrop app-dialog-backdrop hidden" id="appConfirmModal" role="alertdialog" aria-modal="true" aria-labelledby="appConfirmTitle" aria-describedby="appConfirmMessage">
+    <div class="modal app-confirm-modal">
+      <div class="modal-head">
+        <div>
+          <h2 id="appConfirmTitle">确认操作</h2>
+          <p id="appConfirmMessage" class="app-confirm-message"></p>
+        </div>
+        <button id="appConfirmClose" class="icon-button" type="button" aria-label="取消并关闭">×</button>
+      </div>
+      <div class="modal-actions">
+        <button id="appConfirmCancel" type="button">取消</button>
+        <button id="appConfirmAccept" class="primary" type="button">确定</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="modal-backdrop app-dialog-backdrop hidden" id="enrollmentAngleModal" role="dialog" aria-modal="true" aria-labelledby="enrollmentAngleTitle">
+    <div class="modal enrollment-angle-modal">
+      <div class="modal-head">
+        <div>
+          <h2 id="enrollmentAngleTitle">补充其他人脸角度</h2>
+          <p id="enrollmentAngleStudent" class="muted compact">正面样本已保存，请选择下一次采集角度。</p>
+        </div>
+        <button id="enrollmentAngleClose" class="icon-button" type="button" aria-label="暂不补充">×</button>
+      </div>
+      <div class="enrollment-angle-options">
+        <button type="button" data-enrollment-angle="左侧">左侧</button>
+        <button type="button" data-enrollment-angle="右侧">右侧</button>
+        <button type="button" data-enrollment-angle="轻微抬头">轻微抬头</button>
+        <button type="button" data-enrollment-angle="轻微低头">轻微低头</button>
+        <button type="button" data-enrollment-angle="其他">其他</button>
+      </div>
+      <div class="modal-actions">
+        <button id="enrollmentAngleCancel" type="button">稍后再说</button>
+      </div>
+    </div>
   </div>
 
   <div class="modal-backdrop hidden" id="studentModal">

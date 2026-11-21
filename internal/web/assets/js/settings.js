@@ -183,7 +183,7 @@ REALTIME_STATUS_FIELDS.forEach(([id, key]) => {
 const clearRecognitionStatsButton = $('#clearRecognitionStats');
 if (clearRecognitionStatsButton) {
   clearRecognitionStatsButton.addEventListener('click', async () => {
-    if (!window.confirm('确认清零“已验证”和“未录入”的累计统计吗？\n不会删除考勤记录、学生资料或人脸样本。')) return;
+    if (!(await showConfirmDialog('确认清零“已验证”和“未录入”的累计统计吗？\n不会删除考勤记录、学生资料或人脸样本。', {title: '清零识别统计', confirmText: '清零', confirmClass: 'danger'}))) return;
     clearRecognitionStatsButton.disabled = true;
     try {
       const stats = await api('/api/recognition-stats', {method: 'DELETE'});
@@ -226,7 +226,7 @@ const clearAttendanceSnapshotCacheButton = $('#clearAttendanceSnapshotCache');
 if (clearAttendanceSnapshotCacheButton) {
   clearAttendanceSnapshotCacheButton.addEventListener('click', async () => {
     const count = Number($('#attendanceSnapshotCacheCount').textContent.match(/\d+/)?.[0] || 0);
-    if (!window.confirm('确认清理全部识别现场截图吗？\n将删除 ' + count + ' 张照片，但不会删除考勤记录、学生资料或人脸样本。')) return;
+    if (!(await showConfirmDialog('确认清理全部识别现场截图吗？\n将删除 ' + count + ' 张照片，但不会删除考勤记录、学生资料或人脸样本。', {title: '清理识别截图', confirmText: '清理截图', confirmClass: 'danger'}))) return;
     clearAttendanceSnapshotCacheButton.disabled = true;
     try {
       const result = await api('/api/cache/attendance-snapshots', {method: 'DELETE'});

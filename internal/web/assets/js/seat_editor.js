@@ -346,7 +346,7 @@ async function moveSeatEditorStudent(studentID, targetSeatNo, options = {}) {
     const targetStudent = classSeatEditorStudents.find(student => Number(student.seat_no) === Number(targetSeatNo));
     if (targetStudent && Number(targetStudent.id) !== Number(studentID) && options.confirmSwap !== false) {
       const moving = classSeatEditorStudents.find(student => Number(student.id) === Number(studentID));
-      if (!confirm(`${moving ? moving.name : '所选学生'} 移到 ${targetSeatNo}号后，将与 ${targetStudent.name} 交换座位。继续吗？`)) {
+      if (!(await showConfirmDialog(`${moving ? moving.name : '所选学生'} 移到 ${targetSeatNo}号后，将与 ${targetStudent.name} 交换座位。继续吗？`, {title: '确认交换座位', confirmText: '交换座位'}))) {
         return;
       }
     }
@@ -378,7 +378,7 @@ $('#closeSeatEditor').addEventListener('click', closeClassSeatEditor);
 $('#seatEditorClearSeat').addEventListener('click', async () => {
   const selected = selectedSeatEditorStudent();
   if (!selected) return;
-  if (!confirm(`清空 ${selected.name} 的座位号，让该位置变成空位？`)) return;
+  if (!(await showConfirmDialog(`清空 ${selected.name} 的座位号，让该位置变成空位？`, {title: '清空座位', confirmText: '清空', confirmClass: 'danger'}))) return;
   await moveSeatEditorStudent(selected.id, 0);
 });
 
@@ -394,7 +394,7 @@ $('#seatEditorArrangeSelected').addEventListener('click', async () => {
   const item = classSeatEditorClass();
   const studentIDs = Array.from(classSeatEditorSelectedStudentIDs);
   if (!item || !studentIDs.length) return;
-  if (!confirm('只重新编排选中的 ' + studentIDs.length + ' 名学生，未选中学生的座位保持不变。继续吗？')) return;
+  if (!(await showConfirmDialog('只重新编排选中的 ' + studentIDs.length + ' 名学生，未选中学生的座位保持不变。继续吗？', {title: '批量编排座位', confirmText: '开始编排'}))) return;
   try {
     const beforeSeats = new Map(classSeatEditorStudents.map(student => [
       Number(student.id),

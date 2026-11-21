@@ -104,8 +104,25 @@ function updatePhotoImportRowState(id) {
 
 $('#analyzePhotoImport').addEventListener('click', async function() {
   const input = $('#photoImportFile');
-  if (!input.files || !input.files[0]) {
-    toast('请选择 ZIP 照片压缩包');
+  const files = Array.from(input.files || []);
+  if (!files.length) {
+    toast('请选择一张或多张图片，或选择一个 ZIP 照片包');
+    return;
+  }
+  const zipFiles = files.filter(file =>
+    /\.zip$/i.test(file.name) || file.type === 'application/zip' || file.type === 'application/x-zip-compressed'
+  );
+  if (zipFiles.length && (files.length !== 1 || zipFiles.length !== 1)) {
+    toast('ZIP 照片包请单独上传；直接批量上传时请只选择图片文件');
+    return;
+  }
+  if (files.length > 500) {
+    toast('一次最多选择 500 张图片');
+    return;
+  }
+  const totalBytes = files.reduce((sum, file) => sum + Number(file.size || 0), 0);
+  if (totalBytes > 256 * 1024 * 1024) {
+    toast('所选文件总大小不能超过 256MB');
     return;
   }
   const button = $('#analyzePhotoImport');
@@ -115,7 +132,11 @@ $('#analyzePhotoImport').addEventListener('click', async function() {
   try {
     await loadClasses();
     const fd = new FormData();
-    fd.append('file', input.files[0], input.files[0].name);
+    if (zipFiles.length === 1) {
+      fd.append('file', zipFiles[0], zipFiles[0].name);
+    } else {
+      files.forEach(file => fd.append('files', file, file.name));
+    }
     const data = await api('/api/photo-import/analyze', {method: 'POST', body: fd});
     renderPhotoImportPreview(data);
     toast('照片分析完成，请检查后确认导入');

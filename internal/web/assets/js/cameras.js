@@ -649,7 +649,7 @@ async function setDefaultCamera(id) {
 
 async function deleteCamera(id) {
   const camera = camerasCache.find(item => item.id === id);
-  if (!camera || !confirm(`确定删除摄像头“${camera.name}”吗？`)) return;
+  if (!camera || !(await showConfirmDialog(`确定删除摄像头“${camera.name}”吗？`, {title: '删除摄像头', confirmText: '删除', confirmClass: 'danger'}))) return;
   try {
     if (activeCamera?.id === id && cameraOpen) await stopCamera();
     await api(`/api/cameras/${id}`, {method: 'DELETE'});

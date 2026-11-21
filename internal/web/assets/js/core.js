@@ -71,6 +71,51 @@ function closeModal(id) {
   $('#' + id).classList.add('hidden');
 }
 
+let activeConfirmDialog = null;
+
+function finishConfirmDialog(confirmed) {
+  if (!activeConfirmDialog) return;
+  const current = activeConfirmDialog;
+  activeConfirmDialog = null;
+  $('#appConfirmModal')?.classList.add('hidden');
+  current.resolve(Boolean(confirmed));
+  if (current.previousFocus && current.previousFocus.isConnected) {
+    requestAnimationFrame(() => current.previousFocus.focus({preventScroll: true}));
+  }
+}
+
+function showConfirmDialog(message, options = {}) {
+  const modal = $('#appConfirmModal');
+  if (!modal) return Promise.resolve(false);
+  if (activeConfirmDialog) finishConfirmDialog(false);
+
+  $('#appConfirmTitle').textContent = options.title || '确认操作';
+  $('#appConfirmMessage').textContent = String(message ?? '');
+  $('#appConfirmCancel').textContent = options.cancelText || '取消';
+  const accept = $('#appConfirmAccept');
+  accept.textContent = options.confirmText || '确定';
+  accept.className = options.confirmClass || 'primary';
+
+  return new Promise(resolve => {
+    activeConfirmDialog = {
+      resolve,
+      previousFocus: document.activeElement
+    };
+    modal.classList.remove('hidden');
+    requestAnimationFrame(() => $('#appConfirmCancel')?.focus());
+  });
+}
+
+$('#appConfirmAccept')?.addEventListener('click', () => finishConfirmDialog(true));
+$('#appConfirmCancel')?.addEventListener('click', () => finishConfirmDialog(false));
+$('#appConfirmClose')?.addEventListener('click', () => finishConfirmDialog(false));
+$('#appConfirmModal')?.addEventListener('click', event => {
+  if (event.target === event.currentTarget) finishConfirmDialog(false);
+});
+document.addEventListener('keydown', event => {
+  if (event.key === 'Escape' && activeConfirmDialog) finishConfirmDialog(false);
+});
+
 $$('[data-close]').forEach(button => {
   button.addEventListener('click', () => closeModal(button.dataset.close));
 });

@@ -84,7 +84,7 @@ async function loadStudents() {
     });
     $$('[data-del]').forEach(button => {
       button.onclick = async () => {
-        if (!confirm('确定删除该学生及其全部人脸样本、考勤数据？')) return;
+        if (!(await showConfirmDialog('确定删除该学生及其全部人脸样本、考勤数据？', {title: '删除学生', confirmText: '删除学生', confirmClass: 'danger'}))) return;
         try {
           const deletedID = Number(button.dataset.del);
           await api(`/api/students/${deletedID}`, {method: 'DELETE'});
@@ -248,7 +248,7 @@ async function openSamplesPanel(studentID, options = {}) {
 
     $$('[data-delete-sample]').forEach(button => {
       button.onclick = async () => {
-        if (!confirm('确定删除这个人脸样本？')) return;
+        if (!(await showConfirmDialog('确定删除这个人脸样本？', {title: '删除人脸样本', confirmText: '删除样本', confirmClass: 'danger'}))) return;
         try {
           await api(`/api/students/${student.id}/faces/${button.dataset.deleteSample}`, {method: 'DELETE'});
           await loadStudents();

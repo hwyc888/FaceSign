@@ -73,7 +73,7 @@ async function loadUsers() {
       button.onclick = async () => {
         const userID = Number(button.dataset.userDelete);
         const user = usersCache.find(item => Number(item.id) === userID);
-        if (!user || !confirm('确定删除普通用户“' + user.username + '”？该账号将立即无法登录。')) return;
+        if (!user || !(await showConfirmDialog('确定删除普通用户“' + user.username + '”？该账号将立即无法登录。', {title: '删除用户', confirmText: '删除用户', confirmClass: 'danger'}))) return;
         button.disabled = true;
         try {
           await api('/api/users/' + userID, {method: 'DELETE'});
@@ -91,7 +91,7 @@ async function loadUsers() {
         const userID = Number(button.dataset.userGrantAdmin);
         const user = usersCache.find(item => Number(item.id) === userID);
         if (!user || !canManageAdminRoles) return;
-        if (!confirm('确定将“' + user.username + '”授权为管理员？授权后将解锁全部系统页面、识别阈值、活体参数、摄像头和人员管理功能。该账号需要重新登录后生效。')) return;
+        if (!(await showConfirmDialog('确定将“' + user.username + '”授权为管理员？授权后将解锁全部系统页面、识别阈值、活体参数、摄像头和人员管理功能。该账号需要重新登录后生效。', {title: '授权管理员', confirmText: '确认授权'}))) return;
         button.disabled = true;
         try {
           await api('/api/users/' + userID + '/admin', {method: 'POST'});
@@ -109,7 +109,7 @@ async function loadUsers() {
         const userID = Number(button.dataset.userRevokeAdmin);
         const user = usersCache.find(item => Number(item.id) === userID);
         if (!user || !user.is_admin || user.is_primary_admin || !canManageAdminRoles) return;
-        if (!confirm('确定撤销“' + user.username + '”的管理员身份？该账号将恢复授权前的普通权限，并需要重新登录。')) return;
+        if (!(await showConfirmDialog('确定撤销“' + user.username + '”的管理员身份？该账号将恢复授权前的普通权限，并需要重新登录。', {title: '撤销管理员', confirmText: '撤销权限', confirmClass: 'danger'}))) return;
         button.disabled = true;
         try {
           await api('/api/users/' + userID + '/admin', {method: 'DELETE'});
