@@ -72,6 +72,7 @@ func (s *Store) init(ctx context.Context) error {
             username TEXT NOT NULL UNIQUE,
             password_hash TEXT NOT NULL,
             is_admin INTEGER NOT NULL DEFAULT 0,
+            is_primary_admin INTEGER NOT NULL DEFAULT 0,
             can_edit_students INTEGER NOT NULL DEFAULT 0,
             can_add_students INTEGER NOT NULL DEFAULT 0,
             can_resample_faces INTEGER NOT NULL DEFAULT 0,
@@ -120,6 +121,22 @@ func (s *Store) init(ctx context.Context) error {
 	if err := s.ensureColumn(ctx, "users", "can_edit_settings", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
+	if err := s.ensureColumn(ctx, "users", "is_primary_admin", "INTEGER NOT NULL DEFAULT 0"); err != nil {
+		return err
+	}
+	// Existing installations had exactly one bootstrap administrator. Preserve
+	// that account as the immutable primary administrator when upgrading.
+	if _, err := s.db.ExecContext(ctx, `
+		UPDATE users
+		SET is_primary_admin=1
+		WHERE id=(SELECT id FROM users WHERE is_admin=1 ORDER BY id ASC LIMIT 1)
+		  AND NOT EXISTS (SELECT 1 FROM users WHERE is_primary_admin=1)
+	`); err != nil {
+		return fmt.Errorf("backfill primary administrator: %w", err)
+	}
+	if _, err := s.db.ExecContext(ctx, "UPDATE users SET is_admin=1 WHERE is_primary_admin=1"); err != nil {
+		return fmt.Errorf("preserve primary administrator role: %w", err)
+	}
 	if err := s.ensureColumn(ctx, "students", "seat_no", "INTEGER NOT NULL DEFAULT 0"); err != nil {
 		return err
 	}
@@ -165,6 +182,7 @@ func (s *Store) init(ctx context.Context) error {
 	for _, statement := range []string{
 		"CREATE INDEX IF NOT EXISTS idx_face_samples_student ON face_samples(student_id, created_at DESC)",
 		"CREATE INDEX IF NOT EXISTS idx_auth_sessions_user ON auth_sessions(user_id, expires_at)",
+		"CREATE UNIQUE INDEX IF NOT EXISTS idx_users_single_primary_admin ON users(is_primary_admin) WHERE is_primary_admin=1",
 		"CREATE INDEX IF NOT EXISTS idx_attendance_day ON attendance(day, checked_at DESC)",
 		"CREATE INDEX IF NOT EXISTS idx_attendance_snapshots_recorded ON attendance_snapshots(attendance_id,recognized_at DESC,id DESC)",
 		"CREATE UNIQUE INDEX IF NOT EXISTS idx_students_class_seat ON students(class_name,seat_no) WHERE seat_no > 0",

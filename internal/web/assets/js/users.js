@@ -4,14 +4,28 @@ async function loadUsers() {
   if (!currentUser || !currentUser.is_admin) return;
   try {
     usersCache = await api('/api/users');
+    const canManageAdminRoles = Boolean(currentUser.is_primary_admin);
     $('#usersBody').innerHTML = usersCache.map(user => {
+      const checkmark = '<td>✓</td>';
+      if (user.is_primary_admin) {
+        return '<tr><td><strong>' + esc(user.username) + '</strong><br><span class="user-account-admin">首个管理员 · 最高权限 · 不可撤销</span></td>' +
+          checkmark.repeat(5) + '<td>固定管理员</td></tr>';
+      }
       if (user.is_admin) {
-        return '<tr><td><strong>' + esc(user.username) + '</strong><br><span class="user-account-admin">系统管理员 · 不可删除</span></td>' +
-          '<td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>✓</td><td>固定管理员</td></tr>';
+        const roleAction = canManageAdminRoles
+          ? '<button class="danger" data-user-revoke-admin="' + user.id + '">撤销管理员</button>'
+          : '<span class="muted compact">仅首个管理员可撤销</span>';
+        return '<tr data-user-row="' + user.id + '">' +
+          '<td><strong>' + esc(user.username) + '</strong><br><span class="user-account-admin">授权管理员 · 全部功能已开放</span></td>' +
+          checkmark.repeat(5) +
+          '<td><div class="user-row-actions">' + roleAction + '</div></td></tr>';
       }
       const permissionCell = (key, checked) =>
         '<td><label><input type="checkbox" data-user-permission="' + key +
         '" data-user-id="' + user.id + '"' + (checked ? ' checked' : '') + '>允许</label></td>';
+      const grantAction = canManageAdminRoles
+        ? '<button class="primary-soft" data-user-grant-admin="' + user.id + '">授权为管理员</button>'
+        : '';
       return '<tr data-user-row="' + user.id + '">' +
         '<td><strong>' + esc(user.username) + '</strong><br><span class="muted compact">普通用户</span></td>' +
         permissionCell('can_edit_students', user.can_edit_students) +
@@ -21,7 +35,8 @@ async function loadUsers() {
         permissionCell('can_edit_settings', user.can_edit_settings) +
         '<td><div class="user-row-actions"><button data-user-clone="' + user.id + '">复制账号</button>' +
         '<button class="primary-soft" data-user-save="' + user.id + '">保存权限</button>' +
-        '<button class="danger" data-user-delete="' + user.id + '">删除账号</button></div></td></tr>';
+        '<button class="danger" data-user-delete="' + user.id + '">删除账号</button>' +
+        grantAction + '</div></td></tr>';
     }).join('') || '<tr><td colspan="7">暂无用户</td></tr>';
 
     $$('[data-user-clone]').forEach(button => {
@@ -63,6 +78,42 @@ async function loadUsers() {
         try {
           await api('/api/users/' + userID, {method: 'DELETE'});
           toast('用户账号已删除');
+          await loadUsers();
+        } catch (error) {
+          toast(error.message);
+          button.disabled = false;
+        }
+      };
+    });
+
+    $$('[data-user-grant-admin]').forEach(button => {
+      button.onclick = async () => {
+        const userID = Number(button.dataset.userGrantAdmin);
+        const user = usersCache.find(item => Number(item.id) === userID);
+        if (!user || !canManageAdminRoles) return;
+        if (!confirm('确定将“' + user.username + '”授权为管理员？授权后将解锁全部系统页面、识别阈值、活体参数、摄像头和人员管理功能。该账号需要重新登录后生效。')) return;
+        button.disabled = true;
+        try {
+          await api('/api/users/' + userID + '/admin', {method: 'POST'});
+          toast('已授权为管理员；该账号重新登录后即可使用全部管理功能');
+          await loadUsers();
+        } catch (error) {
+          toast(error.message);
+          button.disabled = false;
+        }
+      };
+    });
+
+    $$('[data-user-revoke-admin]').forEach(button => {
+      button.onclick = async () => {
+        const userID = Number(button.dataset.userRevokeAdmin);
+        const user = usersCache.find(item => Number(item.id) === userID);
+        if (!user || !user.is_admin || user.is_primary_admin || !canManageAdminRoles) return;
+        if (!confirm('确定撤销“' + user.username + '”的管理员身份？该账号将恢复授权前的普通权限，并需要重新登录。')) return;
+        button.disabled = true;
+        try {
+          await api('/api/users/' + userID + '/admin', {method: 'DELETE'});
+          toast('已撤销管理员身份；原有普通权限已保留');
           await loadUsers();
         } catch (error) {
           toast(error.message);

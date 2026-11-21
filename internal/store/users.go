@@ -33,7 +33,7 @@ func (s *Store) CreateInitialAdmin(ctx context.Context, username, passwordHash s
 		return User{}, errors.New("管理员已经初始化，不能再次创建")
 	}
 	now := time.Now().Unix()
-	result, err := tx.ExecContext(ctx, "INSERT INTO users(username,password_hash,is_admin,can_edit_students,can_add_students,can_resample_faces,can_arrange_seats,can_edit_settings,created_at,updated_at) VALUES(?,?,1,1,1,1,1,1,?,?)", username, passwordHash, now, now)
+	result, err := tx.ExecContext(ctx, "INSERT INTO users(username,password_hash,is_admin,is_primary_admin,can_edit_students,can_add_students,can_resample_faces,can_arrange_seats,can_edit_settings,created_at,updated_at) VALUES(?,?,1,1,1,1,1,1,1,?,?)", username, passwordHash, now, now)
 	if err != nil {
 		return User{}, fmt.Errorf("创建管理员失败: %w", err)
 	}
@@ -44,13 +44,13 @@ func (s *Store) CreateInitialAdmin(ctx context.Context, username, passwordHash s
 	if err := tx.Commit(); err != nil {
 		return User{}, err
 	}
-	return User{ID:id, Username:username, IsAdmin:true, CanEditStudents:true, CanAddStudents:true, CanResampleFaces:true, CanArrangeSeats:true, CanEditSettings:true}, nil
+	return User{ID:id, Username:username, IsAdmin:true, IsPrimaryAdmin:true, CanEditStudents:true, CanAddStudents:true, CanResampleFaces:true, CanArrangeSeats:true, CanEditSettings:true}, nil
 }
 
 func (s *Store) UserByUsername(ctx context.Context, username string) (User, error) {
 	var user User
-	err := s.db.QueryRowContext(ctx, "SELECT id,username,password_hash,is_admin,can_edit_students,can_add_students,can_resample_faces,can_arrange_seats,can_edit_settings FROM users WHERE username=?", username).Scan(
-		&user.ID, &user.Username, &user.PasswordHash, &user.IsAdmin,
+	err := s.db.QueryRowContext(ctx, "SELECT id,username,password_hash,is_admin,is_primary_admin,can_edit_students,can_add_students,can_resample_faces,can_arrange_seats,can_edit_settings FROM users WHERE username=?", username).Scan(
+		&user.ID, &user.Username, &user.PasswordHash, &user.IsAdmin, &user.IsPrimaryAdmin,
 		&user.CanEditStudents, &user.CanAddStudents, &user.CanResampleFaces, &user.CanArrangeSeats, &user.CanEditSettings,
 	)
 	return user, err
@@ -58,8 +58,8 @@ func (s *Store) UserByUsername(ctx context.Context, username string) (User, erro
 
 func (s *Store) UserBySession(ctx context.Context, tokenHash string, now time.Time) (User, error) {
 	var user User
-	err := s.db.QueryRowContext(ctx, "SELECT u.id,u.username,u.password_hash,u.is_admin,u.can_edit_students,u.can_add_students,u.can_resample_faces,u.can_arrange_seats,u.can_edit_settings FROM auth_sessions a JOIN users u ON u.id=a.user_id WHERE a.token_hash=? AND a.expires_at>?", tokenHash, now.Unix()).Scan(
-		&user.ID, &user.Username, &user.PasswordHash, &user.IsAdmin,
+	err := s.db.QueryRowContext(ctx, "SELECT u.id,u.username,u.password_hash,u.is_admin,u.is_primary_admin,u.can_edit_students,u.can_add_students,u.can_resample_faces,u.can_arrange_seats,u.can_edit_settings FROM auth_sessions a JOIN users u ON u.id=a.user_id WHERE a.token_hash=? AND a.expires_at>?", tokenHash, now.Unix()).Scan(
+		&user.ID, &user.Username, &user.PasswordHash, &user.IsAdmin, &user.IsPrimaryAdmin,
 		&user.CanEditStudents, &user.CanAddStudents, &user.CanResampleFaces, &user.CanArrangeSeats, &user.CanEditSettings,
 	)
 	return user, err
@@ -67,8 +67,8 @@ func (s *Store) UserBySession(ctx context.Context, tokenHash string, now time.Ti
 
 func (s *Store) UserBySessionForRelease(ctx context.Context, tokenHash string) (User, error) {
 	var user User
-	err := s.db.QueryRowContext(ctx, "SELECT u.id,u.username,u.password_hash,u.is_admin,u.can_edit_students,u.can_add_students,u.can_resample_faces,u.can_arrange_seats,u.can_edit_settings FROM auth_sessions a JOIN users u ON u.id=a.user_id WHERE a.token_hash=?", tokenHash).Scan(
-		&user.ID, &user.Username, &user.PasswordHash, &user.IsAdmin,
+	err := s.db.QueryRowContext(ctx, "SELECT u.id,u.username,u.password_hash,u.is_admin,u.is_primary_admin,u.can_edit_students,u.can_add_students,u.can_resample_faces,u.can_arrange_seats,u.can_edit_settings FROM auth_sessions a JOIN users u ON u.id=a.user_id WHERE a.token_hash=?", tokenHash).Scan(
+		&user.ID, &user.Username, &user.PasswordHash, &user.IsAdmin, &user.IsPrimaryAdmin,
 		&user.CanEditStudents, &user.CanAddStudents, &user.CanResampleFaces, &user.CanArrangeSeats, &user.CanEditSettings,
 	)
 	return user, err
@@ -90,7 +90,7 @@ func (s *Store) DeleteAuthSession(ctx context.Context, tokenHash string) error {
 }
 
 func (s *Store) ListUsers(ctx context.Context) ([]User, error) {
-	rows, err := s.db.QueryContext(ctx, "SELECT id,username,is_admin,can_edit_students,can_add_students,can_resample_faces,can_arrange_seats,can_edit_settings FROM users ORDER BY is_admin DESC,username COLLATE NOCASE")
+	rows, err := s.db.QueryContext(ctx, "SELECT id,username,is_admin,is_primary_admin,can_edit_students,can_add_students,can_resample_faces,can_arrange_seats,can_edit_settings FROM users ORDER BY is_primary_admin DESC,is_admin DESC,username COLLATE NOCASE")
 	if err != nil {
 		return nil, err
 	}
@@ -99,7 +99,7 @@ func (s *Store) ListUsers(ctx context.Context) ([]User, error) {
 	for rows.Next() {
 		var user User
 		if err := rows.Scan(
-			&user.ID, &user.Username, &user.IsAdmin, &user.CanEditStudents,
+			&user.ID, &user.Username, &user.IsAdmin, &user.IsPrimaryAdmin, &user.CanEditStudents,
 			&user.CanAddStudents, &user.CanResampleFaces, &user.CanArrangeSeats, &user.CanEditSettings,
 		); err != nil {
 			return nil, err
@@ -111,7 +111,7 @@ func (s *Store) ListUsers(ctx context.Context) ([]User, error) {
 
 func (s *Store) CreateUser(ctx context.Context, username, passwordHash string, user User) (User, error) {
 	now := time.Now().Unix()
-	result, err := s.db.ExecContext(ctx, "INSERT INTO users(username,password_hash,is_admin,can_edit_students,can_add_students,can_resample_faces,can_arrange_seats,can_edit_settings,created_at,updated_at) VALUES(?,?,0,?,?,?,?,?,?,?)",
+	result, err := s.db.ExecContext(ctx, "INSERT INTO users(username,password_hash,is_admin,is_primary_admin,can_edit_students,can_add_students,can_resample_faces,can_arrange_seats,can_edit_settings,created_at,updated_at) VALUES(?,?,0,0,?,?,?,?,?,?,?)",
 		username, passwordHash, user.CanEditStudents, user.CanAddStudents,
 		user.CanResampleFaces, user.CanArrangeSeats, user.CanEditSettings, now, now)
 	if err != nil {
@@ -156,9 +156,9 @@ func (s *Store) CloneUsers(ctx context.Context, sourceID int64, credentials []Us
 
 	var source User
 	err = tx.QueryRowContext(ctx, `
-		SELECT id,username,is_admin,can_edit_students,can_add_students,can_resample_faces,can_arrange_seats,can_edit_settings
+		SELECT id,username,is_admin,is_primary_admin,can_edit_students,can_add_students,can_resample_faces,can_arrange_seats,can_edit_settings
 		FROM users WHERE id=?`, sourceID).Scan(
-		&source.ID, &source.Username, &source.IsAdmin,
+		&source.ID, &source.Username, &source.IsAdmin, &source.IsPrimaryAdmin,
 		&source.CanEditStudents, &source.CanAddStudents,
 		&source.CanResampleFaces, &source.CanArrangeSeats, &source.CanEditSettings,
 	)
@@ -184,8 +184,8 @@ func (s *Store) CloneUsers(ctx context.Context, sourceID int64, credentials []Us
 		}
 
 		result, err := tx.ExecContext(ctx, `
-			INSERT INTO users(username,password_hash,is_admin,can_edit_students,can_add_students,can_resample_faces,can_arrange_seats,can_edit_settings,created_at,updated_at)
-			VALUES(?,?,0,?,?,?,?,?,?,?)`,
+			INSERT INTO users(username,password_hash,is_admin,is_primary_admin,can_edit_students,can_add_students,can_resample_faces,can_arrange_seats,can_edit_settings,created_at,updated_at)
+			VALUES(?,?,0,0,?,?,?,?,?,?,?)`,
 			credential.Username, credential.PasswordHash,
 			source.CanEditStudents, source.CanAddStudents,
 			source.CanResampleFaces, source.CanArrangeSeats, source.CanEditSettings, now, now,
@@ -211,6 +211,58 @@ func (s *Store) CloneUsers(ctx context.Context, sourceID int64, credentials []Us
 		return nil, err
 	}
 	return created, nil
+}
+
+func (s *Store) SetUserAdminRole(ctx context.Context, actorID, targetID int64, makeAdmin bool) (User, error) {
+	if actorID <= 0 || targetID <= 0 {
+		return User{}, errors.New("无效的用户编号")
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return User{}, err
+	}
+	defer tx.Rollback()
+
+	var actorIsPrimaryAdmin bool
+	if err := tx.QueryRowContext(ctx, "SELECT is_primary_admin FROM users WHERE id=?", actorID).Scan(&actorIsPrimaryAdmin); err != nil {
+		return User{}, err
+	}
+	if !actorIsPrimaryAdmin {
+		return User{}, errors.New("只有首个管理员可以授权或撤销管理员账户")
+	}
+
+	var target User
+	if err := tx.QueryRowContext(ctx, `
+		SELECT id,username,is_admin,is_primary_admin,
+		       can_edit_students,can_add_students,can_resample_faces,can_arrange_seats,can_edit_settings
+		FROM users WHERE id=?`, targetID).Scan(
+		&target.ID, &target.Username, &target.IsAdmin, &target.IsPrimaryAdmin,
+		&target.CanEditStudents, &target.CanAddStudents, &target.CanResampleFaces,
+		&target.CanArrangeSeats, &target.CanEditSettings,
+	); err != nil {
+		return User{}, err
+	}
+	if target.IsPrimaryAdmin {
+		return User{}, errors.New("首个管理员账户不能被授权修改或撤销")
+	}
+	if target.IsAdmin == makeAdmin {
+		return target, nil
+	}
+
+	now := time.Now().Unix()
+	if _, err := tx.ExecContext(ctx, "UPDATE users SET is_admin=?,updated_at=? WHERE id=? AND is_primary_admin=0", makeAdmin, now, targetID); err != nil {
+		return User{}, err
+	}
+	// Force the target account to sign in again so the browser reloads its
+	// effective UI permissions immediately after a role change.
+	if _, err := tx.ExecContext(ctx, "UPDATE auth_sessions SET expires_at=MIN(expires_at,?) WHERE user_id=?", now, targetID); err != nil {
+		return User{}, err
+	}
+	if err := tx.Commit(); err != nil {
+		return User{}, err
+	}
+	target.IsAdmin = makeAdmin
+	return target, nil
 }
 
 func (s *Store) UpdateUserAccess(ctx context.Context, id int64, user User, passwordHash string) error {

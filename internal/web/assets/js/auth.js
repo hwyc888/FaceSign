@@ -37,7 +37,7 @@ function applyUserPermissions() {
   $('#startSupplement')?.classList.toggle('hidden', !hasPermission('can_resample_faces'));
   $('#duplicateUpdateProfile')?.classList.toggle('hidden', !hasPermission('can_edit_students'));
   $('#currentUserLabel').textContent = currentUser
-    ? (currentUser.is_admin ? '管理员：' : '用户：') + currentUser.username
+    ? (currentUser.is_primary_admin ? '首个管理员：' : currentUser.is_admin ? '管理员：' : '用户：') + currentUser.username
     : '';
 }
 
