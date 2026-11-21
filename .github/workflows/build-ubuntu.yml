@@ -43,6 +43,7 @@ jobs:
           go test ./...
           go vet ./...
           find internal/web/assets/js -type f -name '*.js' -print0 | xargs -0 -r -n1 node --check
+          node --test scripts/admin-bulk-attendance-filters.test.cjs
           for script in scripts/ubuntu/*.sh; do bash -n "$script"; done
 
       - name: Download official ONNX Runtime CPU package from NuGet

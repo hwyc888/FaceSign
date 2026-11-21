@@ -917,3 +917,133 @@ pre{background:#0b1220;color:#d8e2f3;border-radius:12px;padding:16px;overflow:au
 .face-compare-camera-modal-actions{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:16px}
 .face-compare-camera-modal-actions span{font-size:12px;color:#8290a4}
 @media(max-width:600px){.face-compare-camera-modal{padding:10px}.face-compare-camera-dialog{width:100%;padding:14px}.face-compare-camera-modal-actions{align-items:stretch;flex-direction:column-reverse}.face-compare-camera-modal-actions button{width:100%}}
+
+/* Responsive account management and attendance filters. */
+.user-table {
+  min-width: 1154px;
+  table-layout: fixed;
+}
+.user-table th {
+  white-space: nowrap;
+}
+.user-table th:nth-child(1), .user-table td:nth-child(1) { width: 54px; }
+.user-table th:nth-child(2), .user-table td:nth-child(2) { width: 240px; }
+.user-table th:nth-child(3), .user-table td:nth-child(3),
+.user-table th:nth-child(4), .user-table td:nth-child(4),
+.user-table th:nth-child(5), .user-table td:nth-child(5),
+.user-table th:nth-child(6), .user-table td:nth-child(6),
+.user-table th:nth-child(7), .user-table td:nth-child(7) { width: 112px; }
+.user-table th:nth-child(8), .user-table td:nth-child(8) { width: 300px; }
+.user-table td { vertical-align: middle; overflow-wrap: anywhere; }
+.user-table td input[type="checkbox"] { width: auto; min-height: 0; margin: 0; }
+.user-table td.user-selection-cell { text-align: center; }
+.user-table .user-account-admin { max-width: 100%; white-space: normal; line-height: 1.45; }
+.user-row-actions { min-width: 0; width: 100%; align-items: center; }
+.user-row-actions button { min-width: 0; max-width: 100%; white-space: normal; overflow-wrap: anywhere; }
+.user-table-empty td { padding: 18px 12px; }
+.user-bulk-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin: 0 0 14px;
+  padding: 12px 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 12px;
+  background: #f8fafc;
+}
+.user-bulk-toolbar > label {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: #344054;
+  font-size: 13px;
+  font-weight: 650;
+}
+.user-bulk-toolbar input[type="checkbox"] { width: auto; min-height: 0; margin: 0; }
+.user-selection-summary { color: #667085; font-size: 12px; line-height: 1.5; }
+.user-bulk-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+
+.attendance-head { align-items: flex-end; flex-wrap: wrap; }
+.attendance-filters {
+  display: grid;
+  grid-template-columns: minmax(150px,.8fr) minmax(150px,.9fr) minmax(210px,1.2fr) auto;
+  align-items: end;
+  gap: 10px;
+  width: min(100%, 920px);
+}
+.attendance-filters label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: #667085;
+  font-size: 12px;
+  font-weight: 650;
+}
+.attendance-filters input,
+.attendance-filters select { width: 100%; min-width: 0; }
+.attendance-filters button { min-height: 42px; }
+.attendance-filter-summary { margin: 12px 0 8px; font-size: 12px; }
+
+@media (max-width: 1100px) {
+  .user-table { min-width: 0; table-layout: auto; }
+  .user-table thead { display: none; }
+  .user-table tbody { display: grid; gap: 12px; }
+  .user-table tbody tr:not(.user-table-empty) {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 8px 10px;
+    margin: 0;
+    padding: 12px;
+    border: 1px solid #e4e8f0;
+    border-radius: 12px;
+    background: #fff;
+  }
+  .user-table tbody tr:not(.user-table-empty) td {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 6px;
+    min-width: 0;
+    padding: 7px;
+    border: 0;
+  }
+  .user-table tbody tr:not(.user-table-empty) td::before {
+    content: attr(data-label);
+    color: #8994a5;
+    font-size: 11px;
+    font-weight: 750;
+  }
+  .user-table tbody tr:not(.user-table-empty) td:first-child {
+    align-items: center;
+    justify-content: center;
+    flex-direction: row;
+  }
+  .user-table tbody tr:not(.user-table-empty) td:nth-child(2) { grid-column: span 2; }
+  .user-table tbody tr:not(.user-table-empty) td:last-child { grid-column: 1 / -1; }
+  .user-table tbody tr.user-table-empty { display: block; }
+  .user-table tbody tr.user-table-empty td { display: block; }
+  .user-table tbody tr.user-table-empty td::before { content: none; }
+  .user-row-actions { width: 100%; }
+  .user-row-actions button { flex: 0 1 auto; }
+  .attendance-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; }
+  .attendance-filters button { width: 100%; }
+}
+
+@media (max-width: 640px) {
+  .user-bulk-toolbar { align-items: stretch; }
+  .user-bulk-toolbar > label { flex: 1 1 100%; }
+  .user-selection-summary { width: 100%; }
+  .user-bulk-actions { width: 100%; }
+  .user-bulk-actions button { flex: 1 1 150px; }
+  .user-table tbody tr:not(.user-table-empty) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .user-table tbody tr:not(.user-table-empty) td:first-child,
+  .user-table tbody tr:not(.user-table-empty) td:nth-child(2),
+  .user-table tbody tr:not(.user-table-empty) td:last-child { grid-column: 1 / -1; }
+  .user-table td label { white-space: normal; }
+  .user-row-actions button { flex: 1 1 140px; }
+  .attendance-filters { grid-template-columns: minmax(0, 1fr); }
+  .attendance-filters button { width: 100%; }
+}
+

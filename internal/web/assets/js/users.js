@@ -1,14 +1,123 @@
 let usersCache = [];
 
+function filterUsersForAdminRoleAction(users, selectedIDs, makeAdmin) {
+  const selected = selectedIDs instanceof Set ? selectedIDs : new Set(selectedIDs || []);
+  return (Array.isArray(users) ? users : []).filter(user =>
+    user && !user.is_primary_admin &&
+    selected.has(Number(user.id)) &&
+    Boolean(user.is_admin) !== Boolean(makeAdmin)
+  );
+}
+
+function selectedUserIDsFromDOM() {
+  return new Set(Array.from($$('[data-user-select]:checked')).map(input => Number(input.dataset.userSelect)));
+}
+
+function updateUserSelectionUI() {
+  const canManageAdminRoles = Boolean(currentUser && currentUser.is_primary_admin);
+  const toolbar = $('#userBulkToolbar');
+  if (toolbar) toolbar.classList.toggle('hidden', !canManageAdminRoles);
+
+  const selectableUsers = usersCache.filter(user => !user.is_primary_admin);
+  const selectedIDs = selectedUserIDsFromDOM();
+  const selectedUsers = selectableUsers.filter(user => selectedIDs.has(Number(user.id)));
+  const grantTargets = filterUsersForAdminRoleAction(usersCache, selectedIDs, true);
+  const revokeTargets = filterUsersForAdminRoleAction(usersCache, selectedIDs, false);
+  const selectAll = $('#userSelectAll');
+
+  if (selectAll) {
+    selectAll.checked = selectableUsers.length > 0 && selectedUsers.length === selectableUsers.length;
+    selectAll.indeterminate = selectedUsers.length > 0 && selectedUsers.length < selectableUsers.length;
+  }
+  const summary = $('#userSelectionSummary');
+  if (summary) {
+    summary.textContent = '已选择 ' + selectedUsers.length + ' 个账号 · 可授权 ' +
+      grantTargets.length + ' 个 · 可撤销 ' + revokeTargets.length + ' 个';
+  }
+  const grantButton = $('#bulkGrantAdmins');
+  const revokeButton = $('#bulkRevokeAdmins');
+  if (grantButton) grantButton.disabled = !canManageAdminRoles || grantTargets.length === 0;
+  if (revokeButton) revokeButton.disabled = !canManageAdminRoles || revokeTargets.length === 0;
+}
+
+async function runBulkAdminRoleAction(makeAdmin) {
+  if (!currentUser || !currentUser.is_primary_admin) {
+    toast('只有首个管理员可以批量授权或撤销管理员');
+    return;
+  }
+
+  const selectedIDs = selectedUserIDsFromDOM();
+  const targets = filterUsersForAdminRoleAction(usersCache, selectedIDs, makeAdmin);
+  if (!targets.length) {
+    toast(makeAdmin ? '所选账号中没有可授权的普通用户' : '所选账号中没有可撤销的授权管理员');
+    return;
+  }
+
+  const actionLabel = makeAdmin ? '授权为管理员' : '撤销管理员身份';
+  const listedNames = targets.slice(0, 6).map(user => user.username).join('、');
+  const nameSummary = listedNames + (targets.length > 6 ? ' 等 ' + targets.length + ' 个账号' : '');
+  const message = makeAdmin
+    ? '确定将以下 ' + targets.length + ' 个普通账号批量授权为管理员吗？\n' + nameSummary +
+      '\n授权后将开放全部管理功能，目标账号需要重新登录后生效。'
+    : '确定撤销以下 ' + targets.length + ' 个授权管理员的管理员身份吗？\n' + nameSummary +
+      '\n撤销后将恢复各账号原有普通权限，目标账号需要重新登录后生效。';
+  if (!(await showConfirmDialog(message, {
+    title: actionLabel,
+    confirmText: makeAdmin ? '确认批量授权' : '确认批量撤销',
+    confirmClass: makeAdmin ? 'primary' : 'danger'
+  }))) return;
+
+  const grantButton = $('#bulkGrantAdmins');
+  const revokeButton = $('#bulkRevokeAdmins');
+  [grantButton, revokeButton].forEach(button => {
+    if (button) button.disabled = true;
+  });
+
+  let succeeded = 0;
+  const failures = [];
+  try {
+    for (let index = 0; index < targets.length; index++) {
+      const user = targets[index];
+      try {
+        await api('/api/users/' + user.id + '/admin', {
+          method: makeAdmin ? 'POST' : 'DELETE'
+        });
+        succeeded++;
+      } catch (error) {
+        failures.push(user.username + '：' + error.message);
+      }
+    }
+    await loadUsers();
+    const resultText = '批量' + actionLabel + '完成：成功 ' + succeeded + ' 个，失败 ' + failures.length + ' 个';
+    toast(failures.length
+      ? resultText + '。' + failures.slice(0, 2).join('；')
+      : resultText);
+  } finally {
+    if (grantButton && grantButton.isConnected) grantButton.disabled = false;
+    if (revokeButton && revokeButton.isConnected) revokeButton.disabled = false;
+    updateUserSelectionUI();
+  }
+}
+
 async function loadUsers() {
   if (!currentUser || !currentUser.is_admin) return;
   try {
     usersCache = await api('/api/users');
     const canManageAdminRoles = Boolean(currentUser.is_primary_admin);
+    const selectionCell = user => {
+      if (!canManageAdminRoles || user.is_primary_admin) {
+        return '<td class="user-selection-cell"><span class="muted compact">—</span></td>';
+      }
+      return '<td class="user-selection-cell"><input type="checkbox" data-user-select="' + user.id +
+        '" aria-label="选择账号 ' + esc(user.username) + '"></td>';
+    };
+
     $('#usersBody').innerHTML = usersCache.map(user => {
       const checkmark = '<td>✓</td>';
       if (user.is_primary_admin) {
-        return '<tr><td><strong>' + esc(user.username) + '</strong><br><span class="user-account-admin">首个管理员 · 最高权限 · 不可撤销</span></td>' +
+        return '<tr data-user-row="' + user.id + '">' +
+          selectionCell(user) +
+          '<td><strong>' + esc(user.username) + '</strong><br><span class="user-account-admin">首个管理员 · 最高权限 · 不可撤销</span></td>' +
           checkmark.repeat(5) + '<td>固定管理员</td></tr>';
       }
       if (user.is_admin) {
@@ -16,6 +125,7 @@ async function loadUsers() {
           ? '<button class="danger" data-user-revoke-admin="' + user.id + '">撤销管理员</button>'
           : '<span class="muted compact">仅首个管理员可撤销</span>';
         return '<tr data-user-row="' + user.id + '">' +
+          selectionCell(user) +
           '<td><strong>' + esc(user.username) + '</strong><br><span class="user-account-admin">授权管理员 · 全部功能已开放</span></td>' +
           checkmark.repeat(5) +
           '<td><div class="user-row-actions">' + roleAction + '</div></td></tr>';
@@ -27,6 +137,7 @@ async function loadUsers() {
         ? '<button class="primary-soft" data-user-grant-admin="' + user.id + '">授权为管理员</button>'
         : '';
       return '<tr data-user-row="' + user.id + '">' +
+        selectionCell(user) +
         '<td><strong>' + esc(user.username) + '</strong><br><span class="muted compact">普通用户</span></td>' +
         permissionCell('can_edit_students', user.can_edit_students) +
         permissionCell('can_add_students', user.can_add_students) +
@@ -37,7 +148,12 @@ async function loadUsers() {
         '<button class="primary-soft" data-user-save="' + user.id + '">保存权限</button>' +
         '<button class="danger" data-user-delete="' + user.id + '">删除账号</button>' +
         grantAction + '</div></td></tr>';
-    }).join('') || '<tr><td colspan="7">暂无用户</td></tr>';
+    }).join('') || '<tr class="user-table-empty"><td colspan="8">暂无用户</td></tr>';
+
+    $$('[data-user-select]').forEach(input => {
+      input.addEventListener('change', updateUserSelectionUI);
+    });
+    updateUserSelectionUI();
 
     $$('[data-user-clone]').forEach(button => {
       button.onclick = () => openUserCloneModal(Number(button.dataset.userClone), 'single');
@@ -155,6 +271,16 @@ $('#userCreateForm').addEventListener('submit', async event => {
 });
 
 $('#refreshUsers').addEventListener('click', loadUsers);
+
+$('#userSelectAll').addEventListener('change', () => {
+  const checked = $('#userSelectAll').checked;
+  $('[data-user-select]').forEach(input => {
+    input.checked = checked;
+  });
+  updateUserSelectionUI();
+});
+$('#bulkGrantAdmins').addEventListener('click', () => runBulkAdminRoleAction(true));
+$('#bulkRevokeAdmins').addEventListener('click', () => runBulkAdminRoleAction(false));
 
 
 function ordinaryUsersForClone() {
