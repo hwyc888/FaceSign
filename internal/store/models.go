@@ -59,6 +59,7 @@ type User struct {
 	ID               int64  `json:"id"`
 	Username         string `json:"username"`
 	IsAdmin          bool   `json:"is_admin"`
+	IsPrimaryAdmin   bool   `json:"is_primary_admin"`
 	CanEditStudents  bool   `json:"can_edit_students"`
 	CanAddStudents   bool   `json:"can_add_students"`
 	CanResampleFaces bool   `json:"can_resample_faces"`
