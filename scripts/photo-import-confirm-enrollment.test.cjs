@@ -9,7 +9,7 @@ const read = relative => fs.readFileSync(path.join(assets, relative), 'utf8');
 
 test('batch photo import supports direct multi-select images and legacy ZIP uploads', () => {
   const html = read('index.html');
-  const script = read('js/photo_import.js');
+  const script = read('js/photo_import.js').replace(/\r\n/g, '\n');
   const backend = fs.readFileSync(path.join(root, 'internal', 'web', 'photo_import.go'), 'utf8');
   assert.match(html, /id="photoImportFile"[^>]*multiple/);
   assert.match(html, /accept="[^"]*\.jpg[^"]*\.png[^"]*\.zip/);
@@ -23,7 +23,7 @@ test('batch photo import supports direct multi-select images and legacy ZIP uplo
 
 
 test('non-importable and skipped photos are removed from the current batch list', () => {
-  const script = read('js/photo_import.js');
+  const script = read('js/photo_import.js').replace(/\r\n/g, '\n');
   const backend = fs.readFileSync(path.join(root, 'internal', 'web', 'photo_import.go'), 'utf8');
   const extractFunction = name => {
     const start = script.indexOf('function ' + name + '(');
