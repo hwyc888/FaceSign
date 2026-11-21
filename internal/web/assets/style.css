@@ -893,7 +893,7 @@ pre{background:#0b1220;color:#d8e2f3;border-radius:12px;padding:16px;overflow:au
 .face-compare-score-track{height:5px;background:#edf1f6;border-radius:99px;overflow:hidden;margin-top:3px}
 .face-compare-score-track i{display:block;height:100%;background:#5782ce;border-radius:99px}
 .face-compare-candidate-score{font-size:12px;color:#3d5e92;font-variant-numeric:tabular-nums}
-.face-compare-model-info{margin-top:14px;font-size:11px}
+.face-compare-meta{margin-top:14px;font-size:11px}
 .face-compare-disclaimer{margin-top:18px}
 .face-compare-disclaimer strong{font-size:13px;color:#4e5f77}
 .face-compare-disclaimer p{margin:7px 0 0;line-height:1.7}
