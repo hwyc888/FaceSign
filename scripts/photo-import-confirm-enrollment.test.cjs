@@ -9,7 +9,7 @@ const read = relative => fs.readFileSync(path.join(assets, relative), 'utf8');
 
 test('batch photo import supports direct multi-select images and legacy ZIP uploads', () => {
   const html = read('index.html');
-  const script = read('js/photo_import.js');
+  const script = read('js/photo_import.js').replace(/\r\n/g, '\n');
   const backend = fs.readFileSync(path.join(root, 'internal', 'web', 'photo_import.go'), 'utf8');
   assert.match(html, /id="photoImportFile"[^>]*multiple/);
   assert.match(html, /accept="[^"]*\.jpg[^"]*\.png[^"]*\.zip/);
@@ -19,6 +19,48 @@ test('batch photo import supports direct multi-select images and legacy ZIP uplo
   assert.match(backend, /r\.MultipartForm\.File\["files"\]/);
   assert.match(backend, /r\.MultipartForm\.File\["file"\]/);
   assert.match(backend, /photoImportIdentity\(displayName\)/);
+});
+
+
+test('non-importable and skipped photos are removed from the current batch list', () => {
+  const script = read('js/photo_import.js').replace(/\r\n/g, '\n');
+  const backend = fs.readFileSync(path.join(root, 'internal', 'web', 'photo_import.go'), 'utf8');
+  const extractFunction = name => {
+    const start = script.indexOf('function ' + name + '(');
+    assert.ok(start >= 0, 'missing helper ' + name);
+    const end = script.indexOf('\n}\n', start);
+    assert.ok(end > start, 'unterminated helper ' + name);
+    return script.slice(start, end + 2);
+  };
+  const helpers = new Function(
+    'canAddStudents',
+    'canResampleFaces',
+    extractFunction('filterPhotoImportPreviewItems') + '\n' +
+    extractFunction('removePhotoImportItemFromList') +
+    '\nreturn {filterPhotoImportPreviewItems, removePhotoImportItemFromList};'
+  )(true, true);
+  const rows = [
+    {id: 1, status: 'ready'},
+    {id: 2, status: 'existing'},
+    {id: 3, status: 'rejected'},
+    {id: 4, status: 'review'},
+    {id: 5, status: 'package_duplicate'}
+  ];
+  assert.deepEqual(helpers.filterPhotoImportPreviewItems(rows, true, true), rows.slice(0, 2));
+  assert.deepEqual(helpers.filterPhotoImportPreviewItems(rows, false, true), [rows[1]]);
+  assert.deepEqual(helpers.filterPhotoImportPreviewItems(rows, false, false), []);
+  assert.deepEqual(helpers.removePhotoImportItemFromList(rows.slice(0, 2), 1), [rows[1]]);
+  assert.match(script, /photoImportItems = filterPhotoImportPreviewItems\(\s*allItems,\s*hasPermission\('can_add_students'\),\s*hasPermission\('can_resample_faces'\)\s*\)/);
+  assert.match(script, /updatePhotoImportRowState\(Number\(select\.dataset\.importAction\), true\)/);
+  assert.match(script, /if \(userInitiated && action === 'skip'\) \{\s*if \(removePhotoImportItem\(id\)\)/);
+  assert.match(script, /if \(row\.status === 'skipped'\) \{\s*removePhotoImportItem\(row\.id\)/);
+  assert.match(script, /return !item\.committed/);
+  assert.match(script, /已排除\/跳过/);
+
+  const skipIndex = backend.indexOf('if requested.Action == "skip" || requested.Action == ""');
+  const insertIndex = backend.indexOf('case "new":', skipIndex);
+  assert.ok(skipIndex >= 0 && insertIndex > skipIndex,
+    'the backend must handle skip before any student/sample enrollment action');
 });
 
 test('FaceSign uses a branded cancel/confirm dialog instead of browser-native prompts', () => {
