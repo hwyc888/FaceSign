@@ -80,8 +80,34 @@ func (s *Server) userAction(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	id, err := strconv.ParseInt(parts[0], 10, 64)
-	if err != nil || id <= 0 || len(parts) > 2 || (len(parts) == 2 && parts[1] != "clone") {
+	if err != nil || id <= 0 || len(parts) > 2 || (len(parts) == 2 && parts[1] != "clone" && parts[1] != "admin") {
 		writeError(w, http.StatusBadRequest, errors.New("用户编号不正确"))
+		return
+	}
+	if len(parts) == 2 && parts[1] == "admin" {
+		if !requirePrimaryAdmin(w, r) {
+			return
+		}
+		var makeAdmin bool
+		switch r.Method {
+		case http.MethodPost:
+			makeAdmin = true
+		case http.MethodDelete:
+			makeAdmin = false
+		default:
+			methodNotAllowed(w)
+			return
+		}
+		target, err := s.store.SetUserAdminRole(r.Context(), authUser(r).ID, id, makeAdmin)
+		if err != nil {
+			status := http.StatusBadRequest
+			if errors.Is(err, sql.ErrNoRows) {
+				status = http.StatusNotFound
+			}
+			writeError(w, status, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "user": target})
 		return
 	}
 	if len(parts) == 2 && parts[1] == "clone" {
