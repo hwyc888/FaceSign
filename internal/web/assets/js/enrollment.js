@@ -277,7 +277,7 @@ function chooseEnrollmentAngle(studentName) {
     };
     document.addEventListener('keydown', onKeyDown);
     modal.classList.remove('hidden');
-    requestAnimationFrame(() => $('[data-enrollment-angle]')?.focus());
+    requestAnimationFrame(() => $('[data-enrollment-angle]')[0]?.focus());
   });
 }
 
