@@ -36,6 +36,7 @@ test('bulk administrator role selection excludes the primary admin and separates
   assert.match(source, /currentUser\.is_primary_admin/);
   assert.match(source, /method: makeAdmin \? 'POST' : 'DELETE'/);
   assert.match(source, /data-user-select/);
+  assert.match(source, /\$\$\('\[data-user-select\]'\)\.forEach/);
   assert.match(source, /bulkGrantAdmins/);
   assert.match(source, /bulkRevokeAdmins/);
 });
