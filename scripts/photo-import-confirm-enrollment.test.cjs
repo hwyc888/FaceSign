@@ -50,7 +50,7 @@ test('non-importable and skipped photos are removed from the current batch list'
   assert.deepEqual(helpers.filterPhotoImportPreviewItems(rows, false, true), [rows[1]]);
   assert.deepEqual(helpers.filterPhotoImportPreviewItems(rows, false, false), []);
   assert.deepEqual(helpers.removePhotoImportItemFromList(rows.slice(0, 2), 1), [rows[1]]);
-  assert.match(script, /photoImportItems = filterPhotoImportPreviewItems\(allItems\)/);
+  assert.match(script, /photoImportItems = filterPhotoImportPreviewItems\(\s*allItems,\s*hasPermission\('can_add_students'\),\s*hasPermission\('can_resample_faces'\)\s*\)/);
   assert.match(script, /updatePhotoImportRowState\(Number\(select\.dataset\.importAction\), true\)/);
   assert.match(script, /if \(userInitiated && action === 'skip'\) \{\s*if \(removePhotoImportItem\(id\)\)/);
   assert.match(script, /if \(row\.status === 'skipped'\) \{\s*removePhotoImportItem\(row\.id\)/);
