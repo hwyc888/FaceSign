@@ -51,6 +51,14 @@ test('face comparison and live recognition do not render model metadata', () => 
   assert.match(compare, /人脸库学生/);
   assert.doesNotMatch(recognition, /r\.liveness_model|活体模型/);
   assert.match(recognition, /活体检测 · 人体跟踪/);
+  assert.match(recognition, /活体检测方式/);
+  assert.match(recognition, /f\\.liveness_mode === '模型直判' \\? '自动判定'/);
+  const html = read('index.html');
+  const css = read('style.css');
+  assert.match(html, /id="faceCompareMeta"/);
+  assert.match(compare, /#faceCompareMeta/);
+  assert.match(css, /\\.face-compare-meta/);
+  assert.doesNotMatch(html + compare + css, /faceCompareModelInfo|face-compare-model-info/);
 });
 
 test('system status describes recognition capabilities without naming engines', () => {
