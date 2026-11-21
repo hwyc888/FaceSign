@@ -337,6 +337,15 @@ func requireAdmin(w http.ResponseWriter, r *http.Request) bool {
 	return false
 }
 
+func requirePrimaryAdmin(w http.ResponseWriter, r *http.Request) bool {
+	user := authUser(r)
+	if user.IsAdmin && user.IsPrimaryAdmin {
+		return true
+	}
+	writeError(w, http.StatusForbidden, errors.New("只有首个管理员可以授权或撤销管理员账户"))
+	return false
+}
+
 func requirePermission(w http.ResponseWriter, r *http.Request, allowed bool, message string) bool {
 	if authUser(r).IsAdmin || allowed {
 		return true
