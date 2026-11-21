@@ -159,6 +159,12 @@ pre{background:#0b1220;color:#d8e2f3;border-radius:12px;padding:16px;overflow:au
 .modal-head p{margin:0;color:#667085;line-height:1.5}
 .icon-button{border:0;background:#f2f4f7;width:36px;height:36px;padding:0;border-radius:50%;font-size:22px;line-height:1}
 .modal-actions{display:flex;justify-content:flex-end;gap:10px;margin-top:18px}
+.app-dialog-backdrop{z-index:1300}
+.app-confirm-modal,.enrollment-angle-modal{width:min(480px,100%)}
+.app-confirm-message{white-space:pre-line;line-height:1.7}
+.enrollment-angle-options{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}
+.enrollment-angle-options button{min-height:44px}
+.enrollment-angle-options button:last-child{grid-column:1/-1}
 .duplicate-card{border:1px solid #f0c36a;background:#fff9eb;border-radius:12px;padding:16px;line-height:1.7}
 .duplicate-name{font-size:22px;font-weight:800;color:#8a4b08}
 
