@@ -339,10 +339,16 @@
 
       <section class="page" id="page-attendance">
         <div class="card table-card">
-          <div class="card-head">
+          <div class="card-head attendance-head">
             <h2>考勤记录</h2>
-            <div class="inline"><input id="attendanceDay" type="date"><button id="refreshAttendance">查询</button></div>
+            <div class="attendance-filters">
+              <label>日期<input id="attendanceDay" type="date"></label>
+              <label>班级<select id="attendanceClassFilter"><option value="">全部班级</option></select></label>
+              <label class="attendance-student-filter">学生搜索<input id="attendanceStudentSearch" type="search" placeholder="输入姓名或学号"></label>
+              <button id="refreshAttendance" type="button">查询</button>
+            </div>
           </div>
+          <p id="attendanceFilterSummary" class="muted compact attendance-filter-summary"></p>
           <div class="table-wrap">
             <table>
               <thead><tr><th>首次签到</th><th>最近识别</th><th>识别次数</th><th>学号</th><th>姓名</th><th>班级</th><th>相似度</th><th>识别截图</th></tr></thead>
@@ -828,9 +834,17 @@
               <button id="refreshUsers" type="button">刷新</button>
             </div>
           </div>
+          <div class="user-bulk-toolbar hidden" id="userBulkToolbar">
+            <label><input id="userSelectAll" type="checkbox"> 全选可管理账号</label>
+            <span id="userSelectionSummary" class="user-selection-summary">已选择 0 个账号</span>
+            <div class="user-bulk-actions">
+              <button id="bulkGrantAdmins" class="primary-soft" type="button" disabled>批量授权管理员</button>
+              <button id="bulkRevokeAdmins" class="danger" type="button" disabled>批量取消授权</button>
+            </div>
+          </div>
           <div class="table-wrap">
             <table class="user-table">
-              <thead><tr><th>账号</th><th>修改资料</th><th>新增学生</th><th>人脸采样</th><th>座位编排</th><th>修改设置</th><th>操作</th></tr></thead>
+              <thead><tr><th>选择</th><th>账号</th><th>修改资料</th><th>新增学生</th><th>人脸采样</th><th>座位编排</th><th>修改设置</th><th>操作</th></tr></thead>
               <tbody id="usersBody"></tbody>
             </table>
           </div>
