@@ -89,6 +89,95 @@ type photoKnownFace struct {
 	Feature []float32
 }
 
+type photoImportSourceFile struct {
+	Name string
+	Size uint64
+	Open func() (io.ReadCloser, error)
+}
+
+func photoImportSourcesFromMultipart(r *http.Request) ([]photoImportSourceFile, string, func(), error) {
+	if r.MultipartForm == nil {
+		return nil, "", func() {}, errors.New("请选择图片文件或 ZIP 照片包")
+	}
+	archives := r.MultipartForm.File["file"]
+	uploads := r.MultipartForm.File["files"]
+	if len(archives) > 0 && len(uploads) > 0 {
+		return nil, "", func() {}, errors.New("请单独上传一个 ZIP 包，或直接多选图片，不要混合上传")
+	}
+	if len(archives) > 1 {
+		return nil, "", func() {}, errors.New("一次只能上传一个 ZIP 照片包")
+	}
+	if len(archives) == 1 {
+		header := archives[0]
+		if header.Size <= 0 || header.Size > maxPhotoImportArchive {
+			return nil, "", func() {}, errors.New("ZIP 压缩包大小必须大于 0 且小于 256MB")
+		}
+		file, err := header.Open()
+		if err != nil {
+			return nil, "", func() {}, fmt.Errorf("无法打开 ZIP 压缩包: %w", err)
+		}
+		size, err := file.Seek(0, io.SeekEnd)
+		if err != nil {
+			file.Close()
+			return nil, "", func() {}, errors.New("无法读取压缩包大小")
+		}
+		if size <= 0 || size > maxPhotoImportArchive {
+			file.Close()
+			return nil, "", func() {}, errors.New("ZIP 压缩包大小必须小于 256MB")
+		}
+		if _, err := file.Seek(0, io.SeekStart); err != nil {
+			file.Close()
+			return nil, "", func() {}, errors.New("无法读取压缩包")
+		}
+		zr, err := zip.NewReader(file, size)
+		if err != nil {
+			file.Close()
+			return nil, "", func() {}, errors.New("文件不是有效的 ZIP 压缩包")
+		}
+		sources := make([]photoImportSourceFile, 0, len(zr.File))
+		for _, archived := range zr.File {
+			if archived.FileInfo().IsDir() {
+				continue
+			}
+			entry := archived
+			sources = append(sources, photoImportSourceFile{
+				Name: entry.Name,
+				Size: entry.UncompressedSize64,
+				Open: func() (io.ReadCloser, error) {
+					return entry.Open()
+				},
+			})
+		}
+		return sources, header.Filename, func() { _ = file.Close() }, nil
+	}
+	if len(uploads) == 0 {
+		return nil, "", func() {}, errors.New("请选择 JPG、PNG 等图片，或上传 ZIP 照片包")
+	}
+	if len(uploads) > maxPhotoImportItems {
+		return nil, "", func() {}, fmt.Errorf("一次最多选择 %d 张图片", maxPhotoImportItems)
+	}
+	var totalSize int64
+	sources := make([]photoImportSourceFile, 0, len(uploads))
+	for _, uploaded := range uploads {
+		header := uploaded
+		if header.Size < 0 || header.Size > maxPhotoImportImage {
+			return nil, "", func() {}, fmt.Errorf("图片“%s”超过单张 25MB 限制", path.Base(header.Filename))
+		}
+		totalSize += header.Size
+		if totalSize > maxPhotoImportArchive {
+			return nil, "", func() {}, errors.New("多张图片总大小不能超过 256MB")
+		}
+		sources = append(sources, photoImportSourceFile{
+			Name: path.Base(header.Filename),
+			Size: uint64(header.Size),
+			Open: func() (io.ReadCloser, error) {
+				return header.Open()
+			},
+		})
+	}
+	return sources, fmt.Sprintf("直接上传 %d 张图片", len(sources)), func() {}, nil
+}
+
 func (s *Server) photoImportAnalyze(w http.ResponseWriter, r *http.Request) {
 	user := authUser(r)
 	if !requirePermission(w, r, user.CanAddStudents || user.CanResampleFaces, "没有新增人员或重新采样的权限") {
@@ -102,35 +191,18 @@ func (s *Server) photoImportAnalyze(w http.ResponseWriter, r *http.Request) {
 	s.cleanupPhotoImportSessions(time.Now())
 	r.Body = http.MaxBytesReader(w, r.Body, maxPhotoImportArchive+(4<<20))
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
-		writeError(w, http.StatusBadRequest, fmt.Errorf("读取压缩包失败: %w", err))
+		writeError(w, http.StatusBadRequest, fmt.Errorf("读取上传文件失败: %w", err))
 		return
 	}
-	file, header, err := r.FormFile("file")
+	if r.MultipartForm != nil {
+		defer r.MultipartForm.RemoveAll()
+	}
+	sources, uploadName, closeSources, err := photoImportSourcesFromMultipart(r)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, errors.New("请选择 ZIP 照片压缩包"))
+		writeError(w, http.StatusBadRequest, err)
 		return
 	}
-	defer file.Close()
-
-	size, err := file.Seek(0, io.SeekEnd)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, errors.New("无法读取压缩包大小"))
-		return
-	}
-	if size <= 0 || size > maxPhotoImportArchive {
-		writeError(w, http.StatusBadRequest, errors.New("ZIP 压缩包大小必须小于 256MB"))
-		return
-	}
-	if _, err := file.Seek(0, io.SeekStart); err != nil {
-		writeError(w, http.StatusBadRequest, errors.New("无法读取压缩包"))
-		return
-	}
-
-	zr, err := zip.NewReader(file, size)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, errors.New("文件不是有效的 ZIP 压缩包"))
-		return
-	}
+	defer closeSources()
 
 	classes, err := s.store.ListClasses(r.Context())
 	if err != nil {
@@ -158,20 +230,20 @@ func (s *Server) photoImportAnalyze(w http.ResponseWriter, r *http.Request) {
 	processed := 0
 	packageFeatures := make([]*photoImportItem, 0)
 
-	for _, archived := range zr.File {
-		if archived.FileInfo().IsDir() || strings.HasPrefix(archived.Name, "__MACOSX/") {
+	for _, source := range sources {
+		if strings.HasPrefix(strings.ReplaceAll(source.Name, "\\", "/"), "__MACOSX/") {
 			continue
 		}
 		if processed >= maxPhotoImportItems {
-			writeError(w, http.StatusBadRequest, fmt.Errorf("一个压缩包最多导入 %d 张图片", maxPhotoImportItems))
+			writeError(w, http.StatusBadRequest, fmt.Errorf("一次最多分析 %d 张图片", maxPhotoImportItems))
 			return
 		}
 
-		displayName := path.Base(archived.Name)
+		displayName := path.Base(source.Name)
 		if displayName == "." || displayName == "" {
 			continue
 		}
-		if archived.UncompressedSize64 > uint64(maxPhotoImportImage) {
+		if source.Size > uint64(maxPhotoImportImage) {
 			if looksLikePhotoName(displayName) {
 				session.Items = append(session.Items, rejectedPhotoItem(len(session.Items)+1, displayName, "单张图片不能超过25MB"))
 				processed++
@@ -181,11 +253,13 @@ func (s *Server) photoImportAnalyze(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		rc, err := archived.Open()
+		rc, err := source.Open()
 		if err != nil {
 			if looksLikePhotoName(displayName) {
 				session.Items = append(session.Items, rejectedPhotoItem(len(session.Items)+1, displayName, "无法读取图片"))
 				processed++
+			} else {
+				ignored++
 			}
 			continue
 		}
@@ -195,6 +269,8 @@ func (s *Server) photoImportAnalyze(w http.ResponseWriter, r *http.Request) {
 			if looksLikePhotoName(displayName) {
 				session.Items = append(session.Items, rejectedPhotoItem(len(session.Items)+1, displayName, "图片读取失败或文件过大"))
 				processed++
+			} else {
+				ignored++
 			}
 			continue
 		}
@@ -247,7 +323,7 @@ func (s *Server) photoImportAnalyze(w http.ResponseWriter, r *http.Request) {
 			Feature:     append([]float32(nil), detected.Feature...),
 		}
 		item.StudentNo, item.Name = photoImportIdentity(displayName)
-		item.ClassName = photoImportClassHint(archived.Name, classNames)
+		item.ClassName = photoImportClassHint(source.Name, classNames)
 		item.Thumbnail = makeFaceThumbnail(img, detected.Rectangle)
 		if !ok {
 			item.Status = "rejected"
@@ -281,7 +357,7 @@ func (s *Server) photoImportAnalyze(w http.ResponseWriter, r *http.Request) {
 					item.Status = "package_duplicate"
 					item.Similarity = score
 					item.DuplicateFile = previous.FileName
-					item.Reason = fmt.Sprintf("与压缩包中的“%s”高度相似，疑似同一个人", previous.FileName)
+					item.Reason = fmt.Sprintf("与批次中的“%s”高度相似，疑似同一个人", previous.FileName)
 					break
 				}
 			}
@@ -295,7 +371,7 @@ func (s *Server) photoImportAnalyze(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(session.Items) == 0 {
-		writeError(w, http.StatusBadRequest, errors.New("压缩包中没有找到可处理的图片"))
+		writeError(w, http.StatusBadRequest, errors.New("没有找到可处理的图片；请上传 JPG、PNG 等图片或 ZIP 照片包"))
 		return
 	}
 
@@ -312,13 +388,13 @@ func (s *Server) photoImportAnalyze(w http.ResponseWriter, r *http.Request) {
 		public = append(public, s.publicPhotoImportItem(session, item))
 	}
 	writeJSON(w, http.StatusOK, map[string]any{
-		"session_id":       session.ID,
-		"archive_name":     header.Filename,
-		"items":            public,
-		"ignored_files":    ignored,
-		"counts":           counts,
+		"session_id":         session.ID,
+		"archive_name":       uploadName,
+		"items":              public,
+		"ignored_files":      ignored,
+		"counts":             counts,
 		"expires_in_minutes": int(photoImportTTL.Minutes()),
-		"supported_formats": []string{"JPEG/JPG", "PNG", "WEBP", "GIF", "BMP", "TIFF"},
+		"supported_formats":  []string{"JPEG/JPG", "PNG", "WEBP", "GIF", "BMP", "TIFF"},
 	})
 }
 
