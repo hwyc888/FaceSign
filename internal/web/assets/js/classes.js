@@ -64,7 +64,7 @@ async function loadClasses() {
       button.onclick = async () => {
         const item = classesCache.find(c => Number(c.id) === Number(button.dataset.classDelete));
         if (!item) return;
-        if (!confirm(`确定删除班级“${item.name}”？只有没有学生的班级才能删除。`)) return;
+        if (!(await showConfirmDialog(`确定删除班级“${item.name}”？只有没有学生的班级才能删除。`, {title: '删除班级', confirmText: '删除', confirmClass: 'danger'}))) return;
         try {
           await api(`/api/classes/${item.id}`, {method: 'DELETE'});
           toast('班级已删除');
