@@ -1691,8 +1691,9 @@ func TestDailySnapshotTimelineAndFaceCompareUI(t *testing.T) {
 		`id="faceCompareRun"`,
 		`id="faceCompareThreshold"`,
 		`id="attendanceSnapshotTimeline"`,
-		`id="healthModelName"`,
-		`id="healthModelParams"`,
+		`id="healthServiceStatus"`,
+		`id="healthServiceDetails"`,
+		`id="faceCompareMeta"`,
 		`/js/face_compare.js`,
 	} {
 		if !strings.Contains(html, want) { t.Fatalf("daily snapshot / face comparison UI missing %s", want) }
