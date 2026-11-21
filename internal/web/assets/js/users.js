@@ -272,6 +272,16 @@ $('#userCreateForm').addEventListener('submit', async event => {
 
 $('#refreshUsers').addEventListener('click', loadUsers);
 
+$('#userSelectAll').addEventListener('change', () => {
+  const checked = $('#userSelectAll').checked;
+  $('[data-user-select]').forEach(input => {
+    input.checked = checked;
+  });
+  updateUserSelectionUI();
+});
+$('#bulkGrantAdmins').addEventListener('click', () => runBulkAdminRoleAction(true));
+$('#bulkRevokeAdmins').addEventListener('click', () => runBulkAdminRoleAction(false));
+
 
 function ordinaryUsersForClone() {
   return usersCache.filter(user => !user.is_admin);
