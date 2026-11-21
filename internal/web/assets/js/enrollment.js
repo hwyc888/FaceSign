@@ -248,6 +248,39 @@ async function captureEnrollment() {
 $('#toggleEnrollCamera').addEventListener('click', toggleCamera);
 $('#captureEnrollment').addEventListener('click', captureEnrollment);
 
+function chooseEnrollmentAngle(studentName) {
+  const modal = $('#enrollmentAngleModal');
+  if (!modal) return Promise.resolve('');
+  $('#enrollmentAngleStudent').textContent = studentName
+    ? studentName + ' 的正面样本已保存。请选择接下来要采集的角度。'
+    : '正面样本已保存。请选择接下来要采集的角度。';
+
+  return new Promise(resolve => {
+    let settled = false;
+    const finish = angle => {
+      if (settled) return;
+      settled = true;
+      modal.classList.add('hidden');
+      document.removeEventListener('keydown', onKeyDown);
+      resolve(angle || '');
+    };
+    const onKeyDown = event => {
+      if (event.key === 'Escape') finish('');
+    };
+    $('[data-enrollment-angle]').forEach(button => {
+      button.onclick = () => finish(button.dataset.enrollmentAngle);
+    });
+    $('#enrollmentAngleCancel').onclick = () => finish('');
+    $('#enrollmentAngleClose').onclick = () => finish('');
+    modal.onclick = event => {
+      if (event.target === modal) finish('');
+    };
+    document.addEventListener('keydown', onKeyDown);
+    modal.classList.remove('hidden');
+    requestAnimationFrame(() => $('[data-enrollment-angle]')?.focus());
+  });
+}
+
 $('#studentInfoForm').addEventListener('submit', async e => {
   e.preventDefault();
   if (!hasPermission('can_add_students')) {
@@ -268,13 +301,28 @@ $('#studentInfoForm').addEventListener('submit', async e => {
   fd.append('label', '正面');
 
   try {
-    await api('/api/enrollment/create', {method: 'POST', body: fd});
+    const created = await api('/api/enrollment/create', {method: 'POST', body: fd});
     pendingEnrollmentBlob = null;
     closeModal('studentModal');
-    setEnrollmentStatus('首次录入完成', '学生资料与正面人脸样本已经保存，可继续补充其他角度。', 'success');
-    toast('学生信息和人脸已录入');
+    setEnrollmentStatus('首次录入完成', '学生资料与正面人脸样本已经保存。', 'success');
+    toast('学生信息和正面人脸已录入');
     await loadStudents();
     await loadHealth();
+
+    const studentID = Number(created.student?.id || 0);
+    if (studentID > 0 && typeof openSamplesPanel === 'function') {
+      await openSamplesPanel(studentID, {scroll: false});
+      if (hasPermission('can_resample_faces')) {
+        const wantsMoreAngles = await showConfirmDialog(
+          '正面样本已成功保存。是否现在补充左侧、右侧、轻微抬头或轻微低头等其他角度？',
+          {title: '首次录入完成', confirmText: '补充其他角度', cancelText: '暂不补充'}
+        );
+        if (wantsMoreAngles) {
+          const angle = await chooseEnrollmentAngle(created.student?.name || $('#modalStudentName').value);
+          if (angle) await startSupplementAngle(angle);
+        }
+      }
+    }
   } catch (e2) {
     if (e2.data && e2.data.duplicate) {
       closeModal('studentModal');
