@@ -4,9 +4,12 @@ let photoImportAnalyzedCount = 0;
 let photoImportSkippedCount = 0;
 let photoImportIgnoredFiles = 0;
 
-function filterPhotoImportPreviewItems(items) {
+function filterPhotoImportPreviewItems(items, canAddStudents, canResampleFaces) {
   return (Array.isArray(items) ? items : []).filter(function(item) {
-    return item && (item.status === 'ready' || item.status === 'existing');
+    if (!item) return false;
+    if (item.status === 'ready') return Boolean(canAddStudents);
+    if (item.status === 'existing') return Boolean(canResampleFaces);
+    return false;
   });
 }
 
@@ -79,7 +82,11 @@ function renderPhotoImportPreview(data) {
   photoImportSessionID = data.session_id;
   const allItems = Array.isArray(data.items) ? data.items : [];
   photoImportAnalyzedCount = allItems.length;
-  photoImportItems = filterPhotoImportPreviewItems(allItems);
+  photoImportItems = filterPhotoImportPreviewItems(
+    allItems,
+    hasPermission('can_add_students'),
+    hasPermission('can_resample_faces')
+  );
   photoImportSkippedCount = allItems.length - photoImportItems.length;
   photoImportIgnoredFiles = Number(data.ignored_files || 0);
   renderPhotoImportClassOptions();
