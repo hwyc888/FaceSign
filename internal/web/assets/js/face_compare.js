@@ -129,7 +129,7 @@ function renderFaceCompareResult(result) {
       '<span>该学生样本数：' + Number(best.sample_count || 0) + '</span>';
   }
 
-  $('#faceCompareModelInfo').textContent = '人脸库学生：' + Number(result.library_students || 0) + ' 人';
+  $('#faceCompareMeta').textContent = '人脸库学生：' + Number(result.library_students || 0) + ' 人';
 }
 
 $('#faceCompareOpenCamera').addEventListener('click', openFaceCompareCamera);
