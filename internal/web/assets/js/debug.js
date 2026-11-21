@@ -62,7 +62,7 @@ recognitionDebugForm.addEventListener('submit', async event => {
 });
 
 $('#resetRecognitionDebug').addEventListener('click', async () => {
-  if (!window.confirm('确认恢复本次启动的默认识别阈值吗？\n此操作不会清除学生、样本、考勤或其他设置。')) return;
+  if (!(await showConfirmDialog('确认恢复本次启动的默认识别阈值吗？\n此操作不会清除学生、样本、考勤或其他设置。', {title: '恢复默认阈值', confirmText: '恢复默认'}))) return;
   const save = $('#saveRecognitionDebug');
   const reset = $('#resetRecognitionDebug');
   save.disabled = reset.disabled = true;
