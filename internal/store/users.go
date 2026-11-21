@@ -67,8 +67,8 @@ func (s *Store) UserBySession(ctx context.Context, tokenHash string, now time.Ti
 
 func (s *Store) UserBySessionForRelease(ctx context.Context, tokenHash string) (User, error) {
 	var user User
-	err := s.db.QueryRowContext(ctx, "SELECT u.id,u.username,u.password_hash,u.is_admin,u.can_edit_students,u.can_add_students,u.can_resample_faces,u.can_arrange_seats,u.can_edit_settings FROM auth_sessions a JOIN users u ON u.id=a.user_id WHERE a.token_hash=?", tokenHash).Scan(
-		&user.ID, &user.Username, &user.PasswordHash, &user.IsAdmin,
+	err := s.db.QueryRowContext(ctx, "SELECT u.id,u.username,u.password_hash,u.is_admin,u.is_primary_admin,u.can_edit_students,u.can_add_students,u.can_resample_faces,u.can_arrange_seats,u.can_edit_settings FROM auth_sessions a JOIN users u ON u.id=a.user_id WHERE a.token_hash=?", tokenHash).Scan(
+		&user.ID, &user.Username, &user.PasswordHash, &user.IsAdmin, &user.IsPrimaryAdmin,
 		&user.CanEditStudents, &user.CanAddStudents, &user.CanResampleFaces, &user.CanArrangeSeats, &user.CanEditSettings,
 	)
 	return user, err
