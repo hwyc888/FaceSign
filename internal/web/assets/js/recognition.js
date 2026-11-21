@@ -40,13 +40,13 @@ function renderRecognition(r) {
     return;
   }
 
-  const summary = `活体模型 ${esc(r.liveness_model || '未知')} · 人体跟踪 ${r.tracked_person_count || persons.length} 人，检测人脸 ${r.detected_count || faces.length} 张，等待靠近/露脸/清晰 ${r.waiting_face_count || 0} 人，签到通过 ${r.verified_count || 0} 人，验证中 ${r.pending_count || 0} 人，需重新对准 ${r.timeout_count || 0} 人，疑似照片/屏幕 ${r.spoof_count || 0} 人，未录入 ${r.unregistered_count || 0} 人`;
+  const summary = `活体检测 · 人体跟踪 ${r.tracked_person_count || persons.length} 人，检测人脸 ${r.detected_count || faces.length} 张，等待靠近/露脸/清晰 ${r.waiting_face_count || 0} 人，签到通过 ${r.verified_count || 0} 人，验证中 ${r.pending_count || 0} 人，需重新对准 ${r.timeout_count || 0} 人，疑似照片/屏幕 ${r.spoof_count || 0} 人，未录入 ${r.unregistered_count || 0} 人`;
 
   const faceHTML = faces.map((f, i) => {
     const quality = Number(f.quality_score || 0);
     const qualityHint = f.quality_hint ? ` · ${esc(f.quality_hint)}` : '';
     const qualityText = `人脸质量 ${(quality * 100).toFixed(0)}% · ${esc(f.quality_status || '等待清晰')}${qualityHint}`;
-    const livenessModeText = esc(f.liveness_mode || '待评估');
+    const livenessModeText = f.liveness_mode === '模型直判' ? '自动判定' : esc(f.liveness_mode || '待评估');
     const livenessExposure = Number(f.liveness_exposure || 0) * 100;
     const livenessSharpness = Number(f.liveness_sharpness || 0) * 100;
     const livenessBrightness = Number(f.liveness_brightness || 0) * 100;
@@ -55,7 +55,7 @@ function renderRecognition(r) {
       ? f.liveness_scores.map(score => (Number(score || 0) * 100).toFixed(1) + '%')
       : [];
     const livenessFrameText = frameScores.length ? `逐帧活体 ${frameScores.join(' / ')}` : '逐帧活体等待中';
-    const livenessQualityText = `活体模型 ${livenessModeText} · 人脸区域亮度 ${livenessBrightness.toFixed(0)}% · 曝光 ${livenessExposure.toFixed(0)}% · 清晰度 ${livenessSharpness.toFixed(0)}% · ${livenessQualityStatus}`;
+    const livenessQualityText = `活体检测方式 ${livenessModeText} · 人脸区域亮度 ${livenessBrightness.toFixed(0)}% · 曝光 ${livenessExposure.toFixed(0)}% · 清晰度 ${livenessSharpness.toFixed(0)}% · ${livenessQualityStatus}`;
     if (f.recognized && f.student) {
       const attendanceMeta = f.attendance
         ? ` | 首次 ${esc(String(f.attendance.checked_at || '').slice(-8))} | 最近 ${esc(String(f.attendance.last_seen_at || f.attendance.checked_at || '').slice(-8))} | 今日 ${Number(f.attendance.recognition_count || 1)}次`

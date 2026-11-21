@@ -129,9 +129,7 @@ function renderFaceCompareResult(result) {
       '<span>该学生样本数：' + Number(best.sample_count || 0) + '</span>';
   }
 
-  $('#faceCompareModelInfo').textContent = '模型：' + (result.engine || 'ArcFace ResNet50') +
-    ' · 版本：' + (result.model_version || '--') +
-    ' · 人脸库学生：' + Number(result.library_students || 0) + ' 人';
+  $('#faceCompareMeta').textContent = '人脸库学生：' + Number(result.library_students || 0) + ' 人';
 }
 
 $('#faceCompareOpenCamera').addEventListener('click', openFaceCompareCamera);

@@ -99,13 +99,13 @@ $$('.nav').forEach(b => b.addEventListener('click', () => showPage(b.dataset.pag
 async function loadHealth() {
   try {
     const h = await api('/api/health');
-    $('#healthModelName').textContent = h.engine || '人脸识别模型未上报';
-    $('#healthModelParams').textContent = String(h.device || 'CPU').toUpperCase() + ' · 匹配阈值 ' + Number(h.match_threshold || 0).toFixed(2) + ' · ' + h.students + ' 人';
+    $('#healthServiceStatus').textContent = '人脸识别服务正常';
+    $('#healthServiceDetails').textContent = String(h.device || 'CPU').toUpperCase() + ' · 匹配阈值 ' + Number(h.match_threshold || 0).toFixed(2) + ' · ' + h.students + ' 人';
     renderSystemResources(h.resources || {});
     renderRecognitionMetrics(h.recognition_metrics || {});
   } catch (e) {
-    $('#healthModelName').textContent = 'FaceSign 服务异常';
-    $('#healthModelParams').textContent = e.message || '无法读取模型信息';
+    $('#healthServiceStatus').textContent = 'FaceSign 服务异常';
+    $('#healthServiceDetails').textContent = e.message || '无法读取服务状态';
     const cpu = $('#systemCpuValue');
     if (cpu) cpu.textContent = '暂不可用';
   }
