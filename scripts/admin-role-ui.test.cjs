@@ -19,6 +19,7 @@ function permissionContext(user) {
   });
   const adminOnly = [makeElement('admin-only-page'), makeElement('admin-only-threshold')];
   const permissionOnly = [makeElement('settings-permission')];
+  permissionOnly[0].dataset = {permission: 'can_edit_settings'};
   const ordinary = new Map([
     ['#enrollmentWorkbench', makeElement('enrollment-workbench')],
     ['#photoImportCard', makeElement('photo-import')],
