@@ -106,19 +106,21 @@ async function loadUsers() {
     const canManageAdminRoles = Boolean(currentUser.is_primary_admin);
     const selectionCell = user => {
       if (!canManageAdminRoles || user.is_primary_admin) {
-        return '<td class="user-selection-cell"><span class="muted compact">—</span></td>';
+        return '<td class="user-selection-cell" data-label="选择"><span class="muted compact">—</span></td>';
       }
-      return '<td class="user-selection-cell"><input type="checkbox" data-user-select="' + user.id +
+      return '<td class="user-selection-cell" data-label="选择"><input type="checkbox" data-user-select="' + user.id +
         '" aria-label="选择账号 ' + esc(user.username) + '"></td>';
     };
 
     $('#usersBody').innerHTML = usersCache.map(user => {
-      const checkmark = '<td>✓</td>';
+      const checkmark = label => '<td data-label="' + label + '">✓</td>';
       if (user.is_primary_admin) {
         return '<tr data-user-row="' + user.id + '">' +
           selectionCell(user) +
-          '<td><strong>' + esc(user.username) + '</strong><br><span class="user-account-admin">首个管理员 · 最高权限 · 不可撤销</span></td>' +
-          checkmark.repeat(5) + '<td>固定管理员</td></tr>';
+          '<td data-label="账号"><strong>' + esc(user.username) + '</strong><br><span class="user-account-admin">首个管理员 · 最高权限 · 不可撤销</span></td>' +
+          checkmark('修改资料') + checkmark('新增学生') + checkmark('人脸采样') +
+          checkmark('座位编排') + checkmark('修改设置') +
+          '<td data-label="操作">固定管理员</td></tr>';
       }
       if (user.is_admin) {
         const roleAction = canManageAdminRoles
@@ -126,25 +128,26 @@ async function loadUsers() {
           : '<span class="muted compact">仅首个管理员可撤销</span>';
         return '<tr data-user-row="' + user.id + '">' +
           selectionCell(user) +
-          '<td><strong>' + esc(user.username) + '</strong><br><span class="user-account-admin">授权管理员 · 全部功能已开放</span></td>' +
-          checkmark.repeat(5) +
-          '<td><div class="user-row-actions">' + roleAction + '</div></td></tr>';
+          '<td data-label="账号"><strong>' + esc(user.username) + '</strong><br><span class="user-account-admin">授权管理员 · 全部功能已开放</span></td>' +
+          checkmark('修改资料') + checkmark('新增学生') + checkmark('人脸采样') +
+          checkmark('座位编排') + checkmark('修改设置') +
+          '<td data-label="操作"><div class="user-row-actions">' + roleAction + '</div></td></tr>';
       }
-      const permissionCell = (key, checked) =>
-        '<td><label><input type="checkbox" data-user-permission="' + key +
+      const permissionCell = (key, checked, label) =>
+        '<td data-label="' + label + '"><label><input type="checkbox" data-user-permission="' + key +
         '" data-user-id="' + user.id + '"' + (checked ? ' checked' : '') + '>允许</label></td>';
       const grantAction = canManageAdminRoles
         ? '<button class="primary-soft" data-user-grant-admin="' + user.id + '">授权为管理员</button>'
         : '';
       return '<tr data-user-row="' + user.id + '">' +
         selectionCell(user) +
-        '<td><strong>' + esc(user.username) + '</strong><br><span class="muted compact">普通用户</span></td>' +
-        permissionCell('can_edit_students', user.can_edit_students) +
-        permissionCell('can_add_students', user.can_add_students) +
-        permissionCell('can_resample_faces', user.can_resample_faces) +
-        permissionCell('can_arrange_seats', user.can_arrange_seats) +
-        permissionCell('can_edit_settings', user.can_edit_settings) +
-        '<td><div class="user-row-actions"><button data-user-clone="' + user.id + '">复制账号</button>' +
+        '<td data-label="账号"><strong>' + esc(user.username) + '</strong><br><span class="muted compact">普通用户</span></td>' +
+        permissionCell('can_edit_students', user.can_edit_students, '修改资料') +
+        permissionCell('can_add_students', user.can_add_students, '新增学生') +
+        permissionCell('can_resample_faces', user.can_resample_faces, '人脸采样') +
+        permissionCell('can_arrange_seats', user.can_arrange_seats, '座位编排') +
+        permissionCell('can_edit_settings', user.can_edit_settings, '修改设置') +
+        '<td data-label="操作"><div class="user-row-actions"><button data-user-clone="' + user.id + '">复制账号</button>' +
         '<button class="primary-soft" data-user-save="' + user.id + '">保存权限</button>' +
         '<button class="danger" data-user-delete="' + user.id + '">删除账号</button>' +
         grantAction + '</div></td></tr>';
