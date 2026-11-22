@@ -43,7 +43,7 @@ The scripts do not delete the database, TLS certificates or logs when stopping.
 
 ## 4. Network and TLS
 
-Default listeners are HTTP `0.0.0.0:8080` and HTTPS `0.0.0.0:8443`. For remote browser access, use HTTPS and install/trust the FaceSign root CA on the client device. If you access the service by a LAN IP or DNS name, include that name in the certificate SANs when starting FaceSign:
+Default listeners are HTTP `0.0.0.0:8080` and HTTPS `0.0.0.0:8443`. The first administrator can be created from the server itself or another device. Remote first-time setup is accepted only over HTTPS; remote HTTP setup is rejected. The database allows only one initial administrator, and later setup attempts return a conflict. Keep the HTTPS listener restricted to your trusted deployment network until the first administrator has been created. For remote browser access, use HTTPS and install/trust the FaceSign root CA on the client device. If you access the service by a LAN IP or DNS name, include that name in the certificate SANs when starting FaceSign:
 
 ```bash
 FACESIGN_TLS_HOSTS="facesign.example.edu,192.168.1.20" ./scripts/ubuntu/start.sh
