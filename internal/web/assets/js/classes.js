@@ -10,6 +10,7 @@ async function loadClasses() {
   try {
     const items = await api('/api/classes');
     classesCache = Array.isArray(items) ? items : [];
+    if (typeof renderPhotoImportClassOptions === 'function') renderPhotoImportClassOptions();
     renderClassOptions($('#modalClassName') ? $('#modalClassName').value : '');
     if (typeof renderCheckinSeatClassOptions === 'function') renderCheckinSeatClassOptions();
     const seatClassSelect = $('#seatArrangementClass');
