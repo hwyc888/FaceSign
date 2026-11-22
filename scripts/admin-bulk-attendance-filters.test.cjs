@@ -75,13 +75,13 @@ test('attendance and account filter controls are present and responsive styles p
 test('user account table fits its card and lays actions out in a balanced grid', () => {
   const css = read('internal/web/assets/style.css');
   const users = read('internal/web/assets/js/users.js');
-  const lastRule = selector => {
+  const allRules = selector => {
     const matches = [...css.matchAll(new RegExp('\\.' + selector + '\\s*\\{([^}]*)\\}', 'g'))];
     assert.ok(matches.length, 'missing CSS rule ' + selector);
-    return matches[matches.length - 1][1];
+    return matches.map(match => match[1]).join(';');
   };
-  const table = lastRule('user-table');
-  const actions = lastRule('user-row-actions');
+  const table = allRules('user-table');
+  const actions = allRules('user-row-actions');
   assert.match(table, /width:\s*100%/);
   assert.match(table, /min-width:\s*0/);
   assert.doesNotMatch(table, /min-width:\s*1154px/);
