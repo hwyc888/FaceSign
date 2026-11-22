@@ -198,10 +198,10 @@ pre{background:#0b1220;color:#d8e2f3;border-radius:12px;padding:16px;overflow:au
 .class-order-actions button{padding:7px 10px}
 @media(max-width:620px){.class-add-form{grid-template-columns:1fr}}
 
-.photo-import-upload{display:grid;grid-template-columns:minmax(260px,1fr) minmax(200px,260px);gap:12px;align-items:end;margin-top:18px}
-.photo-import-file,.photo-import-default-class{display:grid;gap:6px;color:#475467;font-size:14px;min-width:0}
+.photo-import-upload{display:grid;grid-template-columns:minmax(220px,1fr) repeat(2,minmax(180px,220px)) auto;gap:12px;align-items:end;margin-top:18px}
+.photo-import-file,.photo-import-default-class,.photo-import-default-angle{display:grid;gap:6px;color:#475467;font-size:14px;min-width:0}
 .photo-import-file input{padding:8px;background:#fff;max-width:100%}
-.photo-import-default-class select{width:100%;min-width:0}
+.photo-import-default-class select,.photo-import-default-angle select{width:100%;min-width:0}
 .photo-import-upload .primary{justify-self:start;min-width:140px}
 .photo-import-formats{grid-column:1/-1;color:#667085;font-size:12px;line-height:1.5}
 .photo-import-progress{display:grid;gap:5px;margin-top:16px;padding:14px;border-radius:12px;background:#f1f6ff;border:1px solid #bfd2ff}
@@ -212,14 +212,17 @@ pre{background:#0b1220;color:#d8e2f3;border-radius:12px;padding:16px;overflow:au
 .import-summary-chip.good{background:#e9f8ef;color:#17663a}
 .import-summary-chip.warn{background:#fff7e6;color:#8a4b08}
 .import-summary-chip.bad{background:#fff0ee;color:#b42318}
-.photo-import-toolbar{display:grid;grid-template-columns:minmax(220px,360px) auto 1fr;gap:10px;align-items:end;margin-bottom:12px}
-.photo-import-toolbar label{display:grid;gap:6px;color:#475467;font-size:13px}
-.photo-import-toolbar .primary{justify-self:end}
+.photo-import-toolbar{display:grid;grid-template-columns:minmax(180px,240px) auto minmax(180px,240px) auto;gap:10px;align-items:end;margin-bottom:12px}
+.photo-import-toolbar label{display:grid;gap:6px;color:#475467;font-size:13px;min-width:0}
+.photo-import-toolbar select{width:100%;min-width:0}
+.photo-import-toolbar .primary{grid-column:1/-1;justify-self:end}
 .photo-import-note{padding:11px 13px;border-radius:10px;background:#f8fafc;color:#475467;font-size:13px;line-height:1.55;margin-bottom:12px}
 .photo-import-table-wrap{max-height:560px;border:1px solid #e5eaf1;border-radius:12px}
 .photo-import-table th{position:sticky;top:0;background:#fff;z-index:2}
 .photo-thumb{width:64px;height:64px;border-radius:10px;object-fit:cover;background:#eef2f6;display:block}
 .photo-import-table input,.photo-import-table select{min-width:110px;padding:8px}
+.photo-import-table [data-import-angle]{min-width:126px}
+.photo-import-table [data-import-class]{min-width:126px}
 .photo-import-file-name{max-width:180px;word-break:break-all;font-size:12px;color:#475467}
 .import-status{display:grid;gap:3px;min-width:170px}
 .import-status strong{font-size:13px}
@@ -229,11 +232,14 @@ pre{background:#0b1220;color:#d8e2f3;border-radius:12px;padding:16px;overflow:au
 .import-status.bad strong{color:#b42318}
 .table-class-select{min-width:130px;padding:7px 8px}
 @media(max-width:900px){
-  .photo-import-toolbar{grid-template-columns:1fr}
+  .photo-import-upload{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .photo-import-file,.photo-import-formats{grid-column:1/-1}
+  .photo-import-toolbar{grid-template-columns:repeat(2,minmax(0,1fr))}
   .photo-import-toolbar .primary{justify-self:stretch}
 }
 @media(max-width:620px){
-  .photo-import-upload{grid-template-columns:1fr}
+  .photo-import-upload,.photo-import-toolbar{grid-template-columns:1fr}
+  .photo-import-file,.photo-import-formats,.photo-import-toolbar .primary{grid-column:auto}
 }
 
 .seat-board-card{margin-top:18px}
