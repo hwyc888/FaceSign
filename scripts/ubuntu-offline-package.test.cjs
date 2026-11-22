@@ -18,6 +18,7 @@ test('offline installer targets Ubuntu 24.04 AMD64 and installs only from local 
   assert.match(script, /command -v ffprobe/);
   assert.match(script, /LD_LIBRARY_PATH=/);
   assert.match(script, /sha256sum -c SHA256SUMS/);
+  assert.match(script, /sha256sum -c MANIFEST\\.sha256/);
   assert.match(script, /det_10g\.onnx/);
   assert.match(script, /w600k_r50\.onnx/);
   assert.match(script, /FACESIGN_AUTO_START/);
@@ -45,6 +46,7 @@ test('local full-bundle builder requires explicit model redistribution authoriza
   assert.match(script, /SHA256SUMS/);
   assert.match(script, /--exclude='\*\.db'/);
   assert.match(script, /Full-Offline\.tar\.gz/);
+  assert.match(script, /MANIFEST\\.sha256/);
 });
 
 test('Ubuntu CI publishes a separate offline runtime artifact without embedding restricted identity weights', () => {
