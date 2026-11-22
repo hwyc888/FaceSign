@@ -43,8 +43,8 @@ jobs:
           go test ./...
           go vet ./...
           find internal/web/assets/js -type f -name '*.js' -print0 | xargs -0 -r -n1 node --check
-          node --test scripts/admin-bulk-attendance-filters.test.cjs scripts/auto-class-seat-board.test.cjs
-          for script in scripts/ubuntu/*.sh; do bash -n "$script"; done
+          node --test scripts/admin-bulk-attendance-filters.test.cjs scripts/auto-class-seat-board.test.cjs scripts/ubuntu-offline-package.test.cjs
+          for script in scripts/ubuntu/*.sh scripts/ubuntu/offline/*.sh; do bash -n "$script"; done
 
       - name: Download official ONNX Runtime CPU package from NuGet
         run: |
@@ -146,6 +146,51 @@ jobs:
             echo "FaceSign has unresolved shared-library dependencies"
             exit 1
           fi
+
+      - name: Build Ubuntu AMD64 offline runtime bundle
+        run: |
+          mkdir -p dist-offline/debs dist-offline/runtime/facesign
+          docker run --rm --platform linux/amd64 \
+            -v "$GITHUB_WORKSPACE/dist-offline/debs:/out" \
+            ubuntu:24.04 bash -euxo pipefail -c '
+              export DEBIAN_FRONTEND=noninteractive
+              apt-get update
+              apt-get install --download-only --reinstall --no-install-recommends -y \
+                ca-certificates curl ffmpeg libstdc++6 libgomp1 libgcc-s1
+              find /var/cache/apt/archives -maxdepth 1 -type f -name "*.deb" -exec cp -v {} /out/ \;
+              shopt -s nullglob
+              packages=(/out/*.deb)
+              if [[ "${#packages[@]}" -eq 0 ]]; then
+                echo "No DEB packages were downloaded." >&2
+                exit 1
+              fi
+              cd /out
+              for package in *.deb; do
+                printf "%s\\t" "$package"
+                dpkg-deb -f "$package" Package Version Architecture | tr "\\n" "\\t"
+                printf "\\n"
+              done > packages.tsv
+              sha256sum *.deb > SHA256SUMS
+            '
+
+          cp -a dist/FaceSign dist/libonnxruntime.so* dist/models dist/README.md dist/README-UBUNTU.md dist-offline/runtime/facesign/
+          mkdir -p dist-offline/runtime/facesign/scripts
+          cp -a dist/scripts/ubuntu dist-offline/runtime/facesign/scripts/
+          cp scripts/ubuntu/offline/install.sh dist-offline/install.sh
+          cp scripts/ubuntu/offline/prepare-debs.sh dist-offline/prepare-debs.sh
+          cp scripts/ubuntu/offline/build-full-offline-bundle.sh dist-offline/build-full-offline-bundle.sh
+          cp scripts/ubuntu/offline/README.md dist-offline/README.md
+          chmod 755 dist-offline/*.sh
+          (cd dist-offline && find . -type f -print0 | sort -z | xargs -0 sha256sum > MANIFEST.sha256)
+          find dist-offline/debs -maxdepth 1 -name '*.deb' -type f | wc -l
+
+      - name: Upload Ubuntu AMD64 offline runtime
+        uses: actions/upload-artifact@v7
+        with:
+          name: facesign-ubuntu-amd64-offline-runtime
+          path: dist-offline/
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Upload Ubuntu AMD64 package
         uses: actions/upload-artifact@v7
