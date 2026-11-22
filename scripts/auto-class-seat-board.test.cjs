@@ -259,3 +259,34 @@ test('an empty class list is a successful load and can show the no-class state',
   assert.deepEqual(context.classesCache, []);
 });
 
+
+test('check-in and editor seating grids adapt to container width without forced horizontal scrolling', () => {
+  const css = fs.readFileSync(path.join(jsDir, '..', 'style.css'), 'utf8');
+  const rule = selector => {
+    const line = css.split(/\r?\n/).find(item => item.startsWith('.' + selector + '{'));
+    assert.ok(line, 'Missing CSS rule for ' + selector);
+    return line;
+  };
+  assert.match(rule('seat-row-cells'), /repeat\(auto-fit,minmax\(min\(100%,104px\),1fr\)\)/);
+  assert.match(rule('seat-editor-row-cells'), /repeat\(auto-fit,minmax\(min\(100%,112px\),1fr\)\)/);
+  for (const selector of ['seat-board', 'seat-row', 'seat-row-cells', 'seat-editor-board', 'seat-editor-row', 'seat-editor-row-cells']) {
+    assert.match(rule(selector), /min-width:0/, selector + ' must shrink to its parent');
+    assert.doesNotMatch(rule(selector), /min-width:(max-content|calc\()/);
+    assert.doesNotMatch(rule(selector), /overflow:auto/);
+  }
+  assert.match(css, /\.seat-row,\.seat-editor-row\{grid-template-columns:minmax\(0,1fr\)/);
+  assert.match(css, /\.seat-cell\{[^}]*overflow-wrap:anywhere/);
+  assert.match(css, /\.seat-editor-cell\{[^}]*overflow-wrap:anywhere/);
+});
+
+test('responsive seating preserves seat numbers and editor drag targets', () => {
+  const checkin = fs.readFileSync(path.join(jsDir, 'seating.js'), 'utf8');
+  const editor = fs.readFileSync(path.join(jsDir, 'seat_editor.js'), 'utf8');
+  for (const source of [checkin, editor]) {
+    assert.match(source, /row \* perRow \+ col \+ 1/, 'seat numbering must be unchanged');
+    assert.doesNotMatch(source, /style="--seats-per-row:/, 'fixed column count must be removed');
+  }
+  assert.match(checkin, /class="seat-row-cells"/);
+  assert.match(editor, /class="seat-editor-row-cells"/);
+  assert.match(editor, /data-editor-seat=/, 'seat editor targets must remain available');
+});
