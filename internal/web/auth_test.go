@@ -16,7 +16,7 @@ import (
 	"github.com/hwyc888/FaceSign/internal/store"
 )
 
-func TestAdminBootstrapIsLocalOnlyAndCreatesLoginSession(t *testing.T) {
+func TestAdminBootstrapAllowsRemoteHTTPSAndCreatesOnlyOneAdmin(t *testing.T) {
 	st, err := store.Open(filepath.Join(t.TempDir(), "auth-bootstrap.db"))
 	if err != nil {
 		t.Fatal(err)
@@ -24,30 +24,36 @@ func TestAdminBootstrapIsLocalOnlyAndCreatesLoginSession(t *testing.T) {
 	defer st.Close()
 	s := &Server{store: st, logger: slog.Default()}
 
-	body := strings.NewReader(`{"username":"school-admin","password":"secure-pass-123"}`)
-	remote := httptest.NewRequest(http.MethodPost, "/api/auth/setup", body)
-	remote.RemoteAddr = "192.0.2.20:12345"
-	remoteRec := httptest.NewRecorder()
-	s.authSetup(remoteRec, remote)
-	if remoteRec.Code != http.StatusForbidden {
-		t.Fatalf("remote setup status=%d body=%s", remoteRec.Code, remoteRec.Body.String())
+	// Remote HTTP must remain blocked so the first administrator password
+	// cannot be intercepted while the setup endpoint is still unclaimed.
+	remoteHTTP := httptest.NewRequest(http.MethodPost, "/api/auth/setup",
+		strings.NewReader(`{"username":"school-admin","password":"secure-pass-123"}`))
+	remoteHTTP.RemoteAddr = "192.0.2.20:12345"
+	remoteHTTPRec := httptest.NewRecorder()
+	s.authSetup(remoteHTTPRec, remoteHTTP)
+	if remoteHTTPRec.Code != http.StatusForbidden {
+		t.Fatalf("remote HTTP setup status=%d body=%s", remoteHTTPRec.Code, remoteHTTPRec.Body.String())
 	}
 
-	body = strings.NewReader(`{"username":"school-admin","password":"secure-pass-123"}`)
-	local := httptest.NewRequest(http.MethodPost, "/api/auth/setup", body)
-	local.RemoteAddr = "127.0.0.1:12345"
-	localRec := httptest.NewRecorder()
-	s.authSetup(localRec, local)
-	if localRec.Code != http.StatusCreated {
-		t.Fatalf("local setup status=%d body=%s", localRec.Code, localRec.Body.String())
+	// A different computer can claim the first administrator over HTTPS.
+	remoteHTTPS := httptest.NewRequest(http.MethodPost, "/api/auth/setup",
+		strings.NewReader(`{"username":"school-admin","password":"secure-pass-123"}`))
+	remoteHTTPS.RemoteAddr = "192.0.2.20:12345"
+	remoteHTTPS.TLS = &tls.ConnectionState{}
+	remoteHTTPSRec := httptest.NewRecorder()
+	s.authSetup(remoteHTTPSRec, remoteHTTPS)
+	if remoteHTTPSRec.Code != http.StatusCreated {
+		t.Fatalf("remote HTTPS setup status=%d body=%s", remoteHTTPSRec.Code, remoteHTTPSRec.Body.String())
 	}
-	cookies := localRec.Result().Cookies()
-	if len(cookies) == 0 || cookies[0].Name != authCookieName || !cookies[0].HttpOnly {
-		t.Fatalf("administrator session cookie missing or insecure: %#v", cookies)
+
+	cookies := remoteHTTPSRec.Result().Cookies()
+	if len(cookies) == 0 || cookies[0].Name != authCookieName || !cookies[0].HttpOnly || !cookies[0].Secure {
+		t.Fatalf("remote administrator session cookie missing security attributes: %#v", cookies)
 	}
 
 	status := httptest.NewRequest(http.MethodGet, "/api/auth/status", nil)
-	status.RemoteAddr = "127.0.0.1:12345"
+	status.RemoteAddr = "192.0.2.20:12345"
+	status.TLS = &tls.ConnectionState{}
 	status.AddCookie(cookies[0])
 	statusRec := httptest.NewRecorder()
 	s.authStatus(statusRec, status)
@@ -58,11 +64,30 @@ func TestAdminBootstrapIsLocalOnlyAndCreatesLoginSession(t *testing.T) {
 	if err := json.Unmarshal(statusRec.Body.Bytes(), &response); err != nil {
 		t.Fatal(err)
 	}
-	if !response.Authenticated || !response.User.IsAdmin || response.User.Username != "school-admin" {
+	if !response.Authenticated || !response.User.IsAdmin || !response.User.IsPrimaryAdmin || response.User.Username != "school-admin" {
 		t.Fatalf("unexpected auth status: %#v", response)
 	}
-}
 
+	// Once the first account exists, another remote setup attempt must not
+	// create or replace a second administrator.
+	secondSetup := httptest.NewRequest(http.MethodPost, "/api/auth/setup",
+		strings.NewReader(`{"username":"second-admin","password":"secure-pass-456"}`))
+	secondSetup.RemoteAddr = "192.0.2.21:23456"
+	secondSetup.TLS = &tls.ConnectionState{}
+	secondSetupRec := httptest.NewRecorder()
+	s.authSetup(secondSetupRec, secondSetup)
+	if secondSetupRec.Code != http.StatusConflict {
+		t.Fatalf("second remote setup status=%d body=%s", secondSetupRec.Code, secondSetupRec.Body.String())
+	}
+
+	count, err := st.UserCount(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if count != 1 {
+		t.Fatalf("expected exactly one initial administrator, got %d", count)
+	}
+}
 func TestAuthenticatedRemoteAPIsRequireHTTPS(t *testing.T) {
 	st, err := store.Open(filepath.Join(t.TempDir(), "auth-https.db"))
 	if err != nil {
