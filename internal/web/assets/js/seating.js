@@ -177,7 +177,7 @@ function renderCheckinSeatBoard(board) {
     }
     rowHTML.push(`<div class="seat-row">
       <div class="seat-row-label">第${row + 1}排</div>
-      <div class="seat-row-cells" style="--seats-per-row:${perRow}">${cells.join('')}</div>
+      <div class="seat-row-cells">${cells.join('')}</div>
     </div>`);
   }
 
