@@ -181,7 +181,7 @@ jobs:
           cp scripts/ubuntu/offline/build-full-offline-bundle.sh dist-offline/build-full-offline-bundle.sh
           cp scripts/ubuntu/offline/README.md dist-offline/README.md
           chmod 755 dist-offline/*.sh
-          (cd dist-offline && find . -type f -print0 | sort -z | xargs -0 sha256sum > MANIFEST.sha256)
+          (cd dist-offline && find . -type f ! -name MANIFEST.sha256 -print0 | sort -z | xargs -0 sha256sum > MANIFEST.sha256)
           find dist-offline/debs -maxdepth 1 -name '*.deb' -type f | wc -l
 
       - name: Upload Ubuntu AMD64 offline runtime
