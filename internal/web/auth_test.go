@@ -88,6 +88,29 @@ func TestAdminBootstrapAllowsRemoteHTTPSAndCreatesOnlyOneAdmin(t *testing.T) {
 		t.Fatalf("expected exactly one initial administrator, got %d", count)
 	}
 }
+
+func TestAdminBootstrapStillAllowsLocalHTTP(t *testing.T) {
+	st, err := store.Open(filepath.Join(t.TempDir(), "auth-bootstrap-local.db"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer st.Close()
+	s := &Server{store: st, logger: slog.Default()}
+
+	req := httptest.NewRequest(http.MethodPost, "/api/auth/setup",
+		strings.NewReader(`{"username":"local-admin","password":"secure-pass-123"}`))
+	req.RemoteAddr = "127.0.0.1:12345"
+	rec := httptest.NewRecorder()
+	s.authSetup(rec, req)
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("local HTTP setup status=%d body=%s", rec.Code, rec.Body.String())
+	}
+	cookies := rec.Result().Cookies()
+	if len(cookies) == 0 || cookies[0].Name != authCookieName || !cookies[0].HttpOnly {
+		t.Fatalf("local administrator session cookie missing: %#v", cookies)
+	}
+}
+
 func TestAuthenticatedRemoteAPIsRequireHTTPS(t *testing.T) {
 	st, err := store.Open(filepath.Join(t.TempDir(), "auth-https.db"))
 	if err != nil {
