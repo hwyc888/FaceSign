@@ -90,6 +90,7 @@ echo "[4/5] Adding installer and documentation..."
 cp "$SCRIPT_DIR/install.sh" "$BUNDLE/install.sh"
 cp "$SCRIPT_DIR/README.md" "$BUNDLE/README-OFFLINE.md"
 chmod 755 "$BUNDLE/install.sh"
+(cd "$BUNDLE" && find . -type f ! -name MANIFEST.sha256 -print0 | sort -z | xargs -0 sha256sum > MANIFEST.sha256)
 
 echo "[5/5] Creating full offline archive..."
 mkdir -p "$(dirname "$OUTPUT")"
