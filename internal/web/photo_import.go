@@ -47,31 +47,35 @@ type photoImportSession struct {
 }
 
 type photoImportItem struct {
-	ID            int
-	FileName      string
-	Name          string
-	StudentNo     string
-	ClassName     string
-	Format        string
-	Quality       string
-	QualityNote   string
-	Status        string
-	Reason        string
-	Feature       []float32
-	Thumbnail     []byte
-	Existing      *store.Student
-	Similarity    float64
-	DuplicateFile string
-	Committed     bool
+	ID                 int
+	FileName           string
+	Name               string
+	StudentNo          string
+	ClassName          string
+	Angle              string
+	Format             string
+	Quality            string
+	QualityNote        string
+	Status             string
+	Reason             string
+	Feature            []float32
+	Thumbnail          []byte
+	Existing           *store.Student
+	MatchedByStudentNo bool
+	Similarity         float64
+	DuplicateFile      string
+	Committed          bool
 }
 
 type photoImportPublicItem struct {
-	ID                int            `json:"id"`
-	FileName          string         `json:"file_name"`
-	Name              string         `json:"name"`
-	StudentNo         string         `json:"student_no"`
-	ClassName         string         `json:"class_name"`
-	Format            string         `json:"format"`
+	ID                 int            `json:"id"`
+	FileName           string         `json:"file_name"`
+	Name               string         `json:"name"`
+	StudentNo          string         `json:"student_no"`
+	ClassName          string         `json:"class_name"`
+	Angle              string         `json:"angle"`
+	MatchedByStudentNo bool           `json:"matched_by_student_no,omitempty"`
+	Format             string         `json:"format"`
 	Quality           string         `json:"quality"`
 	QualityNote       string         `json:"quality_note"`
 	Status            string         `json:"status"`
@@ -218,6 +222,21 @@ func (s *Server) photoImportAnalyze(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusBadRequest, err)
 		return
 	}
+	defaultAngle, err := photoImportDefaultAngleName(r)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
+
+	students, err := s.store.ListStudents(r.Context())
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, err)
+		return
+	}
+	studentsByNo := make(map[string]store.Student, len(students))
+	for _, student := range students {
+		studentsByNo[photoImportStudentKey(student.StudentNo)] = student
+	}
 
 	known, err := s.loadPhotoKnownFaces(r.Context())
 	if err != nil {
@@ -318,10 +337,12 @@ func (s *Server) photoImportAnalyze(w http.ResponseWriter, r *http.Request) {
 			continue
 		}
 
-		quality, note, ok := assessImportedPhoto(img, detected)
+		angle := photoImportAngleForSource(source.Name, defaultAngle)
+		quality, note, ok := assessImportedPhotoForAngle(img, detected, angle)
 		item := &photoImportItem{
 			ID:          len(session.Items) + 1,
 			FileName:    displayName,
+			Angle:       angle,
 			Format:      strings.ToUpper(format),
 			Quality:     quality,
 			QualityNote: note,
@@ -341,14 +362,23 @@ func (s *Server) photoImportAnalyze(w http.ResponseWriter, r *http.Request) {
 		bestStudent, bestScore := bestPhotoKnownMatch(item.Feature, known)
 		item.Similarity = bestScore
 		reviewThreshold := math.Max(0.55, s.currentRecognitionThresholds().MatchThreshold-0.04)
-		if bestStudent.ID != 0 && bestScore >= s.currentRecognitionThresholds().MatchThreshold {
+		if identityStudent, ok := studentsByNo[photoImportStudentKey(item.StudentNo)]; item.StudentNo != "" && ok {
+			item.Existing = &identityStudent
+			item.MatchedByStudentNo = true
+			item.Status = "existing"
+			item.ClassName = identityStudent.ClassName
+			item.Name = identityStudent.Name
+			item.StudentNo = identityStudent.StudentNo
+			item.Similarity = bestPhotoStudentScore(item.Feature, identityStudent.ID, known)
+			item.Reason = "按文件名学号匹配到现有学生，请核对照片后选择补充所选角度样本"
+		} else if bestStudent.ID != 0 && bestScore >= s.currentRecognitionThresholds().MatchThreshold {
 			copyStudent := bestStudent
 			item.Existing = &copyStudent
 			item.Status = "existing"
 			item.ClassName = bestStudent.ClassName
 			item.Name = bestStudent.Name
 			item.StudentNo = bestStudent.StudentNo
-			item.Reason = "已匹配现有学生，默认不重复建立；需要时可作为新的正面样本补充"
+			item.Reason = "已匹配现有学生，默认不重复建立；需要时可补充所选角度样本"
 		} else if bestStudent.ID != 0 && bestScore >= reviewThreshold {
 			copyStudent := bestStudent
 			item.Existing = &copyStudent
@@ -357,6 +387,9 @@ func (s *Server) photoImportAnalyze(w http.ResponseWriter, r *http.Request) {
 		} else {
 			item.Status = "ready"
 			for _, previous := range packageFeatures {
+				if photoImportSameStudentDifferentAngle(item, previous) {
+					continue
+				}
 				score := face.Similarity(item.Feature, previous.Feature)
 				if score >= s.currentRecognitionThresholds().MatchThreshold {
 					item.Status = "package_duplicate"
@@ -457,6 +490,7 @@ type photoImportCommitRequest struct {
 		StudentNo string `json:"student_no"`
 		Name      string `json:"name"`
 		ClassName string `json:"class_name"`
+		Angle     string `json:"angle"`
 	} `json:"items"`
 }
 
@@ -478,6 +512,8 @@ func (s *Server) photoImportCommit(w http.ResponseWriter, r *http.Request, sessi
 	imported := 0
 	skipped := 0
 	failed := 0
+	batchStudents := make(map[string]store.Student)
+	batchAngles := make(map[string]map[string]bool)
 
 	for _, requested := range request.Items {
 		item := findPhotoImportItem(session.Items, requested.ID)
@@ -499,6 +535,16 @@ func (s *Server) photoImportCommit(w http.ResponseWriter, r *http.Request, sessi
 		if item.Status == "rejected" || item.Status == "review" || item.Status == "package_duplicate" {
 			failed++
 			results = append(results, map[string]any{"id": item.ID, "status": "failed", "message": item.Reason})
+			continue
+		}
+
+		angle := strings.TrimSpace(requested.Angle)
+		if angle == "" {
+			angle = item.Angle
+		}
+		if !validPhotoImportAngle(angle) {
+			failed++
+			results = append(results, map[string]any{"id": item.ID, "status": "failed", "message": "请选择有效的人脸采集角度"})
 			continue
 		}
 
@@ -534,6 +580,51 @@ func (s *Server) photoImportCommit(w http.ResponseWriter, r *http.Request, sessi
 				results = append(results, map[string]any{"id": item.ID, "status": "failed", "message": "新学生必须填写学号和姓名"})
 				continue
 			}
+
+			batchKey := photoImportStudentKey(studentNo)
+			if existingBatchStudent, ok := batchStudents[batchKey]; batchKey != "" && ok {
+				if existingBatchStudent.Name != name || existingBatchStudent.ClassName != className {
+					failed++
+					results = append(results, map[string]any{"id": item.ID, "status": "failed", "message": "同一批次中该学号的姓名或班级不一致，请先统一资料"})
+					continue
+				}
+				if batchAngles[batchKey][angle] {
+					failed++
+					results = append(results, map[string]any{"id": item.ID, "status": "failed", "message": "同一批次中该学生已经有该角度样本，请检查是否重复选择"})
+					continue
+				}
+				comparison, err := s.compareFeature(r.Context(), item.Feature, existingBatchStudent.ID)
+				if err != nil {
+					failed++
+					results = append(results, map[string]any{"id": item.ID, "status": "failed", "message": err.Error()})
+					continue
+				}
+				if comparison.Other.ID != 0 &&
+					comparison.OtherScore >= s.currentRecognitionThresholds().MatchThreshold &&
+					(!comparison.SameFound || comparison.OtherScore > comparison.SameScore) {
+					failed++
+					results = append(results, map[string]any{"id": item.ID, "status": "failed", "message": "照片更接近其他学生，已阻止追加到当前学号"})
+					continue
+				}
+				if comparison.SameFound && comparison.SameScore >= 0.995 {
+					skipped++
+					item.Committed = true
+					results = append(results, map[string]any{"id": item.ID, "status": "skipped", "message": "与该学生已有样本几乎完全相同，无需重复保存"})
+					continue
+				}
+				if _, err := s.store.AddFaceSampleWithVersion(r.Context(), existingBatchStudent.ID, angle, s.engine.ModelVersion(), face.Encode(item.Feature)); err != nil {
+					failed++
+					results = append(results, map[string]any{"id": item.ID, "status": "failed", "message": err.Error()})
+					continue
+				}
+				batchAngles[batchKey][angle] = true
+				item.Angle = angle
+				item.Committed = true
+				imported++
+				results = append(results, map[string]any{"id": item.ID, "status": "imported", "message": "已为同一学号追加" + angle + "样本"})
+				continue
+			}
+
 			comparison, err := s.compareFeature(r.Context(), item.Feature, 0)
 			if err != nil {
 				failed++
@@ -549,16 +640,21 @@ func (s *Server) photoImportCommit(w http.ResponseWriter, r *http.Request, sessi
 				continue
 			}
 			student, _, err := s.store.CreateStudentWithFaceVersion(
-				r.Context(), studentNo, name, className, "照片导入-正面", s.engine.ModelVersion(), face.Encode(item.Feature),
+				r.Context(), studentNo, name, className, angle, s.engine.ModelVersion(), face.Encode(item.Feature),
 			)
 			if err != nil {
 				failed++
 				results = append(results, map[string]any{"id": item.ID, "status": "failed", "message": friendlyStudentError(err).Error()})
 				continue
 			}
+			if batchKey != "" {
+				batchStudents[batchKey] = student
+				batchAngles[batchKey] = map[string]bool{angle: true}
+			}
+			item.Angle = angle
 			item.Committed = true
 			imported++
-			results = append(results, map[string]any{"id": item.ID, "status": "imported", "message": "已建立学生并录入正面样本", "student": student})
+			results = append(results, map[string]any{"id": item.ID, "status": "imported", "message": "已建立学生并录入" + angle + "样本", "student": student})
 
 		case "supplement":
 			if !authUser(r).IsAdmin && !authUser(r).CanResampleFaces {
@@ -566,12 +662,32 @@ func (s *Server) photoImportCommit(w http.ResponseWriter, r *http.Request, sessi
 				results = append(results, map[string]any{"id": item.ID, "status": "failed", "message": "没有补充或重新采样人脸的权限"})
 				continue
 			}
-			if item.Existing == nil || item.Existing.ID <= 0 {
+			targetID := int64(0)
+			batchKey := ""
+			fromCurrentBatch := false
+			if item.Existing != nil && item.Existing.ID > 0 {
+				targetID = item.Existing.ID
+			} else {
+				batchKey = photoImportStudentKey(requested.StudentNo)
+				if batchKey == "" {
+					batchKey = photoImportStudentKey(item.StudentNo)
+				}
+				if created, ok := batchStudents[batchKey]; batchKey != "" && ok {
+					targetID = created.ID
+					fromCurrentBatch = true
+				}
+			}
+			if targetID <= 0 {
 				failed++
 				results = append(results, map[string]any{"id": item.ID, "status": "failed", "message": "没有可补充的已匹配学生"})
 				continue
 			}
-			targetID := item.Existing.ID
+			if fromCurrentBatch && batchAngles[batchKey][angle] {
+				failed++
+				results = append(results, map[string]any{"id": item.ID, "status": "failed", "message": "同一批次中该学生已经有该角度样本，请检查是否重复选择"})
+				continue
+			}
+
 			comparison, err := s.compareFeature(r.Context(), item.Feature, targetID)
 			if err != nil {
 				failed++
@@ -585,17 +701,21 @@ func (s *Server) photoImportCommit(w http.ResponseWriter, r *http.Request, sessi
 				results = append(results, map[string]any{"id": item.ID, "status": "failed", "message": "照片更接近其他学生，已阻止错误补充"})
 				continue
 			}
-			if !comparison.SameFound || comparison.SameScore < s.currentRecognitionThresholds().MatchThreshold {
-				failed++
-				results = append(results, map[string]any{"id": item.ID, "status": "failed", "message": "照片与已匹配学生复核不一致"})
-				continue
+			allowByStudentNo := item.MatchedByStudentNo && item.Existing != nil && item.Existing.ID == targetID
+			if !fromCurrentBatch && !allowByStudentNo {
+				if !comparison.SameFound || comparison.SameScore < s.currentRecognitionThresholds().MatchThreshold {
+					failed++
+					results = append(results, map[string]any{"id": item.ID, "status": "failed", "message": "照片与已匹配学生复核不一致"})
+					continue
+				}
 			}
-			if comparison.SameScore >= 0.995 {
+			if comparison.SameFound && comparison.SameScore >= 0.995 {
 				skipped++
 				item.Committed = true
 				results = append(results, map[string]any{"id": item.ID, "status": "skipped", "message": "与已有样本几乎完全相同，无需重复保存"})
 				continue
 			}
+
 			currentStudent, err := s.store.StudentByID(r.Context(), targetID)
 			if err != nil {
 				failed++
@@ -608,19 +728,25 @@ func (s *Server) photoImportCommit(w http.ResponseWriter, r *http.Request, sessi
 				results = append(results, map[string]any{"id": item.ID, "status": "failed", "message": "没有修改学生班级的权限"})
 				continue
 			}
-			if err := s.store.UpdateStudentClass(r.Context(), targetID, className); err != nil {
+			if strings.TrimSpace(currentStudent.ClassName) != className {
+				if err := s.store.UpdateStudentClass(r.Context(), targetID, className); err != nil {
+					failed++
+					results = append(results, map[string]any{"id": item.ID, "status": "failed", "message": err.Error()})
+					continue
+				}
+			}
+			if _, err := s.store.AddFaceSampleWithVersion(r.Context(), targetID, angle, s.engine.ModelVersion(), face.Encode(item.Feature)); err != nil {
 				failed++
 				results = append(results, map[string]any{"id": item.ID, "status": "failed", "message": err.Error()})
 				continue
 			}
-			if _, err := s.store.AddFaceSampleWithVersion(r.Context(), targetID, "照片导入-正面", s.engine.ModelVersion(), face.Encode(item.Feature)); err != nil {
-				failed++
-				results = append(results, map[string]any{"id": item.ID, "status": "failed", "message": err.Error()})
-				continue
+			if fromCurrentBatch {
+				batchAngles[batchKey][angle] = true
 			}
+			item.Angle = angle
 			item.Committed = true
 			imported++
-			results = append(results, map[string]any{"id": item.ID, "status": "imported", "message": "已补充现有学生正面样本"})
+			results = append(results, map[string]any{"id": item.ID, "status": "imported", "message": "已补充现有学生" + angle + "样本"})
 		default:
 			failed++
 			results = append(results, map[string]any{"id": item.ID, "status": "failed", "message": "未知导入操作"})
@@ -664,6 +790,13 @@ func bestPhotoKnownMatch(feature []float32, known []photoKnownFace) (store.Stude
 }
 
 func assessImportedPhoto(img image.Image, detected face.Detection) (string, string, bool) {
+	return assessImportedPhotoForAngle(img, detected, "正面")
+}
+
+func assessImportedPhotoForAngle(img image.Image, detected face.Detection, angle string) (string, string, bool) {
+	if !validPhotoImportAngle(angle) {
+		return "不合格", "未选择有效的人脸角度", false
+	}
 	bounds := img.Bounds()
 	rect := detected.Rectangle.Intersect(bounds)
 	if rect.Empty() || bounds.Dx() <= 0 || bounds.Dy() <= 0 {
@@ -672,7 +805,7 @@ func assessImportedPhoto(img image.Image, detected face.Detection) (string, stri
 	minSide := math.Min(float64(rect.Dx()), float64(rect.Dy()))
 	faceRatio := float64(rect.Dx()*rect.Dy()) / float64(bounds.Dx()*bounds.Dy())
 	if minSide < 96 || faceRatio < 0.025 {
-		return "不合格", "人脸在照片中太小，建议使用更清晰、距离更近的正面照片", false
+		return "不合格", "人脸在照片中太小，建议使用更清晰、距离更近的照片", false
 	}
 
 	rightEye, leftEye := detected.Landmarks[0], detected.Landmarks[1]
@@ -687,17 +820,40 @@ func assessImportedPhoto(img image.Image, detected face.Detection) (string, stri
 	yawOffset := math.Abs(float64(nose.X)-eyeMidX) / eyeDistance
 	mouthOffset := math.Abs(mouthMidX-eyeMidX) / eyeDistance
 	roll := math.Abs(float64(leftEye.Y-rightEye.Y)) / eyeDistance
-	if yawOffset > 0.35 || mouthOffset > 0.40 {
-		return "不合格", "人脸侧转角度较大，不建议作为正面样本", false
+
+	switch angle {
+	case "正面", "轻微抬头", "轻微低头":
+		if yawOffset > 0.35 || mouthOffset > 0.40 {
+			return "不合格", "检测到明显侧转，与所选正面/抬头/低头角度不一致", false
+		}
+	case "左侧", "右侧":
+		if yawOffset < 0.12 {
+			return "不合格", "照片接近正面，与所选侧脸角度不一致；请调整角度或重新选择标签", false
+		}
+		if yawOffset > 0.75 {
+			return "不合格", "侧转角度过大，五点关键点不够稳定，请使用稍微侧转的清晰照片", false
+		}
+	case "其他":
+		// Keep other angles available for manual review; geometry and image quality
+		// checks below still apply.
 	}
 	if roll > 0.30 {
-		return "不合格", "头部倾斜较大，请使用较端正的正面照片", false
+		return "不合格", "头部倾斜较大，请使用更端正的照片", false
 	}
 
-	if detected.Score >= 0.92 && minSide >= 160 && faceRatio >= 0.06 && yawOffset <= 0.18 && roll <= 0.15 {
+	if angle == "正面" && detected.Score >= 0.92 && minSide >= 160 && faceRatio >= 0.06 && yawOffset <= 0.18 && roll <= 0.15 {
 		return "优", "正面度、清晰度和人脸占比良好", true
 	}
-	return "合格", "照片可用于正面样本；后续仍建议补充摄像头多角度样本", true
+	if angle == "左侧" || angle == "右侧" {
+		return "合格", "侧脸角度与五点关键点检测基本匹配；请在预览中人工确认左右方向", true
+	}
+	if angle == "轻微抬头" || angle == "轻微低头" {
+		return "合格", "清晰度和人脸关键点合格；抬头/低头方向请在预览中人工确认", true
+	}
+	if angle == "其他" {
+		return "合格", "人脸质量合格；请人工确认该照片的具体角度", true
+	}
+	return "合格", "正面样本清晰度和关键点合格", true
 }
 
 func photoImportIdentity(fileName string) (studentNo, name string) {
@@ -744,6 +900,101 @@ func photoImportClassHint(archiveName string, classes map[string]bool) string {
 		}
 	}
 	return ""
+}
+
+func photoImportAngleNames() []string {
+	return []string{"正面", "左侧", "右侧", "轻微抬头", "轻微低头", "其他"}
+}
+
+func validPhotoImportAngle(angle string) bool {
+	angle = strings.TrimSpace(angle)
+	for _, allowed := range photoImportAngleNames() {
+		if angle == allowed {
+			return true
+		}
+	}
+	return false
+}
+
+func normalizePhotoImportAngle(folder string) (string, bool) {
+	value := strings.ToLower(strings.TrimSpace(folder))
+	value = strings.ReplaceAll(value, " ", "")
+	value = strings.ReplaceAll(value, "_", "")
+	value = strings.ReplaceAll(value, "-", "")
+	aliases := map[string]string{
+		"正面": "正面", "front": "正面", "frontal": "正面", "frontface": "正面",
+		"左侧": "左侧", "左脸": "左侧", "左侧脸": "左侧", "left": "左侧", "leftside": "左侧", "leftprofile": "左侧",
+		"右侧": "右侧", "右脸": "右侧", "右侧脸": "右侧", "right": "右侧", "rightside": "右侧", "rightprofile": "右侧",
+		"轻微抬头": "轻微抬头", "抬头": "轻微抬头", "仰头": "轻微抬头", "up": "轻微抬头", "upward": "轻微抬头", "lookup": "轻微抬头",
+		"轻微低头": "轻微低头", "低头": "轻微低头", "俯头": "轻微低头", "down": "轻微低头", "downward": "轻微低头", "lookdown": "轻微低头",
+		"其他": "其他", "other": "其他",
+	}
+	angle, ok := aliases[value]
+	return angle, ok
+}
+
+func photoImportAngleHint(sourceName string) string {
+	normalized := strings.ReplaceAll(sourceName, "\\", "/")
+	dir := path.Dir(normalized)
+	if dir == "." || dir == "/" {
+		return ""
+	}
+	for _, part := range strings.Split(dir, "/") {
+		if angle, ok := normalizePhotoImportAngle(part); ok {
+			return angle
+		}
+	}
+	return ""
+}
+
+func photoImportDefaultAngleName(r *http.Request) (string, error) {
+	angle := strings.TrimSpace(r.FormValue("angle"))
+	if angle == "" {
+		return "正面", nil
+	}
+	if !validPhotoImportAngle(angle) {
+		return "", errors.New("所选默认角度无效，请从角度列表中选择")
+	}
+	return angle, nil
+}
+
+func photoImportAngleForSource(sourceName, defaultAngle string) string {
+	if hint := photoImportAngleHint(sourceName); hint != "" {
+		return hint
+	}
+	if validPhotoImportAngle(defaultAngle) {
+		return defaultAngle
+	}
+	return "正面"
+}
+
+func photoImportStudentKey(studentNo string) string {
+	return strings.ToUpper(strings.TrimSpace(studentNo))
+}
+
+func photoImportSameStudentDifferentAngle(current, previous *photoImportItem) bool {
+	if current == nil || previous == nil || current.Angle == previous.Angle {
+		return false
+	}
+	currentNo := photoImportStudentKey(current.StudentNo)
+	previousNo := photoImportStudentKey(previous.StudentNo)
+	if currentNo != "" && currentNo == previousNo {
+		return true
+	}
+	return current.Name != "" && previous.Name != "" && strings.TrimSpace(current.Name) == strings.TrimSpace(previous.Name)
+}
+
+func bestPhotoStudentScore(feature []float32, studentID int64, known []photoKnownFace) float64 {
+	best := 0.0
+	for _, candidate := range known {
+		if candidate.Student.ID != studentID {
+			continue
+		}
+		if score := face.Similarity(feature, candidate.Feature); score > best {
+			best = score
+		}
+	}
+	return best
 }
 
 func photoImportDefaultClassName(r *http.Request, classes map[string]bool) (string, error) {
@@ -877,12 +1128,14 @@ func (s *Server) publicPhotoImportItem(session *photoImportSession, item *photoI
 		thumbnailURL = fmt.Sprintf("/api/photo-import/%s/thumbnail/%d", session.ID, item.ID)
 	}
 	return photoImportPublicItem{
-		ID:                item.ID,
-		FileName:          item.FileName,
-		Name:              item.Name,
-		StudentNo:         item.StudentNo,
-		ClassName:         item.ClassName,
-		Format:            item.Format,
+		ID:                 item.ID,
+		FileName:           item.FileName,
+		Name:               item.Name,
+		StudentNo:          item.StudentNo,
+		ClassName:          item.ClassName,
+		Angle:              item.Angle,
+		MatchedByStudentNo: item.MatchedByStudentNo,
+		Format:             item.Format,
 		Quality:           item.Quality,
 		QualityNote:       item.QualityNote,
 		Status:            item.Status,
