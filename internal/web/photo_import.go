@@ -386,6 +386,8 @@ func (s *Server) photoImportAnalyze(w http.ResponseWriter, r *http.Request) {
 			item.Reason = fmt.Sprintf("与“%s”相似度接近阈值，批量导入暂不自动入库，请人工核对", bestStudent.Name)
 		} else {
 			item.Status = "ready"
+		}
+		if item.Status == "ready" || item.Status == "existing" {
 			for _, previous := range packageFeatures {
 				if photoImportSameStudentDifferentAngle(item, previous) {
 					continue
@@ -395,11 +397,11 @@ func (s *Server) photoImportAnalyze(w http.ResponseWriter, r *http.Request) {
 					item.Status = "package_duplicate"
 					item.Similarity = score
 					item.DuplicateFile = previous.FileName
-					item.Reason = fmt.Sprintf("与批次中的“%s”高度相似，疑似同一个人", previous.FileName)
+					item.Reason = fmt.Sprintf("与批次中的“%s”高度相似，疑似重复照片", previous.FileName)
 					break
 				}
 			}
-			if item.Status == "ready" {
+			if item.Status != "package_duplicate" {
 				packageFeatures = append(packageFeatures, item)
 			}
 		}
