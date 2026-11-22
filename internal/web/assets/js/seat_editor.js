@@ -217,7 +217,7 @@ function renderClassSeatEditor() {
     }
     rowHTML.push(`<div class="seat-editor-row">
       <div class="seat-row-label">第${row + 1}排</div>
-      <div class="seat-editor-row-cells">${seats.join('')}</div>
+      <div class="seat-editor-row-cells${perRow <= 12 ? ' compact-seat-row' : ''}"${perRow <= 12 ? ` style="--seat-count:${perRow}"` : ''}>${seats.join('')}</div>
     </div>`);
   }
   $('#seatEditorBoard').innerHTML = rowHTML.join('') ||

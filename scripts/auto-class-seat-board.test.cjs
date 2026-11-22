@@ -281,6 +281,10 @@ test('check-in and editor seating rows stay grouped and wrap evenly inside their
     assert.match(allRules(selector), /flex-wrap:\s*wrap/);
     assert.match(allRules(selector), /align-items:\s*stretch/);
   }
+  for (const selector of ['seat-row-cells\\.compact-seat-row', 'seat-editor-row-cells\\.compact-seat-row']) {
+    assert.match(allRules(selector), /display:\s*grid/);
+    assert.match(allRules(selector), /grid-template-columns:\s*repeat\(var\(--seat-count\),\s*minmax\(0,\s*1fr\)\)/);
+  }
   for (const selector of ['seat-cell', 'seat-editor-cell']) {
     assert.match(allRules(selector), /flex:\s*0 1 clamp\(112px,\s*10%,\s*150px\)/);
     assert.match(allRules(selector), /overflow-wrap:\s*anywhere/);
@@ -295,8 +299,10 @@ test('responsive seating preserves seat numbers and editor drag targets', () => 
     assert.match(source, /row \* perRow \+ col \+ 1/, 'seat numbering must be unchanged');
     assert.doesNotMatch(source, /style="--seats-per-row:/, 'fixed column count must be removed');
   }
-  assert.match(checkin, /class="seat-row-cells"/);
-  assert.match(editor, /class="seat-editor-row-cells"/);
+  assert.match(checkin, /class="seat-row-cells\$\{perRow <= 12 \? ' compact-seat-row' : ''\}"/);
+  assert.match(editor, /class="seat-editor-row-cells\$\{perRow <= 12 \? ' compact-seat-row' : ''\}"/);
+  assert.match(checkin, /perRow <= 12 \? ` style="--seat-count:\$\{perRow\}"` : ''/);
+  assert.match(editor, /perRow <= 12 \? ` style="--seat-count:\$\{perRow\}"` : ''/);
   assert.match(editor, /data-editor-seat=/, 'seat editor targets must remain available');
 });
 
@@ -306,10 +312,10 @@ test('configured row label appears above that row seats in both views', () => {
   const editor = fs.readFileSync(path.join(jsDir, 'seat_editor.js'), 'utf8');
   const checkinStart = checkin.indexOf('rowHTML.push(`<div class="seat-row">');
   const checkinLabel = checkin.indexOf('<div class="seat-row-label">', checkinStart);
-  const checkinCells = checkin.indexOf('<div class="seat-row-cells">', checkinStart);
+  const checkinCells = checkin.indexOf('<div class="seat-row-cells${perRow', checkinStart);
   const editorStart = editor.indexOf('rowHTML.push(`<div class="seat-editor-row">');
   const editorLabel = editor.indexOf('<div class="seat-row-label">', editorStart);
-  const editorCells = editor.indexOf('<div class="seat-editor-row-cells">', editorStart);
+  const editorCells = editor.indexOf('<div class="seat-editor-row-cells${perRow', editorStart);
   assert.ok(checkinStart >= 0 && checkinLabel > checkinStart && checkinCells > checkinLabel);
   assert.ok(editorStart >= 0 && editorLabel > editorStart && editorCells > editorLabel);
 });
