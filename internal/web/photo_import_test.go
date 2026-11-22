@@ -75,6 +75,63 @@ func TestPhotoImportClassResolutionUsesZIPFolderBeforeDefault(t *testing.T) {
 	}
 }
 
+func TestPhotoImportAngleHintAndDefault(t *testing.T) {
+	tests := []struct {
+		name string
+		want string
+	}{
+		{"高一1班/正面/2026001_张三.jpg", "正面"},
+		{"高一1班/左侧/2026001_张三.jpg", "左侧"},
+		{"高一1班/right_side/2026001_张三.jpg", "右侧"},
+		{"高一1班/up/2026001_张三.jpg", "轻微抬头"},
+		{"高一1班/低头/2026001_张三.jpg", "轻微低头"},
+		{"高一1班/other/2026001_张三.jpg", "其他"},
+		{"2026001_张三.jpg", ""},
+	}
+	for _, tt := range tests {
+		if got := photoImportAngleHint(tt.name); got != tt.want {
+			t.Fatalf("%s => %q, want %q", tt.name, got, tt.want)
+		}
+	}
+	if got := photoImportAngleForSource("2026001_张三.jpg", "右侧"); got != "右侧" {
+		t.Fatalf("direct image should use default angle, got %q", got)
+	}
+	if got := photoImportAngleForSource("高一1班/左侧/2026001_张三.jpg", "正面"); got != "左侧" {
+		t.Fatalf("ZIP angle folder should override default, got %q", got)
+	}
+}
+
+func TestPhotoImportDefaultAngleParameter(t *testing.T) {
+	valid := httptest.NewRequest(http.MethodPost, "/api/photo-import/analyze?angle=%E5%B7%A6%E4%BE%A7", nil)
+	if got, err := photoImportDefaultAngleName(valid); err != nil || got != "左侧" {
+		t.Fatalf("valid default angle got=%q err=%v", got, err)
+	}
+	blank := httptest.NewRequest(http.MethodPost, "/api/photo-import/analyze", nil)
+	if got, err := photoImportDefaultAngleName(blank); err != nil || got != "正面" {
+		t.Fatalf("blank default angle should use frontal, got=%q err=%v", got, err)
+	}
+	invalid := httptest.NewRequest(http.MethodPost, "/api/photo-import/analyze?angle=unknown", nil)
+	if _, err := photoImportDefaultAngleName(invalid); err == nil {
+		t.Fatal("invalid default angle should be rejected")
+	}
+}
+
+func TestPhotoImportSameStudentDifferentAngleIsNotPackageDuplicate(t *testing.T) {
+	base := &photoImportItem{StudentNo: "2026001", Name: "张三", Angle: "正面"}
+	left := &photoImportItem{StudentNo: "2026001", Name: "张三", Angle: "左侧"}
+	sameAngle := &photoImportItem{StudentNo: "2026001", Name: "张三", Angle: "正面"}
+	otherStudent := &photoImportItem{StudentNo: "2026002", Name: "李四", Angle: "左侧"}
+	if !photoImportSameStudentDifferentAngle(base, left) {
+		t.Fatal("same student number with different angles should not be treated as a package duplicate")
+	}
+	if photoImportSameStudentDifferentAngle(base, sameAngle) {
+		t.Fatal("same angle must retain package duplicate checks")
+	}
+	if photoImportSameStudentDifferentAngle(base, otherStudent) {
+		t.Fatal("different student numbers must retain package duplicate checks")
+	}
+}
+
 func TestAssessImportedPhotoRequiresGoodFrontalFace(t *testing.T) {
 	img := image.NewRGBA(image.Rect(0, 0, 800, 1000))
 	good := face.Detection{
@@ -97,6 +154,18 @@ func TestAssessImportedPhotoRequiresGoodFrontalFace(t *testing.T) {
 	side.Landmarks[2].X = 455
 	if _, _, ok := assessImportedPhoto(img, side); ok {
 		t.Fatal("strong side pose should not be accepted as a frontal import sample")
+	}
+	if _, _, ok := assessImportedPhotoForAngle(img, side, "左侧"); !ok {
+		t.Fatal("a clear side pose should be accepted for a manually selected side angle")
+	}
+	if _, _, ok := assessImportedPhotoForAngle(img, good, "右侧"); ok {
+		t.Fatal("a frontal pose should not be accepted as a side-angle sample")
+	}
+	if _, _, ok := assessImportedPhotoForAngle(img, good, "轻微抬头"); !ok {
+		t.Fatal("a clear frontal/upward sample should remain eligible for manual angle confirmation")
+	}
+	if _, _, ok := assessImportedPhotoForAngle(img, good, "轻微低头"); !ok {
+		t.Fatal("a clear frontal/downward sample should remain eligible for manual angle confirmation")
 	}
 
 	tiny := good
