@@ -1917,8 +1917,8 @@ func TestSeatRowsUpToTwelveAlwaysFitOneAdaptiveLine(t *testing.T) {
 	}
 	css := string(cssData)
 	for _, want := range []string{
-		".seat-row-cells.compact-seat-row{",
-		".seat-editor-row-cells.compact-seat-row{",
+		".seat-row-cells.compact-seat-row {",
+		".seat-editor-row-cells.compact-seat-row {",
 		"grid-template-columns: repeat(var(--seat-count), minmax(0, 1fr))",
 	} {
 		if !strings.Contains(css, want) {
