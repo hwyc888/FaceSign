@@ -282,6 +282,14 @@ pre{background:#0b1220;color:#d8e2f3;border-radius:12px;padding:16px;overflow:au
   width: 100%;
   min-width: 0;
 }
+.seat-row-cells.compact-seat-row {
+  display: grid;
+  grid-template-columns: repeat(var(--seat-count), minmax(0, 1fr));
+}
+.seat-row-cells.compact-seat-row .seat-cell {
+  width: 100%;
+  min-width: 0;
+}
 .seat-cell {
   flex: 0 1 clamp(112px, 10%, 150px);
   max-width: 100%;
@@ -376,6 +384,14 @@ pre{background:#0b1220;color:#d8e2f3;border-radius:12px;padding:16px;overflow:au
   flex-wrap: wrap;
   align-items: stretch;
   gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+.seat-editor-row-cells.compact-seat-row {
+  display: grid;
+  grid-template-columns: repeat(var(--seat-count), minmax(0, 1fr));
+}
+.seat-editor-row-cells.compact-seat-row .seat-editor-cell {
   width: 100%;
   min-width: 0;
 }
