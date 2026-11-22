@@ -2,6 +2,11 @@
 set -Eeuo pipefail
 
 BUNDLE_DIR="$(cd -- "$(dirname -- "$0")" && pwd)"
+
+if [[ -f "$BUNDLE_DIR/MANIFEST.sha256" ]]; then
+  echo "[0/6] Verifying offline bundle manifest..."
+  (cd "$BUNDLE_DIR" && sha256sum -c MANIFEST.sha256)
+fi
 MODE=full
 if [[ "$#" -gt 0 ]]; then MODE="$1"; fi
 APP_DIR=/opt/facesign
