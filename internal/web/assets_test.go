@@ -1910,3 +1910,36 @@ func TestFirstEnrollmentOffersImmediateMultiAngleCapture(t *testing.T) {
 		}
 	}
 }
+func TestSeatRowsUpToTwelveAlwaysFitOneAdaptiveLine(t *testing.T) {
+	cssData, err := assets.ReadFile("assets/style.css")
+	if err != nil {
+		t.Fatal(err)
+	}
+	css := string(cssData)
+	for _, want := range []string{
+		".seat-row-cells.compact-seat-row{",
+		".seat-editor-row-cells.compact-seat-row{",
+		"grid-template-columns: repeat(var(--seat-count), minmax(0, 1fr))",
+	} {
+		if !strings.Contains(css, want) {
+			t.Fatalf("adaptive twelve-seat row CSS missing %q", want)
+		}
+	}
+
+	for _, item := range []struct {
+		path string
+		want string
+	}{
+		{"assets/js/seating.js", "perRow <= 12 ? ' compact-seat-row'"},
+		{"assets/js/seat_editor.js", "perRow <= 12 ? ' compact-seat-row'"},
+	} {
+		data, err := assets.ReadFile(item.path)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !strings.Contains(string(data), item.want) {
+			t.Fatalf("%s must switch rows with twelve or fewer seats to the adaptive one-line layout", item.path)
+		}
+	}
+}
+
