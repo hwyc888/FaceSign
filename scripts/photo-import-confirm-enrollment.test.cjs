@@ -20,7 +20,7 @@ test('batch photo import supports default class, six angles, direct multi-select
   for (const angle of ['正面', '左侧', '右侧', '轻微抬头', '轻微低头', '其他']) {
     assert.ok(html.includes('value="' + angle + '"'), 'missing import angle ' + angle);
   }
-  assert.match(html, /ZIP 内与系统班级同名的目录优先按目录识别/);
+  assert.match(html, /ZIP 内与系统班级同名的目录自动识别班级/);
   assert.match(html, /左右方向、抬头\/低头方向请在预览中人工确认/);
   assert.match(script, /Array\.from\(input\.files \|\| \[\]\)/);
   assert.match(script, /fd\.append\('class_name', defaultClassName\)/);
