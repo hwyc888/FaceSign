@@ -4,6 +4,14 @@ let photoImportAnalyzedCount = 0;
 let photoImportSkippedCount = 0;
 let photoImportIgnoredFiles = 0;
 
+const photoImportAngleChoices = ['正面', '左侧', '右侧', '轻微抬头', '轻微低头', '其他'];
+
+function photoImportAngleOptionsHTML(selected) {
+  return photoImportAngleChoices.map(function(angle) {
+    return '<option value="' + esc(angle) + '" ' + (angle === selected ? 'selected' : '') + '>' + esc(angle) + '</option>';
+  }).join('');
+}
+
 function filterPhotoImportPreviewItems(items, canAddStudents, canResampleFaces) {
   return (Array.isArray(items) ? items : []).filter(function(item) {
     if (!item) return false;
@@ -32,12 +40,12 @@ function photoImportStatusMeta(item) {
 function photoImportActionOptions(item) {
   if (item.status === 'ready') {
     return hasPermission('can_add_students')
-      ? '<option value="new" selected>新建学生 + 正面样本</option><option value="skip">跳过</option>'
+      ? '<option value="new" selected>新建学生 + 所选角度样本</option><option value="skip">跳过</option>'
       : '<option value="skip" selected>跳过（无新增权限）</option>';
   }
   if (item.status === 'existing') {
     return hasPermission('can_resample_faces')
-      ? '<option value="skip" selected>跳过（已有）</option><option value="supplement">补充现有学生正面样本</option>'
+      ? '<option value="skip" selected>跳过（已有）</option><option value="supplement">补充现有学生所选角度样本</option>'
       : '<option value="skip" selected>跳过（无采样权限）</option>';
   }
   return '<option value="skip" selected>跳过</option>';
@@ -56,10 +64,27 @@ function renderPhotoImportClassOptions() {
     defaultClass.innerHTML = '<option value="">不指定（按 ZIP 目录识别）</option>' + classOptionsHTML(selected, false);
     defaultClass.value = selected;
   }
+  const defaultAngle = $('#photoImportDefaultAngle');
+  if (defaultAngle) {
+    const selected = defaultAngle.value || '正面';
+    defaultAngle.innerHTML = photoImportAngleOptionsHTML(selected);
+    defaultAngle.value = selected;
+  }
+  const bulkAngle = $('#photoImportBulkAngle');
+  if (bulkAngle) {
+    const selected = bulkAngle.value || '正面';
+    bulkAngle.innerHTML = photoImportAngleOptionsHTML(selected);
+    bulkAngle.value = selected;
+  }
 }
 
 function photoImportClassSelect(item) {
   return '<select data-import-class="' + item.id + '">' + classOptionsHTML(item.class_name || '', true) + '</select>';
+}
+
+function photoImportAngleSelect(item) {
+  return '<select data-import-angle="' + item.id + '">' +
+    photoImportAngleOptionsHTML(item.angle || '正面') + '</select>';
 }
 
 function importSelector(name, id) {
@@ -85,7 +110,7 @@ function renderPhotoImportSummary() {
 function renderPhotoImportEmptyState() {
   const body = $('#photoImportBody');
   if (!body || photoImportItems.length) return;
-  body.innerHTML = '<tr class="photo-import-empty"><td colspan="7" class="muted">没有可处理的照片。不合格、重复或已跳过的照片已自动排除。</td></tr>';
+  body.innerHTML = '<tr class="photo-import-empty"><td colspan="8" class="muted">没有可处理的照片。不合格、重复或已跳过的照片已自动排除。</td></tr>';
 }
 
 function renderPhotoImportPreview(data) {
@@ -123,6 +148,7 @@ function renderPhotoImportPreview(data) {
         '<td><input data-import-no="' + item.id + '" value="' + esc(item.student_no || '') + '" ' + (editable ? '' : 'disabled') + ' placeholder="学号"></td>' +
         '<td><input data-import-name="' + item.id + '" value="' + esc(item.name || '') + '" ' + (editable ? '' : 'disabled') + ' placeholder="姓名"></td>' +
         '<td>' + photoImportClassSelect(item) + '</td>' +
+        '<td>' + photoImportAngleSelect(item) + '</td>' +
         '<td><div class="import-status ' + meta.tone + '"><strong>' + meta.label + '</strong>' + matched + duplicate + reason + '</div></td>' +
         '<td><select data-import-action="' + item.id + '">' + photoImportActionOptions(item) + '</select></td>' +
         '</tr>';
@@ -171,9 +197,11 @@ function updatePhotoImportRowState(id, userInitiated = false) {
   const no = $(importSelector('data-import-no', id));
   const name = $(importSelector('data-import-name', id));
   const classSelect = $(importSelector('data-import-class', id));
+  const angleSelect = $(importSelector('data-import-angle', id));
   if (no) no.disabled = !isNew;
   if (name) name.disabled = !isNew;
-  if (classSelect) classSelect.disabled = action === 'skip';
+  if (classSelect) classSelect.disabled = action === 'skip' || item.committed;
+  if (angleSelect) angleSelect.disabled = action === 'skip' || item.committed;
 }
 
 $('#analyzePhotoImport').addEventListener('click', async function() {
@@ -213,6 +241,8 @@ $('#analyzePhotoImport').addEventListener('click', async function() {
     }
     const defaultClassName = $('#photoImportDefaultClass')?.value.trim() || '';
     if (defaultClassName) fd.append('class_name', defaultClassName);
+    const defaultAngle = $('#photoImportDefaultAngle')?.value || '正面';
+    fd.append('angle', defaultAngle);
     const data = await api('/api/photo-import/analyze', {method: 'POST', body: fd});
     renderPhotoImportPreview(data);
     toast('照片分析完成，请检查后确认导入');
@@ -239,6 +269,21 @@ $('#applyPhotoImportClass').addEventListener('click', function() {
   toast('班级已批量应用');
 });
 
+$('#applyPhotoImportAngle').addEventListener('click', function() {
+  const angle = $('#photoImportBulkAngle').value;
+  if (!photoImportAngleChoices.includes(angle)) {
+    toast('请先选择有效角度');
+    return;
+  }
+  photoImportItems.forEach(function(item) {
+    const actionElement = $(importSelector('data-import-action', item.id));
+    const angleSelect = $(importSelector('data-import-angle', item.id));
+    const action = actionElement ? actionElement.value : 'skip';
+    if (angleSelect && action !== 'skip' && !item.committed) angleSelect.value = angle;
+  });
+  toast('角度已批量应用');
+});
+
 $('#commitPhotoImport').addEventListener('click', async function() {
   if (!photoImportSessionID) {
     toast('请先上传并分析照片');
@@ -251,12 +296,14 @@ $('#commitPhotoImport').addEventListener('click', async function() {
     const noElement = $(importSelector('data-import-no', item.id));
     const nameElement = $(importSelector('data-import-name', item.id));
     const classElement = $(importSelector('data-import-class', item.id));
+    const angleElement = $(importSelector('data-import-angle', item.id));
     return {
       id: item.id,
       action: actionElement ? actionElement.value : 'skip',
       student_no: noElement ? noElement.value : (item.student_no || ''),
       name: nameElement ? nameElement.value : (item.name || ''),
-      class_name: classElement ? classElement.value : ''
+      class_name: classElement ? classElement.value : '',
+      angle: angleElement ? angleElement.value : (item.angle || '正面')
     };
   });
   const selected = items.filter(function(item) { return item.action !== 'skip'; });

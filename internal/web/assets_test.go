@@ -73,9 +73,15 @@ func TestPhotoImportUI(t *testing.T) {
 	for _, want := range []string{
 		`id="photoImportFile"`,
 		`id="photoImportPreview"`,
+		`id="photoImportDefaultClass"`,
+		`id="photoImportDefaultAngle"`,
+		`id="photoImportBulkAngle"`,
+		`id="applyPhotoImportAngle"`,
 		`multiple accept=".jpg`,
 			`/js/photo_import.js`,
 			"可直接多选",
+			"支持六种人脸角度",
+			"左右方向、抬头/低头方向请在预览中人工确认",
 		} {
 		if !strings.Contains(html, want) {
 			t.Fatalf("photo import UI missing %s", want)
@@ -87,7 +93,7 @@ func TestPhotoImportUI(t *testing.T) {
 		t.Fatal(err)
 	}
 	script := string(jsData)
-	for _, want := range []string{"fd.append('files'", "fd.append('file'", "files.length > 500", "256 * 1024 * 1024"} {
+	for _, want := range []string{"fd.append('files'", "fd.append('file'", "fd.append('angle', defaultAngle)", "data-import-angle", "photoImportAngleChoices", "files.length > 500", "256 * 1024 * 1024"} {
 		if !strings.Contains(script, want) {
 			t.Fatalf("multi-image upload flow missing %q", want)
 		}

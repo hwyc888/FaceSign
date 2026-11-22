@@ -19,7 +19,7 @@ The authorized SCRFD and ArcFace ONNX files belong under `models/by/` with a mat
 ## Features
 
 - Student and class management, including seat assignments.
-- Browser camera enrollment and batch photo import from multiple image files or a ZIP archive, with a default class parameter and automatic class-folder detection.
+- Browser camera enrollment and batch photo import from multiple image files or a ZIP archive, with default class/angle parameters, automatic class and six-angle folder detection, per-photo angle editing, and multi-angle sample grouping by student number.
 - Face recognition and daily check-in.
 - One check-in record per student per day.
 - Attendance history and class seat board.

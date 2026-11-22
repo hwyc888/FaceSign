@@ -276,7 +276,7 @@
               <h2>批量照片导入</h2>
               <p class="muted compact">可直接多选 JPG、PNG 等图片，也可上传一个 ZIP 照片包。系统先做人脸质量检查、重复比对和预览，确认后才写入数据库。建议文件名使用“学号_姓名.jpg”。</p>
             </div>
-            <span class="mode-pill">默认：正面样本</span>
+            <span class="mode-pill">支持六种人脸角度</span>
           </div>
 
           <div class="photo-import-upload">
@@ -288,13 +288,20 @@
               默认导入班级
               <select id="photoImportDefaultClass"><option value="">不指定（按 ZIP 目录识别）</option></select>
             </label>
+            <label class="photo-import-default-angle">
+              默认照片角度
+              <select id="photoImportDefaultAngle">
+                <option value="正面">正面</option><option value="左侧">左侧</option><option value="右侧">右侧</option>
+                <option value="轻微抬头">轻微抬头</option><option value="轻微低头">轻微低头</option><option value="其他">其他</option>
+              </select>
+            </label>
             <button class="primary" id="analyzePhotoImport" type="button">上传并分析</button>
-            <div class="photo-import-formats">可一次选择多张 JPEG/JPG、PNG、WEBP、GIF、BMP、TIFF 图片，也支持单独上传一个 ZIP 包。设置默认班级后，直接上传的照片和 ZIP 根目录照片会自动带入该班级；ZIP 内与系统班级同名的目录优先按目录识别。文件名支持“学号_姓名.jpg”自动识别。</div>
+            <div class="photo-import-formats">支持直接多选图片或单独上传一个 ZIP。直接上传和 ZIP 根目录照片使用默认班级、默认角度；ZIP 内与系统班级同名的目录自动识别班级，正面/左侧/右侧/轻微抬头/轻微低头/其他目录自动识别角度，目录标签优先于默认值。分析后仍可逐张调整。</div>
           </div>
 
           <div class="photo-import-progress hidden" id="photoImportProgress">
             <strong>正在分析照片...</strong>
-            <span>会逐张做人脸检测、正面质量检查和全库重复比对，照片较多时请稍候。</span>
+            <span>会逐张做人脸检测、角度匹配与全库重复比对；左右方向和抬头/低头方向需在预览中确认，照片较多时请稍候。</span>
           </div>
 
           <div class="photo-import-preview hidden" id="photoImportPreview">
@@ -304,17 +311,25 @@
                 批量设置班级
                 <select id="photoImportBulkClass"><option value="">请选择班级</option></select>
               </label>
-              <button id="applyPhotoImportClass" type="button">应用到可导入照片</button>
+              <button id="applyPhotoImportClass" type="button">应用班级</button>
+              <label>
+                批量设置角度
+                <select id="photoImportBulkAngle">
+                  <option value="正面">正面</option><option value="左侧">左侧</option><option value="右侧">右侧</option>
+                  <option value="轻微抬头">轻微抬头</option><option value="轻微低头">轻微低头</option><option value="其他">其他</option>
+                </select>
+              </label>
+              <button id="applyPhotoImportAngle" type="button">应用角度</button>
               <button class="primary" id="commitPhotoImport" type="button">确认导入选中照片</button>
             </div>
             <div class="photo-import-note">
-              <strong>准确率保护：</strong>
-              多人照片、脸部过小、明显侧脸/倾斜、接近重复阈值的照片不会自动入库；已有学生默认跳过，可手工选择“补充正面样本”。
+              <strong>样本质量保护：</strong>
+              每张照片都可以单独调整角度；ZIP 班级/角度目录优先于默认设置。系统检查人脸尺寸、关键点、倾斜和明显正侧脸不匹配；左右方向、抬头/低头方向请在预览中人工确认。已有学生默认跳过，选择补充后会追加独立角度样本，不覆盖原样本。
             </div>
             <div class="table-wrap photo-import-table-wrap">
               <table class="photo-import-table">
                 <thead>
-                  <tr><th>照片</th><th>文件</th><th>学号</th><th>姓名</th><th>班级</th><th>质检/比对</th><th>处理</th></tr>
+                  <tr><th>照片</th><th>文件</th><th>学号</th><th>姓名</th><th>班级</th><th>角度</th><th>质检/比对</th><th>处理</th></tr>
                 </thead>
                 <tbody id="photoImportBody"></tbody>
               </table>
