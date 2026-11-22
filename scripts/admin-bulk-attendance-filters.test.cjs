@@ -70,3 +70,30 @@ test('attendance and account filter controls are present and responsive styles p
   assert.match(css, /\.user-table tbody tr:not\(\.user-table-empty\)/);
   assert.match(css, /\.attendance-filters/);
 });
+
+
+test('user account table fits its card and lays actions out in a balanced grid', () => {
+  const css = read('internal/web/assets/style.css');
+  const users = read('internal/web/assets/js/users.js');
+  const allRules = selector => {
+    const matches = [...css.matchAll(new RegExp('\\.' + selector + '\\s*\\{([^}]*)\\}', 'g'))];
+    assert.ok(matches.length, 'missing CSS rule ' + selector);
+    return matches.map(match => match[1]).join(';');
+  };
+  const table = allRules('user-table');
+  const actions = allRules('user-row-actions');
+  assert.match(table, /width:\s*100%/);
+  assert.match(table, /min-width:\s*0/);
+  assert.doesNotMatch(table, /min-width:\s*1154px/);
+  assert.match(actions, /display:\s*grid/);
+  assert.match(actions, /grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/);
+  assert.match(actions, /width:\s*min\(100%,\s*380px\)/);
+  assert.match(css, /content:\s*attr\(data-label\)/);
+  for (const label of ['选择', '账号', '操作']) {
+    assert.ok(users.includes('data-label="' + label + '"'), 'missing compact-layout label ' + label);
+  }
+  for (const label of ['修改资料', '新增学生', '人脸采样', '座位编排', '修改设置']) {
+    assert.ok(users.includes("checkmark('" + label + "')") || users.includes(", '" + label + "')"),
+      'missing permission label ' + label);
+  }
+});

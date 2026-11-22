@@ -260,25 +260,34 @@ test('an empty class list is a successful load and can show the no-class state',
 });
 
 
-test('check-in and editor seating grids adapt to container width without forced horizontal scrolling', () => {
-  const css = fs.readFileSync(path.join(jsDir, '..', 'style.css'), 'utf8');
-  const rule = selector => {
-    const line = css.split(/\r?\n/).find(item => item.startsWith('.' + selector + '{'));
-    assert.ok(line, 'Missing CSS rule for ' + selector);
-    return line;
+test('check-in and editor seating rows stay grouped and wrap evenly inside their container', () => {
+  const css = fs.readFileSync(path.join(jsDir, '..', 'style.css'), 'utf8').replace(/\r\n/g, '\n');
+  const allRules = selector => {
+    const matches = [...css.matchAll(new RegExp('\\.' + selector + '\\s*\\{([^}]*)\\}', 'g'))];
+    assert.ok(matches.length, 'Missing CSS rule for ' + selector);
+    return matches.map(match => match[1]).join(';');
   };
-  assert.match(rule('seat-row-cells'), /repeat\(auto-fit,minmax\(min\(100%,104px\),1fr\)\)/);
-  assert.match(rule('seat-editor-row-cells'), /repeat\(auto-fit,minmax\(min\(100%,112px\),1fr\)\)/);
   for (const selector of ['seat-board', 'seat-row', 'seat-row-cells', 'seat-editor-board', 'seat-editor-row', 'seat-editor-row-cells']) {
-    assert.match(rule(selector), /min-width:0/, selector + ' must shrink to its parent');
-    assert.doesNotMatch(rule(selector), /min-width:(max-content|calc\()/);
-    assert.doesNotMatch(rule(selector), /overflow:auto/);
+    assert.match(allRules(selector), /min-width:\s*0/, selector + ' must shrink to its parent');
+    assert.doesNotMatch(allRules(selector), /min-width:\s*(max-content|calc\()/);
+    assert.doesNotMatch(allRules(selector), /overflow:\s*auto/);
   }
-  assert.match(css, /\.seat-row,\.seat-editor-row\{grid-template-columns:minmax\(0,1fr\)/);
-  assert.match(css, /\.seat-cell\{[^}]*overflow-wrap:anywhere/);
-  assert.match(css, /\.seat-editor-cell\{[^}]*overflow-wrap:anywhere/);
+  for (const selector of ['seat-row', 'seat-editor-row']) {
+    assert.match(allRules(selector), /grid-template-columns:\s*minmax\(0,\s*1fr\)/);
+    assert.match(allRules(selector), /padding:\s*12px/);
+  }
+  for (const selector of ['seat-row-cells', 'seat-editor-row-cells']) {
+    assert.match(allRules(selector), /display:\s*flex/);
+    assert.match(allRules(selector), /flex-wrap:\s*wrap/);
+    assert.match(allRules(selector), /align-items:\s*stretch/);
+  }
+  for (const selector of ['seat-cell', 'seat-editor-cell']) {
+    assert.match(allRules(selector), /flex:\s*0 1 clamp\(112px,\s*10%,\s*150px\)/);
+    assert.match(allRules(selector), /overflow-wrap:\s*anywhere/);
+  }
+  assert.match(allRules('seat-row-label'), /width:\s*fit-content/);
+  assert.match(allRules('seat-row-label'), /justify-content:\s*flex-start/);
 });
-
 test('responsive seating preserves seat numbers and editor drag targets', () => {
   const checkin = fs.readFileSync(path.join(jsDir, 'seating.js'), 'utf8');
   const editor = fs.readFileSync(path.join(jsDir, 'seat_editor.js'), 'utf8');
@@ -289,4 +298,18 @@ test('responsive seating preserves seat numbers and editor drag targets', () => 
   assert.match(checkin, /class="seat-row-cells"/);
   assert.match(editor, /class="seat-editor-row-cells"/);
   assert.match(editor, /data-editor-seat=/, 'seat editor targets must remain available');
+});
+
+
+test('configured row label appears above that row seats in both views', () => {
+  const checkin = fs.readFileSync(path.join(jsDir, 'seating.js'), 'utf8');
+  const editor = fs.readFileSync(path.join(jsDir, 'seat_editor.js'), 'utf8');
+  const checkinStart = checkin.indexOf('rowHTML.push(`<div class="seat-row">');
+  const checkinLabel = checkin.indexOf('<div class="seat-row-label">', checkinStart);
+  const checkinCells = checkin.indexOf('<div class="seat-row-cells">', checkinStart);
+  const editorStart = editor.indexOf('rowHTML.push(`<div class="seat-editor-row">');
+  const editorLabel = editor.indexOf('<div class="seat-row-label">', editorStart);
+  const editorCells = editor.indexOf('<div class="seat-editor-row-cells">', editorStart);
+  assert.ok(checkinStart >= 0 && checkinLabel > checkinStart && checkinCells > checkinLabel);
+  assert.ok(editorStart >= 0 && editorLabel > editorStart && editorCells > editorLabel);
 });
