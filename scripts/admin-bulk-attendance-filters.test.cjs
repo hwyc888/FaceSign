@@ -89,7 +89,11 @@ test('user account table fits its card and lays actions out in a balanced grid',
   assert.match(actions, /grid-template-columns:\s*repeat\(2,\s*minmax\(0,\s*1fr\)\)/);
   assert.match(actions, /width:\s*min\(100%,\s*380px\)/);
   assert.match(css, /content:\s*attr\(data-label\)/);
-  for (const label of ['选择', '账号', '修改资料', '新增学生', '人脸采样', '座位编排', '修改设置', '操作']) {
+  for (const label of ['选择', '账号', '操作']) {
     assert.ok(users.includes('data-label="' + label + '"'), 'missing compact-layout label ' + label);
+  }
+  for (const label of ['修改资料', '新增学生', '人脸采样', '座位编排', '修改设置']) {
+    assert.ok(users.includes("checkmark('" + label + "')") || users.includes(", '" + label + "')"),
+      'missing permission label ' + label);
   }
 });
