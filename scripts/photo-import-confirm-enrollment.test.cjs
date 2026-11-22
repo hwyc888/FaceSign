@@ -16,7 +16,7 @@ test('batch photo import supports default class, six angles, direct multi-select
   assert.match(html, /id="photoImportDefaultAngle"/);
   assert.match(html, /id="photoImportBulkAngle"/);
   assert.match(html, /id="applyPhotoImportAngle"/);
-  assert.match(html, /accept="[^"]*\\.jpg[^"]*\\.png[^"]*\\.zip/);
+  assert.match(html, /accept="[^"]*\.jpg[^"]*\.png[^"]*\.zip/);
   for (const angle of ['正面', '左侧', '右侧', '轻微抬头', '轻微低头', '其他']) {
     assert.ok(html.includes('value="' + angle + '"'), 'missing import angle ' + angle);
   }
