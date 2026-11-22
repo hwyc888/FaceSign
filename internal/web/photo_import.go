@@ -981,7 +981,7 @@ func photoImportSameStudentDifferentAngle(current, previous *photoImportItem) bo
 	if currentNo != "" && currentNo == previousNo {
 		return true
 	}
-	return current.Name != "" && previous.Name != "" && strings.TrimSpace(current.Name) == strings.TrimSpace(previous.Name)
+	return false
 }
 
 func bestPhotoStudentScore(feature []float32, studentID int64, known []photoKnownFace) float64 {
