@@ -115,8 +115,11 @@ func (s *Server) authSetup(w http.ResponseWriter, r *http.Request) {
 		methodNotAllowed(w)
 		return
 	}
-	if !requestIsLoopback(r) {
-		writeError(w, http.StatusForbidden, errors.New("首次创建管理员必须在运行 FaceSign 的电脑本机浏览器完成"))
+	// The first administrator may be created from another device, but
+	// credentials must never be sent over remote plaintext HTTP. Localhost
+	// remains available over HTTP for initial setup on the server itself.
+	if r.TLS == nil && !requestIsLoopback(r) {
+		writeError(w, http.StatusForbidden, errors.New("远程初始化必须使用 HTTPS 地址"))
 		return
 	}
 	var in struct {
