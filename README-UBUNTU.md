@@ -71,3 +71,7 @@ If you override data/state paths when starting, pass the same overrides to the s
 The package includes the Microsoft ONNX Runtime CPU native library (obtained from the official Microsoft NuGet package over HTTPS; the package archive and pinned package identity/version are validated), the default Silent-Face MiniFASNetV2 + MiniFASNetV1SE anti-spoof models, the YOLOX-Nano person detector, and the legacy MN3 / MiniFASNetV2-SE fallback models with their source checksums and licence files. SCRFD/ArcFace weights are supplied separately by the operator and are checked against the local SHA256 manifest before startup.
 
 The liveness model remains enabled by default. Avoid setting `FACESIGN_LIVENESS_BACKEND` to a legacy backend unless the matching model file is present and you intend to run that comparison.
+
+## 7. Fully offline deployment
+
+For an offline Ubuntu 24.04 AMD64 runtime bundle, DEB dependency preparation, FFmpeg/ONNX Runtime installation and local assembly of a model-authorized full archive, see [scripts/ubuntu/offline/README.md](scripts/ubuntu/offline/README.md). The CI offline runtime artifact intentionally excludes restricted SCRFD/ArcFace pretrained weights; add those locally only when their licence permits the intended use and transfer.
