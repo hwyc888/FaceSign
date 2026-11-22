@@ -198,10 +198,12 @@ pre{background:#0b1220;color:#d8e2f3;border-radius:12px;padding:16px;overflow:au
 .class-order-actions button{padding:7px 10px}
 @media(max-width:620px){.class-add-form{grid-template-columns:1fr}}
 
-.photo-import-upload{display:grid;grid-template-columns:minmax(260px,1fr) auto;gap:12px;align-items:end;margin-top:18px}
-.photo-import-file{display:grid;gap:6px;color:#475467;font-size:14px}
-.photo-import-file input{padding:8px;background:#fff}
-.photo-import-formats{grid-column:1/-1;color:#667085;font-size:12px}
+.photo-import-upload{display:grid;grid-template-columns:minmax(260px,1fr) minmax(200px,260px);gap:12px;align-items:end;margin-top:18px}
+.photo-import-file,.photo-import-default-class{display:grid;gap:6px;color:#475467;font-size:14px;min-width:0}
+.photo-import-file input{padding:8px;background:#fff;max-width:100%}
+.photo-import-default-class select{width:100%;min-width:0}
+.photo-import-upload .primary{justify-self:start;min-width:140px}
+.photo-import-formats{grid-column:1/-1;color:#667085;font-size:12px;line-height:1.5}
 .photo-import-progress{display:grid;gap:5px;margin-top:16px;padding:14px;border-radius:12px;background:#f1f6ff;border:1px solid #bfd2ff}
 .photo-import-progress span{color:#667085;font-size:13px}
 .photo-import-preview{margin-top:18px}
