@@ -299,3 +299,17 @@ test('responsive seating preserves seat numbers and editor drag targets', () => 
   assert.match(editor, /class="seat-editor-row-cells"/);
   assert.match(editor, /data-editor-seat=/, 'seat editor targets must remain available');
 });
+
+
+test('configured row label appears above that row seats in both views', () => {
+  const checkin = fs.readFileSync(path.join(jsDir, 'seating.js'), 'utf8');
+  const editor = fs.readFileSync(path.join(jsDir, 'seat_editor.js'), 'utf8');
+  const checkinStart = checkin.indexOf('rowHTML.push(`<div class="seat-row">');
+  const checkinLabel = checkin.indexOf('<div class="seat-row-label">', checkinStart);
+  const checkinCells = checkin.indexOf('<div class="seat-row-cells">', checkinStart);
+  const editorStart = editor.indexOf('rowHTML.push(`<div class="seat-editor-row">');
+  const editorLabel = editor.indexOf('<div class="seat-row-label">', editorStart);
+  const editorCells = editor.indexOf('<div class="seat-editor-row-cells">', editorStart);
+  assert.ok(checkinStart >= 0 && checkinLabel > checkinStart && checkinCells > checkinLabel);
+  assert.ok(editorStart >= 0 && editorLabel > editorStart && editorCells > editorLabel);
+});
