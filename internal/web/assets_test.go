@@ -1412,8 +1412,8 @@ func TestAuthenticationAndUserManagementUI(t *testing.T) {
 	if strings.Contains(string(index), "请使用管理员或已创建的用户账号登录。远程访问必须使用 HTTPS 地址；在 FaceSign 主机本机可使用本地地址。") {
 		t.Fatal("login screen should not display the long network-access notice")
 	}
-	if !strings.Contains(string(index), "首次初始化仅限在 FaceSign 主机本机完成") {
-		t.Fatal("administrator setup must retain its local-only security notice")
+	if !strings.Contains(string(index), "可在本机或其他设备完成首次初始化；远程设备必须使用 HTTPS。首个管理员仅能创建一次") {
+		t.Fatal("administrator setup must explain remote HTTPS initialization and one-time creation")
 	}
 	authScript, err := assets.ReadFile("assets/js/auth.js")
 	if err != nil {
