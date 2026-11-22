@@ -284,8 +284,12 @@
               <span>图片文件或 ZIP 包（支持多选）</span>
               <input id="photoImportFile" type="file" multiple accept=".jpg,.jpeg,.jfif,.png,.webp,.gif,.bmp,.tif,.tiff,.zip,image/jpeg,image/png,image/webp,image/gif,image/bmp,image/tiff,application/zip">
             </label>
+            <label class="photo-import-default-class">
+              默认导入班级
+              <select id="photoImportDefaultClass"><option value="">不指定（按 ZIP 目录识别）</option></select>
+            </label>
             <button class="primary" id="analyzePhotoImport" type="button">上传并分析</button>
-            <div class="photo-import-formats">可一次选择多张 JPEG/JPG、PNG、WEBP、GIF、BMP、TIFF 图片；也支持单个 ZIP 包。文件名支持“学号_姓名.jpg”自动识别。</div>
+            <div class="photo-import-formats">可一次选择多张 JPEG/JPG、PNG、WEBP、GIF、BMP、TIFF 图片，也支持单独上传一个 ZIP 包。设置默认班级后，直接上传的照片和 ZIP 根目录照片会自动带入该班级；ZIP 内与系统班级同名的目录优先按目录识别。文件名支持“学号_姓名.jpg”自动识别。</div>
           </div>
 
           <div class="photo-import-progress hidden" id="photoImportProgress">

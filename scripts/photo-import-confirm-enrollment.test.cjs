@@ -7,13 +7,21 @@ const root = path.join(__dirname, '..');
 const assets = path.join(root, 'internal', 'web', 'assets');
 const read = relative => fs.readFileSync(path.join(assets, relative), 'utf8');
 
-test('batch photo import supports direct multi-select images and legacy ZIP uploads', () => {
+test('batch photo import supports direct multi-select, default class, and ZIP uploads', () => {
   const html = read('index.html');
   const script = read('js/photo_import.js').replace(/\r\n/g, '\n');
   const backend = fs.readFileSync(path.join(root, 'internal', 'web', 'photo_import.go'), 'utf8');
   assert.match(html, /id="photoImportFile"[^>]*multiple/);
+  assert.match(html, /id="photoImportDefaultClass"/);
   assert.match(html, /accept="[^"]*\.jpg[^"]*\.png[^"]*\.zip/);
+  assert.match(html, /ZIP 内与系统班级同名的目录优先按目录识别/);
   assert.match(script, /Array\.from\(input\.files \|\| \[\]\)/);
+  assert.match(script, /fd\.append\('class_name', defaultClassName\)/);
+  assert.match(script, /photoImportDefaultClass/);
+  assert.match(backend, /r\.FormValue\("class_name"\)/);
+  assert.match(backend, /photoImportClassForSource\(source\.Name, defaultClassName, classNames\)/);
+  const classes = fs.readFileSync(path.join(assets, 'js', 'classes.js'), 'utf8');
+  assert.match(classes, /renderPhotoImportClassOptions\(\)/);
   assert.match(script, /fd\.append\('files', file, file\.name\)/);
   assert.match(script, /fd\.append\('file', zipFiles\[0\], zipFiles\[0\]\.name\)/);
   assert.match(backend, /r\.MultipartForm\.File\["files"\]/);

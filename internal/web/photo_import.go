@@ -213,6 +213,11 @@ func (s *Server) photoImportAnalyze(w http.ResponseWriter, r *http.Request) {
 	for _, class := range classes {
 		classNames[class.Name] = true
 	}
+	defaultClassName, err := photoImportDefaultClassName(r, classNames)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, err)
+		return
+	}
 
 	known, err := s.loadPhotoKnownFaces(r.Context())
 	if err != nil {
@@ -323,7 +328,7 @@ func (s *Server) photoImportAnalyze(w http.ResponseWriter, r *http.Request) {
 			Feature:     append([]float32(nil), detected.Feature...),
 		}
 		item.StudentNo, item.Name = photoImportIdentity(displayName)
-		item.ClassName = photoImportClassHint(source.Name, classNames)
+		item.ClassName = photoImportClassForSource(source.Name, defaultClassName, classNames)
 		item.Thumbnail = makeFaceThumbnail(img, detected.Rectangle)
 		if !ok {
 			item.Status = "rejected"
@@ -737,6 +742,26 @@ func photoImportClassHint(archiveName string, classes map[string]bool) string {
 		if classes[part] {
 			return part
 		}
+	}
+	return ""
+}
+
+func photoImportDefaultClassName(r *http.Request, classes map[string]bool) (string, error) {
+	name := strings.TrimSpace(r.FormValue("class_name"))
+	if name != "" && !classes[name] {
+		return "", errors.New("所选默认班级不存在，请刷新班级列表后重新选择")
+	}
+	return name, nil
+}
+
+func photoImportClassForSource(sourceName, defaultClassName string, classes map[string]bool) string {
+	// A matching class folder inside a ZIP is more specific than the batch
+	// default. Direct uploads and ZIP root files use the supplied default.
+	if hint := photoImportClassHint(sourceName, classes); hint != "" {
+		return hint
+	}
+	if classes[defaultClassName] {
+		return defaultClassName
 	}
 	return ""
 }

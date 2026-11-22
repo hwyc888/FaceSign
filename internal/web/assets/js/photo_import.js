@@ -45,7 +45,17 @@ function photoImportActionOptions(item) {
 
 function renderPhotoImportClassOptions() {
   const bulk = $('#photoImportBulkClass');
-  if (bulk) bulk.innerHTML = classOptionsHTML('', true);
+  if (bulk) {
+    const selected = bulk.value;
+    bulk.innerHTML = classOptionsHTML(selected, true);
+    bulk.value = selected;
+  }
+  const defaultClass = $('#photoImportDefaultClass');
+  if (defaultClass) {
+    const selected = defaultClass.value;
+    defaultClass.innerHTML = '<option value="">不指定（按 ZIP 目录识别）</option>' + classOptionsHTML(selected, false);
+    defaultClass.value = selected;
+  }
 }
 
 function photoImportClassSelect(item) {
@@ -201,6 +211,8 @@ $('#analyzePhotoImport').addEventListener('click', async function() {
     } else {
       files.forEach(file => fd.append('files', file, file.name));
     }
+    const defaultClassName = $('#photoImportDefaultClass')?.value.trim() || '';
+    if (defaultClassName) fd.append('class_name', defaultClassName);
     const data = await api('/api/photo-import/analyze', {method: 'POST', body: fd});
     renderPhotoImportPreview(data);
     toast('照片分析完成，请检查后确认导入');

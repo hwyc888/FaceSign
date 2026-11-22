@@ -41,6 +41,40 @@ func TestPhotoImportClassHint(t *testing.T) {
 	}
 }
 
+func TestPhotoImportDefaultClassParameter(t *testing.T) {
+	classes := map[string]bool{"高一1班": true, "高一2班": true}
+
+	valid := httptest.NewRequest(http.MethodPost, "/api/photo-import/analyze?class_name=%E9%AB%98%E4%B8%802%E7%8F%AD", nil)
+	got, err := photoImportDefaultClassName(valid, classes)
+	if err != nil || got != "高一2班" {
+		t.Fatalf("valid default class got=%q err=%v", got, err)
+	}
+
+	missing := httptest.NewRequest(http.MethodPost, "/api/photo-import/analyze?class_name=%E4%B8%8D%E5%AD%98%E5%9C%A8%E7%9A%84%E7%8F%AD%E7%BA%A7", nil)
+	if _, err := photoImportDefaultClassName(missing, classes); err == nil {
+		t.Fatal("unknown default class should be rejected")
+	}
+
+	blank := httptest.NewRequest(http.MethodPost, "/api/photo-import/analyze", nil)
+	got, err = photoImportDefaultClassName(blank, classes)
+	if err != nil || got != "" {
+		t.Fatalf("blank default class got=%q err=%v", got, err)
+	}
+}
+
+func TestPhotoImportClassResolutionUsesZIPFolderBeforeDefault(t *testing.T) {
+	classes := map[string]bool{"高一1班": true, "高一2班": true}
+	if got := photoImportClassForSource("高一1班/照片/2026001_张三.jpg", "高一2班", classes); got != "高一1班" {
+		t.Fatalf("ZIP class folder should override batch default, got %q", got)
+	}
+	if got := photoImportClassForSource("2026002_李四.jpg", "高一2班", classes); got != "高一2班" {
+		t.Fatalf("root/direct image should use batch default, got %q", got)
+	}
+	if got := photoImportClassForSource("其他目录/2026003_王五.jpg", "", classes); got != "" {
+		t.Fatalf("unknown folder without default should remain blank, got %q", got)
+	}
+}
+
 func TestAssessImportedPhotoRequiresGoodFrontalFace(t *testing.T) {
 	img := image.NewRGBA(image.Rect(0, 0, 800, 1000))
 	good := face.Detection{
@@ -162,6 +196,13 @@ func TestPhotoImportSourcesKeepZIPSupport(t *testing.T) {
 	if _, err := entry.Write(imageBytes); err != nil {
 		t.Fatal(err)
 	}
+	rootEntry, err := writer.Create("2026002_李四.jpg")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := rootEntry.Write([]byte("root-image-content")); err != nil {
+		t.Fatal(err)
+	}
 	if err := writer.Close(); err != nil {
 		t.Fatal(err)
 	}
@@ -174,23 +215,25 @@ func TestPhotoImportSourcesKeepZIPSupport(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer closeSources()
-	if len(sources) != 1 || uploadName != "students.zip" {
+	if len(sources) != 2 || uploadName != "students.zip" {
 		t.Fatalf("unexpected ZIP sources: count=%d name=%q", len(sources), uploadName)
 	}
-	if sources[0].Name != "高一1班/2026001_张三.jpg" {
-		t.Fatalf("ZIP entry path was not preserved: %q", sources[0].Name)
+	if sources[0].Name != "高一1班/2026001_张三.jpg" || sources[1].Name != "2026002_李四.jpg" {
+		t.Fatalf("ZIP entry paths were not preserved: %#v", sources)
 	}
-	reader, err := sources[0].Open()
-	if err != nil {
-		t.Fatal(err)
-	}
-	got, err := io.ReadAll(reader)
-	reader.Close()
-	if err != nil {
-		t.Fatal(err)
-	}
-	if !bytes.Equal(got, imageBytes) {
-		t.Fatalf("ZIP entry content mismatch: got %q want %q", got, imageBytes)
+	for i, want := range [][]byte{imageBytes, []byte("root-image-content")} {
+		reader, err := sources[i].Open()
+		if err != nil {
+			t.Fatal(err)
+		}
+		got, err := io.ReadAll(reader)
+		reader.Close()
+		if err != nil {
+			t.Fatal(err)
+		}
+		if !bytes.Equal(got, want) {
+			t.Fatalf("ZIP entry %d content mismatch: got %q want %q", i, got, want)
+		}
 	}
 }
 
